@@ -15,8 +15,6 @@ on:
         description: "DANGER: wipe remote folder before upload (true/false)"
         required: true
         default: "false"
-
-  # Push trigger ONLY to make GitHub index/show the workflow in Actions.
   push:
     branches:
       - main
@@ -26,62 +24,50 @@ jobs:
     if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Index workflow (no-op)
-        run: echo "Indexed. Use Run workflow for deployments."
+      - run: echo "Indexed workflow"
 
   build-deploy:
     if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Preflight: verify Trunk project files exist
+      - name: Preflight
         shell: bash
         run: |
           set -euo pipefail
           APP_DIR="${{ github.event.inputs.app_dir }}"
-          test -f "$APP_DIR/index.html" || { echo "Missing $APP_DIR/index.html"; exit 1; }
-          test -f "$APP_DIR/Cargo.toml" || { echo "Missing $APP_DIR/Cargo.toml"; exit 1; }
-          echo "Trunk project OK in: $APP_DIR"
+          test -f "$APP_DIR/index.html"
+          test -f "$APP_DIR/Cargo.toml"
 
-      - name: Setup Rust (stable) + wasm32 target
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
 
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
             ${{ github.event.inputs.app_dir }} -> target
 
-      - name: Install Trunk
-        run: cargo install --locked trunk
+      - run: cargo install --locked trunk
 
-      - name: Build (Trunk release) with plug public_url
+      - name: Trunk build
         working-directory: ${{ github.event.inputs.app_dir }}
         shell: bash
-        run: |
-          set -euo pipefail
-          trunk build --release --public-url "/${{ github.event.inputs.plug_name }}/"
+        run: trunk build --release --public-url "/${{ github.event.inputs.plug_name }}/"
 
-      - name: Add Hostek web.config to dist
+      - name: Add web.config
         shell: bash
         run: |
-          set -euo pipefail
           APP_DIR="${{ github.event.inputs.app_dir }}"
           cp "templates/web.config" "$APP_DIR/dist/web.config"
-          ls -la "$APP_DIR/dist"
 
-      - name: Upload dist artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: dist-${{ github.event.inputs.plug_name }}
           path: ${{ github.event.inputs.app_dir }}/dist
 
-      - name: Deploy via FTP to Hostek
+      - name: FTP Deploy
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
           server: ${{ secrets.HOSTEK_FTP_HOST }}
@@ -90,6 +76,3 @@ jobs:
           server-dir: /${{ github.event.inputs.plug_name }}/
           local-dir: ${{ github.event.inputs.app_dir }}/dist/
           dangerous-clean-slate: ${{ github.event.inputs.clean_remote == 'true' }}
-          exclude: |
-            **/.git*
-            **/.DS_Store
