@@ -25,11 +25,13 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Preflight: verify Trunk project files exist
+        shell: bash
         run: |
-          set -e
-          test -f "${{ github.event.inputs.app_dir }}/index.html" || (echo "Missing index.html in app_dir" && exit 1)
-          test -f "${{ github.event.inputs.app_dir }}/Cargo.toml" || (echo "Missing Cargo.toml in app_dir" && exit 1)
-          echo "✅ Trunk project found in: ${{ github.event.inputs.app_dir }}"
+          set -euo pipefail
+          APP_DIR="${{ github.event.inputs.app_dir }}"
+          test -f "$APP_DIR/index.html" || { echo "Missing $APP_DIR/index.html"; exit 1; }
+          test -f "$APP_DIR/Cargo.toml" || { echo "Missing $APP_DIR/Cargo.toml"; exit 1; }
+          echo "Trunk project OK in: $APP_DIR"
 
       - name: Setup Rust (stable) + wasm32 target
         uses: dtolnay/rust-toolchain@stable
@@ -52,10 +54,12 @@ jobs:
           trunk build --release --public-url "/${{ github.event.inputs.plug_name }}/"
 
       - name: Add Hostek web.config to dist
+        shell: bash
         run: |
-          set -e
-          cp "templates/web.config" "${{ github.event.inputs.app_dir }}/dist/web.config"
-          ls -la "${{ github.event.inputs.app_dir }}/dist"
+          set -euo pipefail
+          APP_DIR="${{ github.event.inputs.app_dir }}"
+          cp "templates/web.config" "$APP_DIR/dist/web.config"
+          ls -la "$APP_DIR/dist"
 
       - name: Upload dist artifact
         uses: actions/upload-artifact@v4
