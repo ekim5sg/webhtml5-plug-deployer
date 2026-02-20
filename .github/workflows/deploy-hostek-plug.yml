@@ -16,14 +16,12 @@ on:
         required: true
         default: "false"
 
-  # This exists ONLY so the workflow is indexed/shown in the Actions sidebar.
-  # It does not deploy on push.
+  # Push trigger ONLY to make GitHub index/show the workflow in Actions.
   push:
     branches:
       - main
 
 jobs:
-  # On push, run a tiny no-op job. This makes the workflow visible in Actions.
   index-only:
     if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-latest
@@ -31,7 +29,6 @@ jobs:
       - name: Index workflow (no-op)
         run: echo "Indexed. Use Run workflow for deployments."
 
-  # Real build + deploy only on manual dispatch
   build-deploy:
     if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
