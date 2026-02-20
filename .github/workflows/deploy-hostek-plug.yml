@@ -1,7 +1,6 @@
 ﻿name: Build + Deploy webhtml5 plug (Hostek)
 
 on:
-  # Manual run (iPhone-friendly)
   workflow_dispatch:
     inputs:
       plug_name:
@@ -17,42 +16,35 @@ on:
         required: true
         default: "false"
 
-  # Adds discoverability so it shows up in Actions sidebar immediately
+  # This exists ONLY so the workflow is indexed/shown in the Actions sidebar.
+  # It does not deploy on push.
   push:
     branches:
       - main
 
 jobs:
+  # On push, run a tiny no-op job. This makes the workflow visible in Actions.
+  index-only:
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Index workflow (no-op)
+        run: echo "Indexed. Use Run workflow for deployments."
+
+  # Real build + deploy only on manual dispatch
   build-deploy:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # When triggered by push, github.event.inputs.* doesn't exist.
-      # So we compute safe defaults here.
-      - name: Resolve inputs (dispatch vs push)
-        id: vars
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "plug_name=${{ github.event.inputs.plug_name }}" >> "$GITHUB_OUTPUT"
-            echo "app_dir=${{ github.event.inputs.app_dir }}" >> "$GITHUB_OUTPUT"
-            echo "clean_remote=${{ github.event.inputs.clean_remote }}" >> "$GITHUB_OUTPUT"
-          else
-            # Safe defaults for push runs (does NOT deploy unless you intentionally set these to real plug paths)
-            echo "plug_name=_noop" >> "$GITHUB_OUTPUT"
-            echo "app_dir=_noop" >> "$GITHUB_OUTPUT"
-            echo "clean_remote=false" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Preflight: verify Trunk project files exist
         shell: bash
         run: |
           set -euo pipefail
-          APP_DIR="${{ steps.vars.outputs.app_dir }}"
+          APP_DIR="${{ github.event.inputs.app_dir }}"
           test -f "$APP_DIR/index.html" || { echo "Missing $APP_DIR/index.html"; exit 1; }
           test -f "$APP_DIR/Cargo.toml" || { echo "Missing $APP_DIR/Cargo.toml"; exit 1; }
           echo "Trunk project OK in: $APP_DIR"
@@ -66,43 +58,41 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
-            ${{ steps.vars.outputs.app_dir }} -> target
+            ${{ github.event.inputs.app_dir }} -> target
 
       - name: Install Trunk
         run: cargo install --locked trunk
 
       - name: Build (Trunk release) with plug public_url
-        working-directory: ${{ steps.vars.outputs.app_dir }}
+        working-directory: ${{ github.event.inputs.app_dir }}
         shell: bash
         run: |
           set -euo pipefail
-          trunk build --release --public-url "/${{ steps.vars.outputs.plug_name }}/"
+          trunk build --release --public-url "/${{ github.event.inputs.plug_name }}/"
 
       - name: Add Hostek web.config to dist
         shell: bash
         run: |
           set -euo pipefail
-          APP_DIR="${{ steps.vars.outputs.app_dir }}"
+          APP_DIR="${{ github.event.inputs.app_dir }}"
           cp "templates/web.config" "$APP_DIR/dist/web.config"
           ls -la "$APP_DIR/dist"
 
       - name: Upload dist artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dist-${{ steps.vars.outputs.plug_name }}
-          path: ${{ steps.vars.outputs.app_dir }}/dist
+          name: dist-${{ github.event.inputs.plug_name }}
+          path: ${{ github.event.inputs.app_dir }}/dist
 
-      # Only deploy on manual workflow_dispatch (never on push)
       - name: Deploy via FTP to Hostek
-        if: ${{ github.event_name == 'workflow_dispatch' }}
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
           server: ${{ secrets.HOSTEK_FTP_HOST }}
           username: ${{ secrets.HOSTEK_FTP_USER }}
           password: ${{ secrets.HOSTEK_FTP_PASS }}
-          server-dir: /${{ steps.vars.outputs.plug_name }}/
-          local-dir: ${{ steps.vars.outputs.app_dir }}/dist/
-          dangerous-clean-slate: ${{ steps.vars.outputs.clean_remote == 'true' }}
+          server-dir: /${{ github.event.inputs.plug_name }}/
+          local-dir: ${{ github.event.inputs.app_dir }}/dist/
+          dangerous-clean-slate: ${{ github.event.inputs.clean_remote == 'true' }}
           exclude: |
             **/.git*
             **/.DS_Store
