@@ -1,4 +1,4 @@
-﻿name: Build + Deploy webhtml5 plug (Hostek)
+name: Build + Deploy webhtml5 plug (Hostek)
 
 on:
   workflow_dispatch:
