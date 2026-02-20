@@ -1,0 +1,77 @@
+﻿name: Build + Deploy webhtml5 plug (Hostek)
+
+on:
+  workflow_dispatch:
+    inputs:
+      plug_name:
+        description: "Hostek folder name under https://www.webhtml5.info/ (example: my-new-plug)"
+        required: true
+        default: "my-new-plug"
+      app_dir:
+        description: "Path to Trunk project folder (contains index.html + Cargo.toml). Example: plugs/my-new-plug"
+        required: true
+        default: "plugs/my-new-plug"
+      clean_remote:
+        description: "DANGER: wipe remote folder before upload (true/false)"
+        required: true
+        default: "false"
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Preflight: verify Trunk project files exist
+        run: |
+          set -e
+          test -f "${{ github.event.inputs.app_dir }}/index.html" || (echo "Missing index.html in app_dir" && exit 1)
+          test -f "${{ github.event.inputs.app_dir }}/Cargo.toml" || (echo "Missing Cargo.toml in app_dir" && exit 1)
+          echo "✅ Trunk project found in: ${{ github.event.inputs.app_dir }}"
+
+      - name: Setup Rust (stable) + wasm32 target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            ${{ github.event.inputs.app_dir }} -> target
+
+      - name: Install Trunk
+        run: cargo install --locked trunk
+
+      - name: Build (Trunk release) with plug public_url
+        working-directory: ${{ github.event.inputs.app_dir }}
+        run: |
+          set -e
+          trunk build --release --public-url "/${{ github.event.inputs.plug_name }}/"
+
+      - name: Add Hostek web.config to dist
+        run: |
+          set -e
+          cp "templates/web.config" "${{ github.event.inputs.app_dir }}/dist/web.config"
+          ls -la "${{ github.event.inputs.app_dir }}/dist"
+
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ github.event.inputs.plug_name }}
+          path: ${{ github.event.inputs.app_dir }}/dist
+
+      - name: Deploy via FTP to Hostek
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.HOSTEK_FTP_HOST }}
+          username: ${{ secrets.HOSTEK_FTP_USER }}
+          password: ${{ secrets.HOSTEK_FTP_PASS }}
+          server-dir: /${{ github.event.inputs.plug_name }}/
+          local-dir: ${{ github.event.inputs.app_dir }}/dist/
+          dangerous-clean-slate: ${{ github.event.inputs.clean_remote == 'true' }}
+          exclude: |
+            **/.git*
+            **/.DS_Store
