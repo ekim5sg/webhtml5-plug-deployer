@@ -1,0 +1,3 @@
+﻿[build]
+dist = "dist"
+public_url = "/who-is-your-crew/"

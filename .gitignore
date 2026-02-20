@@ -1,0 +1,11 @@
+﻿# Rust
+/target
+**/target
+
+# Trunk output
+/app/dist
+dist
+
+# OS/Editor
+.DS_Store
+.vscode/
