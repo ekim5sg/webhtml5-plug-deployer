@@ -1,7 +1,7 @@
-﻿use gloo_net::http::Request;
+﻿use base64::Engine;
+use gloo_net::http::Request;
 use gloo_storage::{LocalStorage, Storage};
 use serde::Serialize;
-use wasm_bindgen::JsCast;
 use web_sys::HtmlInputElement;
 use yew::prelude::*;
 
@@ -31,13 +31,13 @@ struct DispatchInputs<'a> {
 }
 
 fn b64(s: &str) -> String {
-    // minimal base64 (no padding concerns in practice)
     base64::engine::general_purpose::STANDARD.encode(s.as_bytes())
 }
 
 fn make_index_html(title: &str) -> String {
+    // Use r## to avoid accidental termination when content includes `"#` (e.g., "#0b1020")
     format!(
-        r#"<!doctype html>
+        r##"<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
@@ -51,7 +51,7 @@ fn make_index_html(title: &str) -> String {
   <link data-trunk rel="rust" />
 </body>
 </html>
-"#,
+"##,
         title
     )
 }
@@ -95,8 +95,16 @@ fn main() {{
     )
 }
 
-async fn github_put_file(token: &str, path: &str, message: &str, content: &str) -> Result<(), String> {
-    let url = format!("https://api.github.com/repos/{}/{}/contents/{}", OWNER, REPO, path);
+async fn github_put_file(
+    token: &str,
+    path: &str,
+    message: &str,
+    content: &str,
+) -> Result<(), String> {
+    let url = format!(
+        "https://api.github.com/repos/{}/{}/contents/{}",
+        OWNER, REPO, path
+    );
 
     let body = PutContentBody {
         message,
@@ -223,7 +231,11 @@ fn app() -> Html {
                 status.set("Missing GitHub token.".into());
                 return;
             }
-            if plug.is_empty() || !plug.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+            if plug.is_empty()
+                || !plug
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+            {
                 status.set("plug_name must be lowercase letters, numbers, hyphens.".into());
                 return;
             }
@@ -251,15 +263,24 @@ fn app() -> Html {
                         (Ok(_), Ok(_), Ok(_)) => {
                             status.set("Files created ✅ Dispatching workflow…".into());
                             match github_dispatch(&token, &plug).await {
-                                Ok(_) => status.set(format!("Workflow dispatched ✅ URL: https://www.webhtml5.info/{}/", plug)),
+                                Ok(_) => status.set(format!(
+                                    "Workflow dispatched ✅ URL: https://www.webhtml5.info/{}/",
+                                    plug
+                                )),
                                 Err(e) => status.set(format!("Dispatch error: {}", e)),
                             }
                         }
                         (a, b, c) => {
                             let mut errs = vec![];
-                            if let Err(e) = a { errs.push(e); }
-                            if let Err(e) = b { errs.push(e); }
-                            if let Err(e) = c { errs.push(e); }
+                            if let Err(e) = a {
+                                errs.push(e);
+                            }
+                            if let Err(e) = b {
+                                errs.push(e);
+                            }
+                            if let Err(e) = c {
+                                errs.push(e);
+                            }
                             status.set(format!("Create file error:\n{}", errs.join("\n")));
                         }
                     }
@@ -283,33 +304,41 @@ fn app() -> Html {
               { "Paste a GitHub token once, then type plug name + title. It creates files in the repo and triggers the deploy workflow." }
             </p>
 
-            <div style="border:1px solid rgba(255,255,255,.10); border-radius:18px; padding:14px; background:rgba(255,255,255,.03); margin-bottom:12px;">
-              <label style="display:block; font-size:12px; color:#aab3d6;">{ "GitHub token (PAT) — stored on this device" }</label>
-              <input value={(*token).clone()} oninput={on_token}
-                placeholder="ghp_..."
-                style="width:100%; margin-top:6px; padding:12px; border-radius:14px; border:1px solid rgba(255,255,255,.10); background:rgba(0,0,0,.25); color:#e8ecff;" />
-              <button onclick={on_save_token}
-                style="margin-top:10px; padding:12px 14px; border-radius:14px; border:1px solid rgba(255,255,255,.10); background:rgba(255,255,255,.05); color:#e8ecff;">
-                { "Save token" }
-              </button>
+            <div class="card" style="margin-bottom:12px;">
+              <div class="card-h">
+                <h2 class="card-t">{ "Token" }</h2>
+                <p class="card-p">{ "GitHub PAT stored on this device (localStorage)." }</p>
+              </div>
+              <div class="card-b">
+                <input value={(*token).clone()} oninput={on_token}
+                  placeholder="ghp_..."
+                  style="width:100%; margin-top:6px; padding:12px; border-radius:14px; border:1px solid rgba(255,255,255,.10); background:rgba(0,0,0,.25); color:#e8ecff;" />
+                <div class="row" style="margin-top:10px;">
+                  <button class="btn btn2" onclick={on_save_token}>{ "Save token" }</button>
+                </div>
+              </div>
             </div>
 
-            <div style="border:1px solid rgba(255,255,255,.10); border-radius:18px; padding:14px; background:rgba(255,255,255,.03);">
-              <label style="display:block; font-size:12px; color:#aab3d6;">{ "plug_name (lowercase + hyphens)" }</label>
-              <input value={(*plug_name).clone()} oninput={on_plug}
-                style="width:100%; margin-top:6px; padding:12px; border-radius:14px; border:1px solid rgba(255,255,255,.10); background:rgba(0,0,0,.25); color:#e8ecff;" />
+            <div class="card">
+              <div class="card-h">
+                <h2 class="card-t">{ "New plug" }</h2>
+                <p class="card-p">{ "Creates plugs/<plug>/index.html, Cargo.toml, src/main.rs then dispatches deploy workflow." }</p>
+              </div>
+              <div class="card-b">
+                <label style="display:block; font-size:12px; color:#aab3d6;">{ "plug_name (lowercase + hyphens)" }</label>
+                <input value={(*plug_name).clone()} oninput={on_plug}
+                  style="width:100%; margin-top:6px; padding:12px; border-radius:14px; border:1px solid rgba(255,255,255,.10); background:rgba(0,0,0,.25); color:#e8ecff;" />
 
-              <label style="display:block; margin-top:12px; font-size:12px; color:#aab3d6;">{ "Title" }</label>
-              <input value={(*title).clone()} oninput={on_title}
-                style="width:100%; margin-top:6px; padding:12px; border-radius:14px; border:1px solid rgba(255,255,255,.10); background:rgba(0,0,0,.25); color:#e8ecff;" />
+                <label style="display:block; margin-top:12px; font-size:12px; color:#aab3d6;">{ "Title" }</label>
+                <input value={(*title).clone()} oninput={on_title}
+                  style="width:100%; margin-top:6px; padding:12px; border-radius:14px; border:1px solid rgba(255,255,255,.10); background:rgba(0,0,0,.25); color:#e8ecff;" />
 
-              <button onclick={on_create} disabled={*busy}
-                style="margin-top:12px; padding:12px 14px; border-radius:14px; border:none; color:#e8ecff; font-weight:700;
-                       background:linear-gradient(135deg, rgba(124,92,255,.95), rgba(40,215,255,.70));">
-                { if *busy { "Working…" } else { "Create + Deploy" } }
-              </button>
+                <button class="btn" onclick={on_create} disabled={*busy} style="margin-top:12px;">
+                  { if *busy { "Working…" } else { "Create + Deploy" } }
+                </button>
 
-              <pre style="white-space:pre-wrap; margin-top:12px; color:#aab3d6;">{ (*status).clone() }</pre>
+                <pre style="white-space:pre-wrap; margin-top:12px; color:#aab3d6;">{ (*status).clone() }</pre>
+              </div>
             </div>
           </div>
         </>
