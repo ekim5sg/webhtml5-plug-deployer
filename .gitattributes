@@ -1,0 +1,2 @@
+﻿# Normalize TOML files to LF and UTF-8 (no BOM)
+*.toml text eol=lf working-tree-encoding=UTF-8
