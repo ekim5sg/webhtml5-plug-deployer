@@ -65,9 +65,9 @@ fn iso_short(s: &Option<String>) -> String {
 }
 
 fn make_scaffold_index_html(title: &str) -> String {
-    // IMPORTANT: keep #0b1020 inside a *raw string* so Rust doesn't interpret 0b as binary.
+    // IMPORTANT: use r##" .. "## because the HTML contains `"#` sequences like content="#0b1020"
     format!(
-        r#"<!doctype html>
+        r##"<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
@@ -82,7 +82,7 @@ fn make_scaffold_index_html(title: &str) -> String {
   <link data-trunk rel="rust" />
 </body>
 </html>
-"#,
+"##,
         title
     )
 }
@@ -126,13 +126,8 @@ main{
   overflow:hidden;
 }
 
-.h{
-  padding:16px 16px 0;
-}
-
-.b{
-  padding:0 16px 16px;
-}
+.h{ padding:16px 16px 0; }
+.b{ padding:0 16px 16px; }
 
 .btn{
   appearance:none; border:none; cursor:pointer;
@@ -140,6 +135,7 @@ main{
   color:var(--text); font-weight:700;
   background:linear-gradient(135deg, rgba(124,92,255,.95), rgba(40,215,255,.70));
 }
+
 .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 "#.to_string()
 }
@@ -161,6 +157,8 @@ yew = {{ version = "0.21", features = ["csr"] }}
 
 fn make_scaffold_main_rs(title: &str, plug_name: &str) -> String {
     let url = format!("https://www.webhtml5.info/{}/", plug_name);
+
+    // IMPORTANT: this is inside format!(), so any literal { } must be doubled: {{ and }}
     format!(
         r#"use yew::prelude::*;
 
@@ -174,7 +172,7 @@ fn app() -> Html {{
             <div class="h">
               <h1 style="margin:10px 0 6px; font-size:32px; letter-spacing:-.02em;">{title}</h1>
               <p style="margin:0 0 12px; color:var(--muted); line-height:1.5;">
-                {"Plug scaffold is live. Replace this content with your real app."}
+                {{"Plug scaffold is live. Replace this content with your real app."}}
               </p>
             </div>
             <div class="b">
@@ -255,10 +253,10 @@ async fn fetch_runs(token: &str, per_page: u32) -> Result<Vec<WorkflowRun>, Stri
     Ok(json.workflow_runs)
 }
 
-async fn github_get_sha(token: &str, path: &str) -> Result<Option<String>, String> {
+async fn github_get_sha(token: &str, path_str: &str) -> Result<Option<String>, String> {
     let url = format!(
         "https://api.github.com/repos/{}/{}/contents/{}",
-        OWNER, REPO, path
+        OWNER, REPO, path_str
     );
 
     let resp = Request::get(&url)
@@ -286,22 +284,22 @@ async fn github_get_sha(token: &str, path: &str) -> Result<Option<String>, Strin
 
 async fn github_put_file(
     token: &str,
-    path: &str,
+    path_str: &str,
     message: &str,
     content: &str,
     overwrite: bool,
 ) -> Result<(), String> {
     let url = format!(
         "https://api.github.com/repos/{}/{}/contents/{}",
-        OWNER, REPO, path
+        OWNER, REPO, path_str
     );
 
-    let sha = match github_get_sha(token, path).await? {
+    let sha = match github_get_sha(token, path_str).await? {
         Some(existing_sha) => {
             if overwrite {
                 Some(existing_sha)
             } else {
-                return Err(format!("File exists (overwrite disabled): {}", path));
+                return Err(format!("File exists (overwrite disabled): {}", path_str));
             }
         }
         None => None,
@@ -330,7 +328,7 @@ async fn github_put_file(
     } else {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
-        Err(format!("PUT {} failed: {} {}", path, status, text))
+        Err(format!("PUT {} failed: {} {}", path_str, status, text))
     }
 }
 
@@ -432,7 +430,9 @@ fn app() -> Html {
         let busy = busy.clone();
 
         Callback::from(move |_| {
-            if *busy { return; }
+            if *busy {
+                return;
+            }
             let token = (*token).clone();
             let plug = (*plug_name).trim().to_string();
 
@@ -455,7 +455,10 @@ fn app() -> Html {
                 let busy = busy.clone();
                 async move {
                     match dispatch_workflow(&token, &plug, &app_dir).await {
-                        Ok(_) => status.set(format!("Workflow dispatched ✅ Deployed URL: https://www.webhtml5.info/{}/", plug)),
+                        Ok(_) => status.set(format!(
+                            "Workflow dispatched ✅ Deployed URL: https://www.webhtml5.info/{}/",
+                            plug
+                        )),
                         Err(e) => status.set(format!("Dispatch error: {}", e)),
                     }
                     busy.set(false);
@@ -488,7 +491,9 @@ fn app() -> Html {
         let create_busy = create_busy.clone();
 
         Callback::from(move |_| {
-            if *create_busy { return; }
+            if *create_busy {
+                return;
+            }
 
             let token = (*token).clone();
             let plug = (*new_plug).trim().to_string();
@@ -566,9 +571,9 @@ fn app() -> Html {
               <div class="badge">{ "Rust iPhone Compiler • Mission Control" }</div>
               <h1 class="h1">{ "Deploy plugs from your phone" }</h1>
               <p class="sub">{ "This triggers GitHub Actions builds and deploys to Hostek (no local Rust compilation on iPhone)." }</p>
+              <p class="sub" style="margin-top:10px; max-width:none;">{ "GitHub token (PAT) — stored on this device" }</p>
             </div>
             <div class="card-b">
-              <label class="label">{ "GitHub token (PAT) — stored on this device" }</label>
               <input class="input" value={(*token).clone()} oninput={on_token} placeholder="ghp_..." />
               <div class="row" style="margin-top:10px;">
                 <button class="btn btn2" onclick={on_save_token}>{ "Save token" }</button>
@@ -583,9 +588,10 @@ fn app() -> Html {
               <p class="sub">{ "Carpool-lane mode: creates or overwrites scaffold files, then deploys." }</p>
             </div>
             <div class="card-b">
-              <label class="label">{ "new plug_name" }</label>
+              <p class="sub" style="margin:0 0 6px; max-width:none;">{ "new plug_name" }</p>
               <input class="input" value={(*new_plug).clone()} oninput={on_new_plug} />
-              <label class="label" style="margin-top:10px;">{ "title" }</label>
+
+              <p class="sub" style="margin:10px 0 6px; max-width:none;">{ "title" }</p>
               <input class="input" value={(*new_title).clone()} oninput={on_new_title} />
 
               <button class="btn" onclick={on_create_and_deploy} disabled={*create_busy} style="margin-top:12px;">
@@ -602,7 +608,7 @@ fn app() -> Html {
               <p class="sub">{ "Enter plug_name. app_dir auto-fills as plugs/[plug_name]." }</p>
             </div>
             <div class="card-b">
-              <label class="label">{ "plug_name" }</label>
+              <p class="sub" style="margin:0 0 6px; max-width:none;">{ "plug_name" }</p>
               <input class="input" value={(*plug_name).clone()} oninput={on_plug} />
 
               <div class="kv" style="margin-top:10px;">
