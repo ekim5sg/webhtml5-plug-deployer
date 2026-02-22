@@ -1,0 +1,40 @@
+/* MikeGyver Studio • hard-locked dark mode */
+:root{
+  --bg0:#070a12;
+  --bg1:#0b1020;
+  --text:#e8ecff;
+  --muted:#aab3d6;
+  --line:rgba(255,255,255,.10);
+  --accent:#7c5cff;
+  --accent2:#28d7ff;
+  --radius:18px;
+}
+
+html,body{ height:100%; background:var(--bg0); color:var(--text); margin:0; }
+body{ font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+*{ box-sizing:border-box; }
+
+.bg{
+  position:fixed; inset:-20%; z-index:-1;
+  background:
+    radial-gradient(900px 600px at 15% 10%, rgba(124,92,255,.28), transparent 55%),
+    radial-gradient(900px 600px at 85% 15%, rgba(40,215,255,.20), transparent 55%),
+    linear-gradient(180deg, var(--bg0), var(--bg1));
+}
+
+main{
+  width:min(980px, calc(100% - 28px));
+  margin:0 auto;
+  padding:24px 0 80px;
+}
+
+.card{
+  border:1px solid var(--line);
+  background:rgba(255,255,255,.03);
+  border-radius:var(--radius);
+  padding:16px;
+}
+
+h1{ margin:0 0 8px; letter-spacing:-.02em; }
+p{ margin:0; color:var(--muted); line-height:1.45; }
+a{ color:var(--text); }
