@@ -282,10 +282,10 @@ async fn github_put_file(
 }
 
 async fn github_dispatch(token: &str, plug_name: &str) -> Result<(), String> {
-    let url = format!(
-        "https://api.github.com/repos/{}/{}/actions/workflows/{}/dispatches",
-        OWNER, REPO, WORKFLOW_FILE
-    );
+	let url = format!(
+		"https://api.github.com/repos/{}/{}/contents/{}?ref=main",
+		OWNER, REPO, path
+	);
 
     let app_dir = format!("plugs/{}", plug_name);
 
