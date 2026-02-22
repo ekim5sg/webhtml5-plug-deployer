@@ -1,0 +1,130 @@
+<!-- index.html — Daily Suno Prompt (Rust iPhone Compiler Demo) -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="description" content="Daily random Suno song prompt — title, style, lyrics with copy buttons." />
+  <title>Daily Suno Prompt • MikeGyver Studio</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+
+<body>
+  <div id="app"></div>
+
+  <!--
+    “Database” JSON (20 items) — stored in the same folder as the app build.
+    In this 4-file pipeline, we embed it here. If your runner allows extra files,
+    move this block into ./prompts.json and fetch it from Rust instead.
+  -->
+  <script id="prompt-db" type="application/json">
+[
+  {
+    "song_title": "Starlight Over Steel",
+    "style": "Cinematic pop anthem, epic Top-40 energy. Piano + soaring strings, oboe flourishes, big drums, tasteful Irish influence with bodhrán + fiddle, electric guitar solo at the bridge.",
+    "lyrics": "[Verse 1]\nCity lights like constellations\nOn the edge of what we know\nHearts are maps, and hope is motion\nWhen the world says 'stay' we go\n\n[Pre-Chorus]\nWe learned to breathe in storms\nTo stand when shadows fall\n\n[Chorus]\nRaise the starlight over steel\nLet the broken turn to brave\nEvery scar becomes a signal\nEvery step becomes a wave\nHold the line, hear the choir\nWe were made for something real\nRaise the starlight over steel\n\n[Verse 2]\nHands to work and eyes to heaven\nSmall beginnings, fearless flame\nWe don't wait for perfect timing\nWe just rise and speak our name\n\n[Bridge]\nAnd when the night feels endless\nWe light it from within\n\n[Final Chorus]\nRaise the starlight over steel...\n(Repeat, bigger, with guitar solo)"
+  },
+  {
+    "song_title": "Moonlit Mercy Run",
+    "style": "Hopeful cinematic rock-pop. Piano intro, oboe + violin answers, driving drums, subtle Celtic rhythm, electric guitar lead in final chorus.",
+    "lyrics": "[Verse]\nUnder streetlamp halos\nWe carry what we can\nA thousand quiet heroes\nWith a steady open hand\n\n[Chorus]\nThis is the moonlit mercy run\nWe don't quit when the day is done\nWe turn the hurt into help somehow\nWe are here, we are now\n\n[Bridge]\nIf love is a road, then we are the wheels\nIf faith is a fire, then it's finally real"
+  },
+  {
+    "song_title": "Paper Wings, Iron Heart",
+    "style": "Emotional pop ballad into epic finale. Piano + strings, oboe countermelody, light Irish texture, dramatic electric guitar solo late.",
+    "lyrics": "[Verse 1]\nI folded dreams in daylight\nAnd threw them to the sky\nThey fluttered like a secret\nI was too afraid to try\n\n[Chorus]\nPaper wings, iron heart\nI can fall and still restart\nEvery no becomes a doorway\nEvery tear becomes an art"
+  },
+  {
+    "song_title": "Thunder in the Chapel",
+    "style": "Cinematic gospel-pop crossover. Piano + choir pads, strings, oboe accents, big drums, electric guitar stabs at climaxes, subtle Irish whistle feel (no brand refs).",
+    "lyrics": "[Verse]\nWhen the world is shaking\nAnd the news is loud\nI hear a quieter promise\nRising through the crowd\n\n[Chorus]\nThere's thunder in the chapel\nBut peace is in my bones\nI won't fear tomorrow\nI'm never alone"
+  },
+  {
+    "song_title": "Velocity of Hope",
+    "style": "Modern epic pop. Tight drums, piano hook, strings + oboe, Irish fiddle lift, electric guitar solo in bridge.",
+    "lyrics": "[Verse]\nCount the seconds, breathe in\nLet the doubts dissolve\nWe were built to move forward\nNot to stay unresolved\n\n[Chorus]\nI feel the velocity of hope\nPulling me out of the smoke\nLike sunrise through a telescope\nI feel the velocity of hope"
+  },
+  {
+    "song_title": "Lanterns on the Lake",
+    "style": "Warm cinematic folk-pop. Piano + strings, oboe + violin, gentle Celtic pulse, electric guitar only as a shimmering lead near the end.",
+    "lyrics": "[Verse]\nWe set lanterns on the lake\nFor the things we can't rewrite\nBut the water keeps on moving\nAnd it teaches us the light\n\n[Chorus]\nLet it glow, let it go\nLet tomorrow find its way\nWe are more than what we lost\nWe are what we choose today"
+  },
+  {
+    "song_title": "No Map Needed",
+    "style": "Upbeat Top-40 pop with cinematic sheen. Piano riff, strings, oboe pops, Irish-inspired rhythm, electric guitar solo as the 'victory lap'.",
+    "lyrics": "[Verse]\nI used to chase approvals\nLike they were oxygen\nNow I'm chasing meaning\nLike it's my closest friend\n\n[Chorus]\nNo map needed\nI can see it\nThat horizon has my name\nI'm not waiting\nI'm creating\nTurning spark into a flame"
+  },
+  {
+    "song_title": "Gravity Can't Hold Us",
+    "style": "Epic cinematic rock-pop. Piano + strings, oboe weaving lines, big drums, Celtic undertone, electric guitar solo mid-bridge.",
+    "lyrics": "[Chorus]\nGravity can't hold us\nWhen our hearts decide to rise\nWe were born for more than fear\nWe were made for open skies"
+  },
+  {
+    "song_title": "Brave on a Tuesday",
+    "style": "Relatable pop anthem. Piano + bright strings, oboe hooks, light Irish groove, guitar solo in last chorus.",
+    "lyrics": "[Verse]\nNot every miracle is fireworks\nSometimes it's coffee and a choice\nTo answer doubt with action\nTo let courage have a voice\n\n[Chorus]\nI'm gonna be brave on a Tuesday\nWhen nobody's cheering me on\nSmall steps, big faith\nI'm still moving\nTill the hard thing is gone"
+  },
+  {
+    "song_title": "Cathedral of Quiet",
+    "style": "Atmospheric cinematic ballad. Piano + strings, oboe as lead color, minimal drums, guitar solo is soft and soaring.",
+    "lyrics": "[Verse]\nI found a cathedral of quiet\nBetween my breath and the noise\nWhere the world can't reach me\nAnd my soul can make a choice\n\n[Chorus]\nI will listen for the light\nI will learn to be alright"
+  },
+  {
+    "song_title": "Signal Fires",
+    "style": "Cinematic pop-rock. Piano + strings, oboe + violin, Irish rhythm lift, electric guitar solo to launch the final chorus.",
+    "lyrics": "[Chorus]\nWe light signal fires\nOn the edges of the night\nSo the lost can find a pathway\nSo the weak can find their might"
+  },
+  {
+    "song_title": "Horizon in My Pocket",
+    "style": "Modern pop with cinematic build. Piano motif, strings swells, oboe calls, subtle Irish accents, guitar solo in bridge.",
+    "lyrics": "[Verse]\nI carry a horizon in my pocket\nLike a promise I refuse to drop\nEven when my hands are shaking\nEven when I hit a stop\n\n[Chorus]\nI don't need perfect\nI need forward\nI need one more honest try"
+  },
+  {
+    "song_title": "Mercy With a Backbone",
+    "style": "Bold empowering pop-rock. Piano + punchy drums, strings, oboe riffs, Celtic flavor, electric guitar solo big and triumphant.",
+    "lyrics": "[Verse]\nI can forgive and still be fearless\nI can love and still be strong\n\n[Chorus]\nMercy with a backbone\nKindness with a spine\nI won't trade my future\nFor a past that isn't mine"
+  },
+  {
+    "song_title": "Gold Thread Prayer",
+    "style": "Inspirational cinematic pop. Piano, strings, oboe, gentle Irish influence, guitar solo shimmering in final lift.",
+    "lyrics": "[Verse]\nI stitched my fear into a whisper\nAnd my whisper into a song\n\n[Chorus]\nEvery gold thread prayer\nPulls me through the dark\nI don't need to see the whole road\nI just need the next small spark"
+  },
+  {
+    "song_title": "After the Applause",
+    "style": "Reflective pop ballad into stadium finale. Piano + strings, oboe, Irish tinge, electric guitar solo after second chorus.",
+    "lyrics": "[Verse]\nAfter the applause fades out\nWho am I when it's quiet?\n\n[Chorus]\nI'm still here\nStill healing\nStill becoming"
+  },
+  {
+    "song_title": "Oars in the Dark",
+    "style": "Epic cinematic folk-rock. Driving drums, strings, oboe lines, Irish fiddle energy, electric guitar solo like a storm break.",
+    "lyrics": "[Verse]\nOars in the dark\nHands torn and worn\nWe pull each other home\nBefore the dawn is born\n\n[Chorus]\nWe give, we guard\nWe carry the flame\nStorms may rage\nBut love remains"
+  },
+  {
+    "song_title": "Built From the Break",
+    "style": "High-energy pop anthem. Piano hook, strings, oboe accents, Celtic percussion, electric guitar solo in final chorus.",
+    "lyrics": "[Chorus]\nI'm built from the break\nFrom the fall, from the ache\nI'm the lesson I survived\nI'm the reason I stayed alive"
+  },
+  {
+    "song_title": "Kindness Is Loud",
+    "style": "Bright uplifting pop. Piano, strings, oboe hooks, Irish bounce, guitar solo short and joyful.",
+    "lyrics": "[Verse]\nThey said the world is getting colder\nBut I saw warmth in strangers' eyes\n\n[Chorus]\nKindness is loud\nWhen the hate is proud\nSo I turn it up\nI turn it around"
+  },
+  {
+    "song_title": "Long Way to Morning",
+    "style": "Cinematic slow-build anthem. Piano + strings, oboe lead, Irish influence, electric guitar solo as sunrise hits.",
+    "lyrics": "[Verse]\nIt's a long way to morning\nFrom the middle of the night\nBut I keep walking\nTill the dark runs out of fight\n\n[Chorus]\nI'm not done\nI'm becoming\nI'm the dawn in motion"
+  },
+  {
+    "song_title": "Skyline Benediction",
+    "style": "Grand cinematic pop finale. Piano, strings, oboe, Irish lift, electric guitar solo with big drums and choir pads.",
+    "lyrics": "[Verse]\nBless the hands that kept on building\nBless the heart that chose to stay\n\n[Chorus]\nThis is my skyline benediction\nA brand new song for a brand new day\nI will rise with no condition\nI will love my life this way"
+  }
+]
+  </script>
+
+  <script type="module">
+    import init from "./pkg/daily_suno_prompt.js";
+    init();
+  </script>
+</body>
+</html>
