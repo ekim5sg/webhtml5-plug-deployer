@@ -3,7 +3,7 @@ use gloo_net::http::Request;
 use gloo_storage::{LocalStorage, Storage};
 use gloo_timers::future::sleep;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::time::Duration;
 use web_sys::{HtmlInputElement, HtmlTextAreaElement};
 use yew::prelude::*;
@@ -406,14 +406,62 @@ async fn upsert_file(token: &str, path: &str, msg: &str, content: &str) -> Resul
     github_put_file(token, path, msg, content, sha).await
 }
 
-async fn copy_to_clipboard(text: String) -> Result<(), String> {
+async fn copy_to_clipboard(text: &str) -> Result<(), String> {
+    use wasm_bindgen::JsCast;
+    use wasm_bindgen_futures::JsFuture;
+
     let window = web_sys::window().ok_or("No window".to_string())?;
-    let nav = window.navigator();
-    let clipboard = nav.clipboard().ok_or("Clipboard not available".to_string())?;
-    wasm_bindgen_futures::JsFuture::from(clipboard.write_text(&text))
-        .await
-        .map_err(|_| "Clipboard write failed".to_string())?;
-    Ok(())
+    let navigator = window.navigator();
+
+    // 1) Try modern async Clipboard API
+    // In web_sys this is typically: Result<Clipboard, JsValue>
+    if let Ok(clipboard) = navigator.clipboard() {
+        let promise = clipboard.write_text(text);
+        JsFuture::from(promise)
+            .await
+            .map_err(|_| "Clipboard write failed (async API)".to_string())?;
+        return Ok(());
+    }
+
+    // 2) Fallback: execCommand("copy") via a temporary textarea (works in more Safari cases)
+    let document = window.document().ok_or("No document".to_string())?;
+    let body = document.body().ok_or("No document body".to_string())?;
+
+    let el = document
+        .create_element("textarea")
+        .map_err(|_| "Failed to create textarea".to_string())?;
+
+    let ta: web_sys::HtmlTextAreaElement = el
+        .dyn_into::<web_sys::HtmlTextAreaElement>()
+        .map_err(|_| "Failed to cast textarea".to_string())?;
+
+    ta.set_value(text);
+
+    // keep it off-screen
+    let style = ta.style();
+    let _ = style.set_property("position", "fixed");
+    let _ = style.set_property("left", "-9999px");
+    let _ = style.set_property("top", "0");
+    let _ = style.set_property("opacity", "0");
+
+    body.append_child(&ta)
+        .map_err(|_| "Failed to append textarea".to_string())?;
+
+    ta.focus().ok();
+    ta.select();
+
+    let ok = document
+        .exec_command("copy")
+        .map_err(|_| "execCommand(copy) failed".to_string())?;
+
+    // cleanup
+    let _ = body.remove_child(&ta);
+
+    if ok {
+        Ok(())
+    } else {
+        Err("Copy failed (execCommand returned false)".to_string())
+    }
 }
 
 #[derive(Clone, PartialEq)]
@@ -691,7 +739,7 @@ fn app() -> Html {
                                 let conc = r.conclusion.clone().unwrap_or_else(|| "—".into());
                                 run_state.set(format!("status: {} • conclusion: {}", st, conc));
 
-                                let p = 75u8.saturating_add(((i as u8).min(20)));
+                                let p = 75u8.saturating_add((i as u8).min(20));
                                 progress.set(p.min(95));
 
                                 if st == "completed" {
