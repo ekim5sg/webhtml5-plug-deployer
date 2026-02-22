@@ -1,4 +1,4 @@
-[package]
+﻿[package]
 name = "rust_iphone_compiler"
 version = "0.1.0"
 edition = "2021"
