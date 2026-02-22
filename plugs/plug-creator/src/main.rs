@@ -122,6 +122,34 @@ button, input, select{ font:inherit; }
   padding:18px 0 64px;
 }
 
+.badge{
+  display:inline-flex;
+  align-items:center;
+  gap:10px;
+  padding:8px 12px;
+  border:1px solid var(--line);
+  border-radius:999px;
+  background:rgba(255,255,255,.04);
+  box-shadow: 0 18px 60px var(--shadow);
+  font-size:13px;
+  color:var(--muted);
+}
+
+.h1{
+  margin:14px 0 6px;
+  font-size:clamp(28px, 4vw, 44px);
+  line-height:1.08;
+  letter-spacing:-.02em;
+}
+
+.sub{
+  margin:0;
+  color:var(--muted);
+  font-size:15px;
+  line-height:1.5;
+  max-width:70ch;
+}
+
 .card{
   border:1px solid var(--line);
   background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
@@ -132,6 +160,12 @@ button, input, select{ font:inherit; }
 
 .card-h{ padding:16px 16px 0; }
 .card-b{ padding:0 16px 16px; }
+
+.row{
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+}
 
 .btn{
   appearance:none;
@@ -171,41 +205,47 @@ wasm-bindgen = "0.2"
 }
 
 fn make_main_rs(title: &str, plug_name: &str) -> String {
-    format!(
-        r#"use yew::prelude::*;
+    // IMPORTANT: Do NOT use format! on a template that contains lots of `{}` braces
+    // (Yew html! uses them). Use replace() with explicit tokens instead.
+    let title_lit = serde_json::to_string(title).unwrap_or_else(|_| "\"Untitled\"".to_string());
+    let url = format!("https://www.webhtml5.info/{}/", plug_name);
+    let url_lit = serde_json::to_string(&url).unwrap_or_else(|_| "\"\"".to_string());
+
+    let template = r#"use yew::prelude::*;
 
 #[function_component(App)]
-fn app() -> Html {{
-    html! {{
+fn app() -> Html {
+    html! {
         <main class="wrap">
           <section class="card">
             <div class="card-h">
-              <h1 style="margin:14px 0 6px; font-size:32px; letter-spacing:-.02em;">{title}</h1>
-              <p style="margin:0 0 14px; color:#aab3d6; line-height:1.5;">
-                {"Plug scaffold is live. Replace this content with your real app."}
-              </p>
+              <div class="badge">{ "webhtml5 plug scaffold" }</div>
+              <h1 class="h1">{ __TITLE__ }</h1>
+              <p class="sub">{ "Plug scaffold is live. Replace this content with your real app." }</p>
             </div>
             <div class="card-b">
-              <p style="margin:0; color:#aab3d6;">{url}</p>
+              <p class="sub">{ __URL__ }</p>
             </div>
           </section>
         </main>
-    }}
-}}
-
-fn main() {{
-    yew::Renderer::<App>::new().render();
-}}
-"#,
-        title = format!("{:?}", title),
-        url = format!("{:?}", format!("https://www.webhtml5.info/{}/", plug_name))
-    )
+    }
 }
 
-async fn github_get_sha(token: &str, path: &str) -> Result<Option<String>, String> {
+fn main() {
+    yew::Renderer::<App>::new().render();
+}
+"#;
+
+    template
+        .replace("__TITLE__", &title_lit)
+        .replace("__URL__", &url_lit)
+}
+
+async fn github_get_sha(token: &str, file_path: &str) -> Result<Option<String>, String> {
+    // Pin to main to avoid weirdness while commits are happening
     let url = format!(
-        "https://api.github.com/repos/{}/{}/contents/{}",
-        OWNER, REPO, path
+        "https://api.github.com/repos/{}/{}/contents/{}?ref=main",
+        OWNER, REPO, file_path
     );
 
     let resp = Request::get(&url)
@@ -224,7 +264,7 @@ async fn github_get_sha(token: &str, path: &str) -> Result<Option<String>, Strin
     if !resp.ok() {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
-        return Err(format!("GET {} failed: {} {}", path, status, text));
+        return Err(format!("GET {} failed: {} {}", file_path, status, text));
     }
 
     let json = resp.json::<ContentResp>().await.map_err(|e| e.to_string())?;
@@ -233,22 +273,25 @@ async fn github_get_sha(token: &str, path: &str) -> Result<Option<String>, Strin
 
 async fn github_put_file(
     token: &str,
-    path: &str,
+    file_path: &str,
     message: &str,
     content: &str,
     overwrite: bool,
 ) -> Result<(), String> {
     let url = format!(
         "https://api.github.com/repos/{}/{}/contents/{}",
-        OWNER, REPO, path
+        OWNER, REPO, file_path
     );
 
-    let sha = match github_get_sha(token, path).await? {
+    let sha = match github_get_sha(token, file_path).await? {
         Some(existing_sha) => {
             if overwrite {
                 Some(existing_sha)
             } else {
-                return Err(format!("File already exists (overwrite disabled): {}", path));
+                return Err(format!(
+                    "File already exists (overwrite disabled): {}",
+                    file_path
+                ));
             }
         }
         None => None,
@@ -277,15 +320,15 @@ async fn github_put_file(
     } else {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
-        Err(format!("PUT {} failed: {} {}", path, status, text))
+        Err(format!("PUT {} failed: {} {}", file_path, status, text))
     }
 }
 
 async fn github_dispatch(token: &str, plug_name: &str) -> Result<(), String> {
-	let url = format!(
-		"https://api.github.com/repos/{}/{}/contents/{}?ref=main",
-		OWNER, REPO, path
-	);
+    let url = format!(
+        "https://api.github.com/repos/{}/{}/actions/workflows/{}/dispatches",
+        OWNER, REPO, WORKFLOW_FILE
+    );
 
     let app_dir = format!("plugs/{}", plug_name);
 
@@ -442,6 +485,7 @@ fn app() -> Html {
     html! {
         <>
           <div class="bg" aria-hidden="true"></div>
+
           <main class="wrap">
             <section class="card" style="margin-bottom:14px;">
               <div class="card-h">
