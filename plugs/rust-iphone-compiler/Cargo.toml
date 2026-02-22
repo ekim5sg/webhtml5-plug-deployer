@@ -17,12 +17,16 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 base64 = "0.22"
+js-sys = "0.3"
 
 web-sys = { version = "0.3", features = [
   "Clipboard",
   "Document",
-  "Navigator",
+  "Element",
+  "HtmlElement",
   "HtmlInputElement",
   "HtmlTextAreaElement",
+  "Navigator",
+  "Node",
   "Window"
 ] }

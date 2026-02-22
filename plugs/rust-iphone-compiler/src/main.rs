@@ -1,22 +1,21 @@
 ﻿use base64::Engine;
 use gloo_net::http::Request;
 use gloo_storage::{LocalStorage, Storage};
-use gloo_timers::future::sleep;
+use gloo_timers::future::TimeoutFuture;
+use js_sys::{Function, Reflect};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
-use std::time::Duration;
+use wasm_bindgen::JsCast;
+use wasm_bindgen::JsValue;
+use wasm_bindgen_futures::JsFuture;
 use web_sys::{HtmlInputElement, HtmlTextAreaElement};
 use yew::prelude::*;
 
+// ====== CONFIG ======
 const OWNER: &str = "ekim5sg";
 const REPO: &str = "webhtml5-plug-deployer";
 const WORKFLOW_FILE: &str = "deploy-hostek-plug.yml"; // .github/workflows/<file>
 
-const PH_TITLE: &str = "{{TITLE}}";
-const PH_PLUG: &str = "{{PLUG_NAME}}";
-const PH_PUBLIC_URL: &str = "{{PUBLIC_URL}}";
-const PH_HOSTEK_URL: &str = "{{HOSTEK_URL}}";
-
+// ====== GITHUB API TYPES ======
 #[derive(Serialize)]
 struct DispatchBody<'a> {
     #[serde(rename = "ref")]
@@ -40,10 +39,11 @@ struct RunsResp {
 struct WorkflowRun {
     id: u64,
     html_url: String,
-    name: Option<String>,
     status: Option<String>,
     conclusion: Option<String>,
     created_at: Option<String>,
+    head_branch: Option<String>,
+    event: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -62,10 +62,10 @@ struct PutContentBody<'a> {
     sha: Option<String>,
 }
 
+// ====== UTIL ======
 fn b64_encode(s: &str) -> String {
     base64::engine::general_purpose::STANDARD.encode(s.as_bytes())
 }
-
 fn b64_decode(s: &str) -> Result<String, String> {
     let cleaned = s.replace('\n', "");
     let bytes = base64::engine::general_purpose::STANDARD
@@ -79,6 +79,43 @@ fn iso_short(s: &Option<String>) -> String {
         .unwrap_or("")
         .replace('T', " ")
         .replace('Z', "")
+}
+
+// App name -> plug-name (lowercase + hyphen)
+fn slugify_app_name(app_name: &str) -> String {
+    let mut out = String::new();
+    let mut prev_dash = false;
+
+    for ch in app_name.trim().chars() {
+        let c = ch.to_ascii_lowercase();
+        let is_ok = c.is_ascii_lowercase() || c.is_ascii_digit();
+
+        if is_ok {
+            out.push(c);
+            prev_dash = false;
+        } else if c.is_whitespace() || c == '-' || c == '_' || c == '.' || c == '/' {
+            if !out.is_empty() && !prev_dash {
+                out.push('-');
+                prev_dash = true;
+            }
+        } else {
+            // ignore other characters
+            if !out.is_empty() && !prev_dash {
+                out.push('-');
+                prev_dash = true;
+            }
+        }
+    }
+
+    while out.ends_with('-') {
+        out.pop();
+    }
+
+    if out.is_empty() {
+        "my-new-plug".to_string()
+    } else {
+        out
+    }
 }
 
 fn sanitize_plug_name(s: &str) -> Option<String> {
@@ -95,92 +132,46 @@ fn sanitize_plug_name(s: &str) -> Option<String> {
     }
 }
 
-/// Lowercase, split non-alnum to words, join by hyphen, collapse repeats.
-fn slugify_app_name(app_name: &str) -> Option<String> {
-    let raw = app_name.trim().to_lowercase();
-    if raw.is_empty() {
-        return None;
-    }
-    let mut out = String::new();
-    let mut prev_dash = false;
-
-    for ch in raw.chars() {
-        let is_ok = ch.is_ascii_lowercase() || ch.is_ascii_digit();
-        if is_ok {
-            out.push(ch);
-            prev_dash = false;
-        } else if !prev_dash {
-            out.push('-');
-            prev_dash = true;
-        }
-    }
-
-    // trim hyphens
-    let out = out.trim_matches('-').to_string();
-    if out.is_empty() {
-        None
-    } else {
-        Some(out)
-    }
-}
-
-fn hostek_url(plug_name: &str) -> String {
-    format!("https://www.webhtml5.info/{}/", plug_name.trim())
-}
-
-fn public_url(plug_name: &str) -> String {
-    format!("/{}/", plug_name.trim())
-}
-
-fn apply_placeholders(content: &str, title: &str, plug: &str) -> String {
-    let h = hostek_url(plug);
-    let p = public_url(plug);
-    content
-        .replace(PH_TITLE, title)
-        .replace(PH_PLUG, plug)
-        .replace(PH_HOSTEK_URL, &h)
-        .replace(PH_PUBLIC_URL, &p)
-}
-
-// IMPORTANT: r##" .. "## so `content="#0b1020"` is safe.
-fn default_index_html_template() -> String {
-    r##"<!doctype html>
+// ====== DEFAULT TEMPLATES (generated into the new plug) ======
+fn default_index_html(title: &str) -> String {
+    // r## so content="#0b1020" is safe
+    format!(
+        r##"<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <meta name="color-scheme" content="dark" />
   <meta name="theme-color" content="#0b1020" />
-  <title>{{TITLE}}</title>
+  <title>{}</title>
   <link data-trunk rel="css" href="styles.css" />
 </head>
-<body>
+<body id="top">
   <div id="app"></div>
   <link data-trunk rel="rust" />
 </body>
 </html>
-"##.to_string()
+"##,
+        title.trim()
+    )
 }
 
-fn default_styles_css_template() -> String {
-    r#"/* {{TITLE}} — MikeGyver Studio plug
-   Deployed at: {{HOSTEK_URL}}
-   public_url: {{PUBLIC_URL}}
-*/
+fn default_styles_css() -> String {
+    // You can swap this later with your canonical storypack css if you want.
+    r#"/* MikeGyver Studio • hard-locked dark mode */
 :root{
   --bg0:#070a12;
   --bg1:#0b1020;
   --text:#e8ecff;
   --muted:#aab3d6;
   --line:rgba(255,255,255,.10);
-  --shadow:rgba(0,0,0,.55);
   --accent:#7c5cff;
   --accent2:#28d7ff;
   --radius:18px;
 }
 
 html,body{ height:100%; background:var(--bg0); color:var(--text); margin:0; }
-body{ font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; overflow-x:hidden; }
+body{ font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
 *{ box-sizing:border-box; }
 
 .bg{
@@ -191,34 +182,27 @@ body{ font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif
     linear-gradient(180deg, var(--bg0), var(--bg1));
 }
 
-.wrap{ width:min(980px, calc(100% - 28px)); margin:0 auto; padding:18px 0 74px; }
-.card{
-  border:1px solid var(--line);
-  background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
-  border-radius:18px;
-  box-shadow: 0 22px 80px var(--shadow);
-  overflow:hidden;
-}
-.card-h{ padding:16px 16px 0; }
-.card-b{ padding:0 16px 16px; }
-.badge{
-  display:inline-flex; align-items:center; padding:8px 12px;
-  border:1px solid var(--line); border-radius:999px; background:rgba(255,255,255,.04);
-  font-size:13px; color:var(--muted);
-}
-.h1{ margin:14px 0 6px; font-size:clamp(28px, 4vw, 44px); line-height:1.08; letter-spacing:-.02em; }
-.sub{ margin:0; color:var(--muted); font-size:15px; line-height:1.5; max-width:70ch; }
-.btn{
-  appearance:none; border:none; border-radius:14px; padding:12px 14px; font-weight:700;
-  color:var(--text);
-  background:linear-gradient(135deg, rgba(124,92,255,.95), rgba(40,215,255,.70));
-  box-shadow: 0 14px 30px rgba(124,92,255,.18);
-  cursor:pointer;
-}
-"#.to_string()
+main{
+  width:min(980px, calc(100% - 28px));
+  margin:0 auto;
+  padding:24px 0 80px;
 }
 
-fn default_cargo_toml_template(plug_name: &str) -> String {
+.card{
+  border:1px solid var(--line);
+  background:rgba(255,255,255,.03);
+  border-radius:var(--radius);
+  padding:16px;
+}
+
+h1{ margin:0 0 8px; letter-spacing:-.02em; }
+p{ margin:0; color:var(--muted); line-height:1.45; }
+a{ color:var(--text); }
+"#
+    .to_string()
+}
+
+fn default_cargo_toml(plug_name: &str) -> String {
     let pkg = plug_name.replace('-', "_");
     format!(
         r#"[package]
@@ -233,38 +217,113 @@ yew = {{ version = "0.21", features = ["csr"] }}
     )
 }
 
-fn default_main_rs_template() -> String {
-    // Keep this dead-simple so new plugs build immediately.
-    r#"use yew::prelude::*;
+fn default_main_rs(title: &str, plug_name: &str) -> String {
+    let url = format!("https://www.webhtml5.info/{}/", plug_name);
+
+    // Not using format strings that contain html! braces inside format! except via {:?} strings.
+    format!(
+        r#"use yew::prelude::*;
 
 #[function_component(App)]
-fn app() -> Html {
-    html! {
+fn app() -> Html {{
+    html! {{
       <>
         <div class="bg" aria-hidden="true"></div>
-        <main class="wrap">
-          <section class="card">
-            <div class="card-h">
-              <div class="badge">{ "{{TITLE}}" }</div>
-              <h1 class="h1">{ "{{TITLE}}" }</h1>
-              <p class="sub">{ "Plug scaffold is live. Replace this content with your real app." }</p>
-              <p class="sub">{ "{{HOSTEK_URL}}" }</p>
-            </div>
-            <div class="card-b">
-              <button class="btn" onclick={Callback::from(|_| web_sys::console::log_1(&"Hello from {{PLUG_NAME}}".into()))}>
-                { "Click me" }
-              </button>
-            </div>
-          </section>
+        <main>
+          <div class="card">
+            <h1>{}</h1>
+            <p>{{"Plug scaffold is live. Replace this content with your real app."}}</p>
+            <p style="margin-top:10px;">
+              <a href={} target="_blank">{{"Open deployed URL"}}</a>
+            </p>
+          </div>
         </main>
       </>
+    }}
+}}
+
+fn main() {{
+    yew::Renderer::<App>::new().render();
+}}
+"#,
+        format!("{:?}", title.trim()),
+        format!("{:?}", url)
+    )
+}
+
+// ====== GITHUB API HELPERS ======
+fn api_url_contents(path: &str) -> String {
+    format!(
+        "https://api.github.com/repos/{}/{}/contents/{}",
+        OWNER, REPO, path
+    )
+}
+
+async fn github_get_file_sha(token: &str, path: &str) -> Result<Option<String>, String> {
+    let url = api_url_contents(path);
+
+    let resp = Request::get(&url)
+        .header("Authorization", &format!("Bearer {}", token))
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .header("User-Agent", "webhtml5-rust-iphone-compiler")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if resp.status() == 404 {
+        return Ok(None);
+    }
+
+    if !resp.ok() {
+        let st = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(format!("GET sha failed {}: {}", st, text));
+    }
+
+    let json = resp.json::<ContentGetResp>().await.map_err(|e| e.to_string())?;
+    Ok(Some(json.sha))
+}
+
+async fn github_put_file(
+    token: &str,
+    path: &str,
+    message: &str,
+    content: &str,
+    sha: Option<String>,
+) -> Result<(), String> {
+    let url = api_url_contents(path);
+
+    let body = PutContentBody {
+        message,
+        content: b64_encode(content),
+        branch: "main",
+        sha,
+    };
+
+    let resp = Request::put(&url)
+        .header("Authorization", &format!("Bearer {}", token))
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .header("User-Agent", "webhtml5-rust-iphone-compiler")
+        .json(&body)
+        .map_err(|e| e.to_string())?
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if resp.ok() {
+        Ok(())
+    } else {
+        let st = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        Err(format!("PUT {} failed {}: {}", path, st, text))
     }
 }
 
-fn main() {
-    yew::Renderer::<App>::new().render();
-}
-"#.to_string()
+async fn github_upsert_file(token: &str, path: &str, msg: &str, content: &str) -> Result<(), String> {
+    let sha = github_get_file_sha(token, path).await?;
+    github_put_file(token, path, msg, content, sha).await
 }
 
 async fn dispatch_workflow(token: &str, plug_name: &str, app_dir: &str) -> Result<(), String> {
@@ -296,9 +355,9 @@ async fn dispatch_workflow(token: &str, plug_name: &str, app_dir: &str) -> Resul
     if resp.status() == 204 {
         Ok(())
     } else {
-        let status = resp.status();
+        let st = resp.status();
         let text = resp.text().await.unwrap_or_default();
-        Err(format!("Dispatch failed: {} {}", status, text))
+        Err(format!("Dispatch failed {}: {}", st, text))
     }
 }
 
@@ -318,112 +377,29 @@ async fn fetch_runs(token: &str, per_page: u32) -> Result<Vec<WorkflowRun>, Stri
         .map_err(|e| e.to_string())?;
 
     if !resp.ok() {
-        let status = resp.status();
+        let st = resp.status();
         let text = resp.text().await.unwrap_or_default();
-        return Err(format!("Fetch runs failed: {} {}", status, text));
+        return Err(format!("Fetch runs failed {}: {}", st, text));
     }
 
     let json = resp.json::<RunsResp>().await.map_err(|e| e.to_string())?;
     Ok(json.workflow_runs)
 }
 
-async fn github_get_file(token: &str, path_str: &str) -> Result<(String, String), String> {
-    let url = format!(
-        "https://api.github.com/repos/{}/{}/contents/{}",
-        OWNER, REPO, path_str
-    );
-
-    let resp = Request::get(&url)
-        .header("Authorization", &format!("Bearer {}", token))
-        .header("Accept", "application/vnd.github+json")
-        .header("X-GitHub-Api-Version", "2022-11-28")
-        .header("User-Agent", "webhtml5-rust-iphone-compiler")
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-
-    if resp.status() == 404 {
-        return Err(format!("Not found: {}", path_str));
-    }
-    if !resp.ok() {
-        let st = resp.status();
-        let text = resp.text().await.unwrap_or_default();
-        return Err(format!("GET failed {}: {}", st, text));
-    }
-
-    let json = resp.json::<ContentGetResp>().await.map_err(|e| e.to_string())?;
-    let sha = json.sha;
-    let content = json.content.unwrap_or_default();
-    let decoded = b64_decode(&content)?;
-    Ok((sha, decoded))
-}
-
-async fn github_put_file(
-    token: &str,
-    path_str: &str,
-    message: &str,
-    content: &str,
-    sha: Option<String>,
-) -> Result<(), String> {
-    let url = format!(
-        "https://api.github.com/repos/{}/{}/contents/{}",
-        OWNER, REPO, path_str
-    );
-
-    let body = PutContentBody {
-        message,
-        content: b64_encode(content),
-        branch: "main",
-        sha,
-    };
-
-    let resp = Request::put(&url)
-        .header("Authorization", &format!("Bearer {}", token))
-        .header("Accept", "application/vnd.github+json")
-        .header("X-GitHub-Api-Version", "2022-11-28")
-        .header("User-Agent", "webhtml5-rust-iphone-compiler")
-        .json(&body)
-        .map_err(|e| e.to_string())?
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-
-    if resp.ok() {
-        Ok(())
-    } else {
-        let status = resp.status();
-        let text = resp.text().await.unwrap_or_default();
-        Err(format!("PUT {} failed: {} {}", path_str, status, text))
-    }
-}
-
-async fn upsert_file(token: &str, path: &str, msg: &str, content: &str) -> Result<(), String> {
-    let sha = match github_get_file(token, path).await {
-        Ok((sha, _old)) => Some(sha),
-        Err(e) if e.starts_with("Not found:") => None,
-        Err(_e) => None, // best-effort create
-    };
-    github_put_file(token, path, msg, content, sha).await
-}
-
+// ====== CLIPBOARD (works with your web-sys shape) ======
 async fn copy_to_clipboard(text: &str) -> Result<(), String> {
-    use wasm_bindgen::JsCast;
-    use wasm_bindgen_futures::JsFuture;
-
     let window = web_sys::window().ok_or("No window".to_string())?;
     let navigator = window.navigator();
 
-    // 1) Try modern async Clipboard API
-    // In web_sys this is typically: Result<Clipboard, JsValue>
-    if let Ok(clipboard) = navigator.clipboard() {
-        let promise = clipboard.write_text(text);
-        JsFuture::from(promise)
-            .await
-            .map_err(|_| "Clipboard write failed (async API)".to_string())?;
+    // In your build, clipboard() returns Clipboard directly (not Option/Result)
+    let clipboard = navigator.clipboard();
+    let promise = clipboard.write_text(text);
+
+    if JsFuture::from(promise).await.is_ok() {
         return Ok(());
     }
 
-    // 2) Fallback: execCommand("copy") via a temporary textarea (works in more Safari cases)
+    // Fallback: execCommand("copy") via JS Reflect (no web-sys exec_command needed)
     let document = window.document().ok_or("No document".to_string())?;
     let body = document.body().ok_or("No document body".to_string())?;
 
@@ -436,13 +412,11 @@ async fn copy_to_clipboard(text: &str) -> Result<(), String> {
         .map_err(|_| "Failed to cast textarea".to_string())?;
 
     ta.set_value(text);
-
-    // keep it off-screen
-    let style = ta.style();
-    let _ = style.set_property("position", "fixed");
-    let _ = style.set_property("left", "-9999px");
-    let _ = style.set_property("top", "0");
-    let _ = style.set_property("opacity", "0");
+    ta.set_attribute(
+        "style",
+        "position:fixed;left:-9999px;top:0;opacity:0;pointer-events:none;",
+    )
+    .map_err(|_| "Failed to set textarea style".to_string())?;
 
     body.append_child(&ta)
         .map_err(|_| "Failed to append textarea".to_string())?;
@@ -450,57 +424,55 @@ async fn copy_to_clipboard(text: &str) -> Result<(), String> {
     ta.focus().ok();
     ta.select();
 
-    let ok = document
-        .exec_command("copy")
-        .map_err(|_| "execCommand(copy) failed".to_string())?;
+    let doc_js: &JsValue = document.as_ref();
+    let exec = Reflect::get(doc_js, &JsValue::from_str("execCommand"))
+        .map_err(|_| "execCommand not available".to_string())?;
 
-    // cleanup
+    let ok = if exec.is_function() {
+        let f: Function = exec.dyn_into().map_err(|_| "execCommand not a function".to_string())?;
+        let result = f
+            .call1(doc_js, &JsValue::from_str("copy"))
+            .map_err(|_| "execCommand call failed".to_string())?;
+        result.as_bool().unwrap_or(false)
+    } else {
+        false
+    };
+
     let _ = body.remove_child(&ta);
 
     if ok {
         Ok(())
     } else {
-        Err("Copy failed (execCommand returned false)".to_string())
+        Err("Copy failed (clipboard + fallback)".to_string())
     }
 }
 
-#[derive(Clone, PartialEq)]
-enum EditTab {
-    MainRs,
-    IndexHtml,
-    StylesCss,
-    CargoToml,
-}
-
+// ====== APP ======
 #[function_component(App)]
 fn app() -> Html {
+    // token
     let token = use_state(|| LocalStorage::get::<String>("gh_pat").ok().unwrap_or_default());
+    let token_status = use_state(|| "".to_string());
 
-    // App Name -> plug-name
-    let app_name = use_state(|| "Rust iPhone Compiler".to_string());
-    let plug_name = use_state(|| "rust-iphone-compiler".to_string());
+    // main inputs
+    let app_name = use_state(|| "Rust iPhone Compiler Demo".to_string());
+    let plug_name = use_state(|| slugify_app_name("Rust iPhone Compiler Demo"));
 
-    // Editor
-    let tab = use_state(|| EditTab::MainRs);
-    let main_rs = use_state(|| default_main_rs_template());
-    let index_html = use_state(|| default_index_html_template());
-    let styles_css = use_state(|| default_styles_css_template());
-    let cargo_toml = use_state(|| default_cargo_toml_template("rust-iphone-compiler"));
+    // file editors
+    let idx = use_state(|| default_index_html("Rust iPhone Compiler Demo"));
+    let css = use_state(|| default_styles_css());
+    let toml = use_state(|| default_cargo_toml(&slugify_app_name("Rust iPhone Compiler Demo")));
+    let mainrs = use_state(|| default_main_rs("Rust iPhone Compiler Demo", &slugify_app_name("Rust iPhone Compiler Demo")));
 
-    // Status/progress
-    let status = use_state(|| "".to_string());
-    let progress = use_state(|| 0u8);
+    // deploy status
     let busy = use_state(|| false);
-
-    // Run link/status
+    let progress = use_state(|| 0u8);
+    let log = use_state(|| "".to_string());
+    let deployed_url = use_state(|| "".to_string());
     let run_url = use_state(|| "".to_string());
-    let run_state = use_state(|| "".to_string());
+    let last_conclusion = use_state(|| "".to_string());
 
-    let deployed_url = {
-        let plug = (*plug_name).clone();
-        use_memo(plug, |p| hostek_url(p.trim()))
-    };
-
+    // ===== handlers =====
     let on_token = {
         let token = token.clone();
         Callback::from(move |e: InputEvent| {
@@ -511,15 +483,15 @@ fn app() -> Html {
 
     let on_save_token = {
         let token = token.clone();
-        let status = status.clone();
+        let token_status = token_status.clone();
         Callback::from(move |_| {
             let t = (*token).clone();
             if t.trim().is_empty() {
-                status.set("Token is empty.".into());
+                token_status.set("Token is empty.".into());
                 return;
             }
             let _ = LocalStorage::set("gh_pat", t);
-            status.set("Saved token to this device (localStorage).".into());
+            token_status.set("Saved token to this device (localStorage).".into());
         })
     };
 
@@ -529,250 +501,239 @@ fn app() -> Html {
         Callback::from(move |e: InputEvent| {
             let v = e.target_unchecked_into::<HtmlInputElement>().value();
             app_name.set(v.clone());
-            if let Some(slug) = slugify_app_name(&v) {
-                plug_name.set(slug);
-            }
+            plug_name.set(slugify_app_name(&v));
         })
     };
 
-    let on_load_defaults = {
-        let main_rs = main_rs.clone();
-        let index_html = index_html.clone();
-        let styles_css = styles_css.clone();
-        let cargo_toml = cargo_toml.clone();
+    let on_regen_templates = {
+        let app_name = app_name.clone();
         let plug_name = plug_name.clone();
-        let status = status.clone();
+        let idx = idx.clone();
+        let css = css.clone();
+        let toml = toml.clone();
+        let mainrs = mainrs.clone();
+
         Callback::from(move |_| {
-            main_rs.set(default_main_rs_template());
-            index_html.set(default_index_html_template());
-            styles_css.set(default_styles_css_template());
-            cargo_toml.set(default_cargo_toml_template(&*plug_name));
-            status.set("Loaded defaults (with placeholders).".into());
+            let title = (*app_name).clone();
+            let plug = (*plug_name).clone();
+
+            idx.set(default_index_html(&title));
+            css.set(default_styles_css());
+            toml.set(default_cargo_toml(&plug));
+            mainrs.set(default_main_rs(&title, &plug));
         })
     };
 
-    let on_edit = {
-        let tab = tab.clone();
-        let main_rs = main_rs.clone();
-        let index_html = index_html.clone();
-        let styles_css = styles_css.clone();
-        let cargo_toml = cargo_toml.clone();
-        Callback::from(move |e: InputEvent| {
-            let v = e.target_unchecked_into::<HtmlTextAreaElement>().value();
-            match &*tab {
-                EditTab::MainRs => main_rs.set(v),
-                EditTab::IndexHtml => index_html.set(v),
-                EditTab::StylesCss => styles_css.set(v),
-                EditTab::CargoToml => cargo_toml.set(v),
-            }
-        })
-    };
+    // editors
+    let on_idx = { let idx = idx.clone(); Callback::from(move |e: InputEvent| idx.set(e.target_unchecked_into::<HtmlTextAreaElement>().value())) };
+    let on_css = { let css = css.clone(); Callback::from(move |e: InputEvent| css.set(e.target_unchecked_into::<HtmlTextAreaElement>().value())) };
+    let on_toml = { let toml = toml.clone(); Callback::from(move |e: InputEvent| toml.set(e.target_unchecked_into::<HtmlTextAreaElement>().value())) };
+    let on_mainrs = { let mainrs = mainrs.clone(); Callback::from(move |e: InputEvent| mainrs.set(e.target_unchecked_into::<HtmlTextAreaElement>().value())) };
 
-    let on_copy_url = {
-        let deployed_url = (*deployed_url).clone();
-        let status = status.clone();
-        Callback::from(move |_| {
-            let status = status.clone();
-            let url = deployed_url.clone();
-            wasm_bindgen_futures::spawn_local(async move {
-                match copy_to_clipboard(url.clone()).await {
-                    Ok(_) => status.set(format!("Copied URL ✅ {}", url)),
-                    Err(e) => status.set(format!("Copy failed: {}", e)),
-                }
-            });
-        })
-    };
-
+    // Build + Deploy
     let on_build_deploy = {
         let token = token.clone();
         let app_name = app_name.clone();
         let plug_name = plug_name.clone();
-        let main_rs = main_rs.clone();
-        let index_html = index_html.clone();
-        let styles_css = styles_css.clone();
-        let cargo_toml = cargo_toml.clone();
-        let status = status.clone();
-        let progress = progress.clone();
+        let idx = idx.clone();
+        let css = css.clone();
+        let toml = toml.clone();
+        let mainrs = mainrs.clone();
+
         let busy = busy.clone();
+        let progress = progress.clone();
+        let log = log.clone();
+        let deployed_url = deployed_url.clone();
         let run_url = run_url.clone();
-        let run_state = run_state.clone();
+        let last_conclusion = last_conclusion.clone();
 
         Callback::from(move |_| {
-            if *busy {
-                return;
-            }
+            if *busy { return; }
+
             let token_v = (*token).clone();
             if token_v.trim().is_empty() {
-                status.set("Missing GitHub token.".into());
+                log.set("Missing GitHub token. Paste it and tap Save token.".into());
                 return;
             }
-            let title = (*app_name).trim().to_string();
-            if title.is_empty() {
-                status.set("App Name is required.".into());
-                return;
-            }
-            let Some(plug) = sanitize_plug_name(&(*plug_name)) else {
-                status.set("plug_name must be lowercase letters, numbers, hyphens.".into());
+
+            let plug_v = (*plug_name).clone();
+            let Some(plug_ok) = sanitize_plug_name(&plug_v) else {
+                log.set("plug-name invalid. Use letters/numbers/hyphens only.".into());
                 return;
             };
 
-            let b_main = (*main_rs).clone();
-            let b_idx = (*index_html).clone();
-            let b_css = (*styles_css).clone();
-            let b_toml = (*cargo_toml).clone();
+            let title = (*app_name).clone();
+            let idx_v = (*idx).clone();
+            let css_v = (*css).clone();
+            let toml_v = (*toml).clone();
+            let mainrs_v = (*mainrs).clone();
 
             busy.set(true);
-            progress.set(1);
+            progress.set(5);
+            deployed_url.set(format!("https://www.webhtml5.info/{}/", plug_ok));
             run_url.set("".into());
-            run_state.set("".into());
-            status.set("Validating + prepping files…".into());
+            last_conclusion.set("".into());
+            log.set(format!("Starting build for: {}\nplug-name: {}\n", title.trim(), plug_ok));
 
             wasm_bindgen_futures::spawn_local({
-                let status = status.clone();
-                let progress = progress.clone();
                 let busy = busy.clone();
+                let progress = progress.clone();
+                let log = log.clone();
+                let deployed_url = deployed_url.clone();
                 let run_url = run_url.clone();
-                let run_state = run_state.clone();
+                let last_conclusion = last_conclusion.clone();
 
                 async move {
-                    let base = format!("plugs/{}", plug);
-                    let msg = format!("Rust iPhone Compiler: update plug {}", plug);
-
-                    progress.set(5);
-                    status.set("Applying placeholders…".into());
-
-                    let idx_applied = apply_placeholders(&b_idx, &title, &plug);
-                    let css_applied = apply_placeholders(&b_css, &title, &plug);
-                    let main_applied = apply_placeholders(&b_main, &title, &plug);
-
-                    progress.set(10);
-                    status.set("Normalizing Cargo.toml…".into());
-                    let pkg_name = plug.replace('-', "_");
-                    let mut toml_applied = apply_placeholders(&b_toml, &title, &plug);
-
-                    let mut lines: Vec<String> = toml_applied.lines().map(|l| l.to_string()).collect();
-                    let mut in_package = false;
-                    for line in lines.iter_mut() {
-                        let t = line.trim();
-                        if t.starts_with('[') && t.ends_with(']') {
-                            in_package = t == "[package]";
-                        } else if in_package && t.starts_with("name") {
-                            *line = format!("name = \"{}\"", pkg_name);
-                            in_package = false;
-                        }
-                    }
-                    toml_applied = lines.join("\n");
-                    if !toml_applied.ends_with('\n') {
-                        toml_applied.push('\n');
-                    }
+                    let base = format!("plugs/{}", plug_ok);
+                    let msg = format!("Rust iPhone Compiler: update {}", plug_ok);
 
                     progress.set(15);
-                    status.set("Checking existing workflow runs…".into());
+                    log.set(format!("{}\nUploading files to GitHub…", (*log)));
 
-                    let before_ids: HashSet<u64> = match fetch_runs(&token_v, 10).await {
-                        Ok(list) => list.into_iter().map(|r| r.id).collect(),
-                        Err(_) => HashSet::new(),
-                    };
+                    // Upsert the 4 files
+                    let r1 = github_upsert_file(&token_v, &format!("{}/index.html", base), &msg, &idx_v).await;
+                    let r2 = github_upsert_file(&token_v, &format!("{}/styles.css", base), &msg, &css_v).await;
+                    let r3 = github_upsert_file(&token_v, &format!("{}/Cargo.toml", base), &msg, &toml_v).await;
+                    let r4 = github_upsert_file(&token_v, &format!("{}/src/main.rs", base), &msg, &mainrs_v).await;
 
-                    progress.set(25);
-                    status.set("Uploading files to GitHub…".into());
-
-                    let r1 = upsert_file(&token_v, &format!("{}/index.html", base), &msg, &idx_applied).await;
-                    let r2 = upsert_file(&token_v, &format!("{}/styles.css", base), &msg, &css_applied).await;
-                    let r3 = upsert_file(&token_v, &format!("{}/Cargo.toml", base), &msg, &toml_applied).await;
-                    let r4 = upsert_file(&token_v, &format!("{}/src/main.rs", base), &msg, &main_applied).await;
-
-                    if let Err(e) = &r1 { status.set(format!("Upload error: {}", e)); busy.set(false); return; }
-                    if let Err(e) = &r2 { status.set(format!("Upload error: {}", e)); busy.set(false); return; }
-                    if let Err(e) = &r3 { status.set(format!("Upload error: {}", e)); busy.set(false); return; }
-                    if let Err(e) = &r4 { status.set(format!("Upload error: {}", e)); busy.set(false); return; }
+                    if let Err(e) = r1 {
+                        log.set(format!("Upload error:\n{}", e));
+                        busy.set(false);
+                        return;
+                    }
+                    if let Err(e) = r2 {
+                        log.set(format!("Upload error:\n{}", e));
+                        busy.set(false);
+                        return;
+                    }
+                    if let Err(e) = r3 {
+                        log.set(format!("Upload error:\n{}", e));
+                        busy.set(false);
+                        return;
+                    }
+                    if let Err(e) = r4 {
+                        log.set(format!("Upload error:\n{}", e));
+                        busy.set(false);
+                        return;
+                    }
 
                     progress.set(55);
-                    status.set("Files uploaded ✅ Dispatching build…".into());
+                    log.set(format!("{}\nFiles uploaded ✅\nDispatching workflow…", (*log)));
 
-                    let app_dir = base.clone();
-                    if let Err(e) = dispatch_workflow(&token_v, &plug, &app_dir).await {
-                        status.set(format!("Dispatch error: {}", e));
+                    let app_dir = format!("plugs/{}", plug_ok);
+                    if let Err(e) = dispatch_workflow(&token_v, &plug_ok, &app_dir).await {
+                        log.set(format!("Dispatch error:\n{}", e));
                         busy.set(false);
                         return;
                     }
 
-                    progress.set(65);
-                    status.set("Dispatched ✅ Waiting for run to appear…".into());
-
-                    let mut picked: Option<WorkflowRun> = None;
-                    for _ in 0..30 {
-                        sleep(Duration::from_secs(2)).await;
-                        if let Ok(list) = fetch_runs(&token_v, 10).await {
-                            if let Some(r) = list.into_iter().find(|r| !before_ids.contains(&r.id)) {
-                                picked = Some(r);
-                                break;
-                            }
-                        }
-                    }
-
-                    let Some(run) = picked else {
-                        status.set("Dispatched ✅ (Could not detect new run yet). Open Actions to confirm.".into());
-                        progress.set(70);
-                        busy.set(false);
-                        return;
-                    };
-
-                    run_url.set(run.html_url.clone());
-                    run_state.set(format!(
-                        "status: {} • conclusion: {}",
-                        run.status.clone().unwrap_or_else(|| "unknown".into()),
-                        run.conclusion.clone().unwrap_or_else(|| "—".into())
+                    progress.set(70);
+                    log.set(format!(
+                        "{}\nWorkflow dispatched ✅\nPolling workflow runs…",
+                        (*log)
                     ));
 
-                    progress.set(75);
-                    status.set("Run found ✅ Monitoring…".into());
+                    // Poll latest run (best-effort single-user mode)
+                    let mut attempts = 0u32;
+                    loop {
+                        attempts += 1;
 
-                    let run_id = run.id;
-                    for i in 0..60 {
-                        sleep(Duration::from_secs(3)).await;
-
-                        if let Ok(list) = fetch_runs(&token_v, 10).await {
-                            if let Some(r) = list.into_iter().find(|x| x.id == run_id) {
-                                run_url.set(r.html_url.clone());
-                                let st = r.status.clone().unwrap_or_else(|| "unknown".into());
-                                let conc = r.conclusion.clone().unwrap_or_else(|| "—".into());
-                                run_state.set(format!("status: {} • conclusion: {}", st, conc));
-
-                                let p = 75u8.saturating_add((i as u8).min(20));
-                                progress.set(p.min(95));
-
-                                if st == "completed" {
-                                    if conc == "success" {
-                                        progress.set(100);
-                                        status.set(format!("SUCCESS ✅ Deployed: {}", hostek_url(&plug)));
-                                    } else {
-                                        status.set(format!(
-                                            "Build finished with conclusion: {}. Open run logs: {}",
-                                            conc, r.html_url
-                                        ));
+                        match fetch_runs(&token_v, 12).await {
+                            Ok(runs) => {
+                                // choose newest workflow_dispatch on main
+                                let mut picked: Option<WorkflowRun> = None;
+                                for r in runs {
+                                    let is_main = r.head_branch.as_deref().unwrap_or("") == "main";
+                                    let is_dispatch = r.event.as_deref().unwrap_or("") == "workflow_dispatch";
+                                    if is_main && is_dispatch {
+                                        picked = Some(r);
+                                        break;
                                     }
-                                    busy.set(false);
-                                    return;
+                                }
+
+                                if let Some(r) = picked {
+                                    run_url.set(r.html_url.clone());
+                                    let st = r.status.clone().unwrap_or_else(|| "unknown".into());
+                                    let conc = r.conclusion.clone().unwrap_or_else(|| "—".into());
+                                    last_conclusion.set(conc.clone());
+
+                                    // progress heuristic
+                                    let p = if conc != "—" && conc != "" {
+                                        100
+                                    } else if st == "completed" {
+                                        100
+                                    } else {
+                                        // creep upward to 95 while running
+                                        let cur = *progress;
+                                        cur.saturating_add(5).min(95)
+                                    };
+                                    progress.set(p);
+
+                                    log.set(format!(
+                                        "{}\nRun: {}\nstatus: {} • conclusion: {}",
+                                        (*log),
+                                        r.id,
+                                        st,
+                                        conc
+                                    ));
+
+                                    if st == "completed" {
+                                        progress.set(100);
+                                        log.set(format!(
+                                            "{}\n\nDone ✅\nOpen: {}",
+                                            (*log),
+                                            (*deployed_url)
+                                        ));
+                                        break;
+                                    }
+                                } else {
+                                    log.set(format!("{}\nNo dispatch run found yet…", (*log)));
                                 }
                             }
+                            Err(e) => {
+                                log.set(format!("{}\nPoll error: {}", (*log), e));
+                            }
                         }
+
+                        if attempts >= 30 {
+                            log.set(format!(
+                                "{}\n\nStopped polling (timeout). You can open the run in GitHub and refresh the site.",
+                                (*log)
+                            ));
+                            break;
+                        }
+
+                        TimeoutFuture::new(3000).await;
                     }
 
-                    status.set(format!("Still running… Open run logs: {}", *run_url));
-                    progress.set(95);
                     busy.set(false);
                 }
             });
         })
     };
 
-    let editor_value = match &*tab {
-        EditTab::MainRs => (*main_rs).clone(),
-        EditTab::IndexHtml => (*index_html).clone(),
-        EditTab::StylesCss => (*styles_css).clone(),
-        EditTab::CargoToml => (*cargo_toml).clone(),
+    let on_copy_url = {
+        let deployed_url = deployed_url.clone();
+        let log = log.clone();
+        Callback::from(move |_| {
+            let url = (*deployed_url).clone();
+            if url.trim().is_empty() {
+                log.set(format!("{}\nNothing to copy yet.", (*log)));
+                return;
+            }
+            wasm_bindgen_futures::spawn_local({
+                let log = log.clone();
+                async move {
+                    match copy_to_clipboard(&url).await {
+                        Ok(_) => log.set(format!("{}\nCopied URL ✅", (*log))),
+                        Err(e) => log.set(format!("{}\nCopy failed: {}", (*log), e)),
+                    }
+                }
+            });
+        })
     };
+
+    let progress_width = format!("width:{}%;", *progress);
 
     html! {
       <>
@@ -781,93 +742,105 @@ fn app() -> Html {
         <main class="wrap" id="top">
           <section class="card">
             <div class="card-h">
-              <div class="badge">{ "Rust iPhone Compiler • Build Rust/Yew/WASM from your phone" }</div>
+              <div class="badge">{ "Rust iPhone Compiler • Build & deploy Yew apps from your phone" }</div>
               <h1 class="h1">{ "Rust iPhone Compiler" }</h1>
-              <p class="sub">{ "Fill in your app files → Build + Deploy → Hostek. No laptop required in the carpool lane." }</p>
+              <p class="sub">{ "You paste code on iPhone, tap Build + Deploy, and GitHub Actions compiles + uploads to Hostek." }</p>
             </div>
             <div class="card-b">
-              <label class="label">{ "GitHub token (PAT) — stored on this device" }</label>
+              <label class="sub" style="display:block; margin:0 0 6px; max-width:none;">{ "GitHub token (PAT) — stored on this device" }</label>
               <input class="input" value={(*token).clone()} oninput={on_token} placeholder="ghp_..." />
-              <div class="row">
+              <div class="row" style="margin-top:10px;">
                 <button class="btn btn2" onclick={on_save_token}>{ "Save token" }</button>
-                <button class="btn btn2" onclick={on_load_defaults}>{ "Load defaults" }</button>
               </div>
-
-              <div class="hr"></div>
-
-              <label class="label">{ "App Name (used for title + slugifies to plug-name automatically)" }</label>
-              <input class="input" value={(*app_name).clone()} oninput={on_app_name} placeholder="Rust iPhone Compiler" />
-
-              <div class="kv">
-                <div class="k">
-                  <div class="label">{ "plug-name (Hostek directory)" }</div>
-                  <div class="value mono">{ (*plug_name).clone() }</div>
-                </div>
-                <div class="k">
-                  <div class="label">{ "Hostek URL" }</div>
-                  <div class="value mono">{ (*deployed_url).clone() }</div>
-                </div>
-              </div>
-
-              <div class="row" style="margin-top:12px;">
-                <button class="btn" onclick={on_build_deploy} disabled={*busy}>{ if *busy { "Building…" } else { "Build + Deploy" } }</button>
-                <button class="btn btn2" onclick={on_copy_url}>{ "Copy URL" }</button>
-                <a class="btn btn2" href={(*deployed_url).clone()} target="_blank">{ "Open App" }</a>
-              </div>
-
-              <div class="progress">
-                <div style={format!("width:{}%", *progress)}></div>
-              </div>
-
-              if !run_url.is_empty() {
-                <div class="ok" style="margin-top:10px;">
-                  <div>{ "Workflow Run:" }</div>
-                  <a class="mono" href={(*run_url).clone()} target="_blank">{ (*run_url).clone() }</a>
-                  <div class="mono" style="margin-top:6px;">{ (*run_state).clone() }</div>
-                </div>
+              if !token_status.is_empty() {
+                <pre class="log">{ (*token_status).clone() }</pre>
               }
-
-              <pre class="log">{ (*status).clone() }</pre>
             </div>
           </section>
 
+          <div class="grid">
+            <section class="card">
+              <div class="card-h">
+                <h2 class="h2">{ "1) App Name → plug-name" }</h2>
+                <p class="sub">{ "Enter the app name. plug-name auto-generates (lowercase + hyphens). This is the Hostek folder." }</p>
+              </div>
+              <div class="card-b">
+                <label class="sub" style="display:block; margin:0 0 6px; max-width:none;">{ "App name" }</label>
+                <input class="input" value={(*app_name).clone()} oninput={on_app_name} placeholder="My Cool App" />
+
+                <div class="kv" style="margin-top:10px;">
+                  <div class="k">
+                    <div class="label">{ "plug-name (Hostek folder)" }</div>
+                    <div class="value mono">{ (*plug_name).clone() }</div>
+                  </div>
+                  <div class="k">
+                    <div class="label">{ "Hostek URL" }</div>
+                    <div class="value mono">{ format!("https://www.webhtml5.info/{}/", (*plug_name).clone()) }</div>
+                  </div>
+                </div>
+
+                <div class="row" style="margin-top:12px;">
+                  <button class="btn btn2" onclick={on_regen_templates}>{ "Generate templates" }</button>
+                </div>
+              </div>
+            </section>
+
+            <section class="card">
+              <div class="card-h">
+                <h2 class="h2">{ "2) Build + Deploy" }</h2>
+                <p class="sub">{ "Uploads files into plugs/[plug-name]/..., triggers the workflow, then polls status." }</p>
+              </div>
+              <div class="card-b">
+                <div class="progress" style="margin-top:6px;">
+                  <div style={progress_width}></div>
+                </div>
+
+                <div class="row" style="margin-top:12px;">
+                  <button class="btn" onclick={on_build_deploy} disabled={*busy}>
+                    { if *busy { "Working…" } else { "Build + Deploy" } }
+                  </button>
+                  <button class="btn btn2" onclick={on_copy_url} disabled={(*deployed_url).is_empty()}>
+                    { "Copy URL" }
+                  </button>
+                  <a class="btn btn2" href={(*deployed_url).clone()} target="_blank" style={ if (*deployed_url).is_empty() { "pointer-events:none;opacity:.55" } else { "" } }>
+                    { "Open URL" }
+                  </a>
+                </div>
+
+                if !run_url.is_empty() {
+                  <div class="ok">
+                    <div>{ "Workflow run:" }{" "}<a href={(*run_url).clone()} target="_blank">{ (*run_url).clone() }</a></div>
+                  </div>
+                }
+
+                <pre class="log">{ (*log).clone() }</pre>
+              </div>
+            </section>
+          </div>
+
           <section class="card" style="margin-top:14px;">
             <div class="card-h">
-              <h2 class="h2">{ "App files (editable)" }</h2>
-              <p class="sub">{ "You can use placeholders: {{TITLE}}, {{PLUG_NAME}}, {{PUBLIC_URL}}, {{HOSTEK_URL}}. They are auto-applied right before Build + Deploy." }</p>
-              <div class="tabs">
-                <button class={classes!("tab", (*tab == EditTab::MainRs).then_some("active"))}
-                  onclick={{
-                    let tab = tab.clone();
-                    Callback::from(move |_| tab.set(EditTab::MainRs))
-                  }}>{ "main.rs" }</button>
-
-                <button class={classes!("tab", (*tab == EditTab::IndexHtml).then_some("active"))}
-                  onclick={{
-                    let tab = tab.clone();
-                    Callback::from(move |_| tab.set(EditTab::IndexHtml))
-                  }}>{ "index.html" }</button>
-
-                <button class={classes!("tab", (*tab == EditTab::StylesCss).then_some("active"))}
-                  onclick={{
-                    let tab = tab.clone();
-                    Callback::from(move |_| tab.set(EditTab::StylesCss))
-                  }}>{ "styles.css" }</button>
-
-                <button class={classes!("tab", (*tab == EditTab::CargoToml).then_some("active"))}
-                  onclick={{
-                    let tab = tab.clone();
-                    Callback::from(move |_| tab.set(EditTab::CargoToml))
-                  }}>{ "Cargo.toml" }</button>
-              </div>
+              <h2 class="h2">{ "3) Paste your files" }</h2>
+              <p class="sub">{ "These four textareas are exactly what gets pushed into GitHub under plugs/[plug-name]/" }</p>
             </div>
+
             <div class="card-b">
-              <textarea class="ta" value={editor_value} oninput={on_edit} placeholder="// edit here…"></textarea>
+              <label class="sub" style="display:block; margin:0 0 6px; max-width:none;">{ "index.html" }</label>
+              <textarea class="ta" value={(*idx).clone()} oninput={on_idx}></textarea>
+
+              <label class="sub" style="display:block; margin:12px 0 6px; max-width:none;">{ "styles.css" }</label>
+              <textarea class="ta" value={(*css).clone()} oninput={on_css}></textarea>
+
+              <label class="sub" style="display:block; margin:12px 0 6px; max-width:none;">{ "Cargo.toml" }</label>
+              <textarea class="ta" value={(*toml).clone()} oninput={on_toml}></textarea>
+
+              <label class="sub" style="display:block; margin:12px 0 6px; max-width:none;">{ "src/main.rs" }</label>
+              <textarea class="ta" value={(*mainrs).clone()} oninput={on_mainrs}></textarea>
             </div>
           </section>
 
           <div class="footer">
-            <span>{ "webhtml5.info • Hostek plug deployer" }</span>
+            <span>{ "webhtml5.info • Hostek deployer" }</span>
             <a class="backtop" href="#top">{ "↑" }</a>
           </div>
         </main>
