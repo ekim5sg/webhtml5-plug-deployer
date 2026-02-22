@@ -115,15 +115,16 @@ fn app() -> Html {
     let runs_err = use_state(|| "".to_string());
     let runs_busy = use_state(|| false);
 
-    let app_dir = use_memo({
-        let plug_name = plug_name.clone();
-        move || format!("plugs/{}", (*plug_name).trim())
-    }, ());
+    // ✅ Yew 0.21: use_memo(deps, |deps| ...)
+    let app_dir = {
+        let plug = (*plug_name).clone();
+        use_memo(plug, |p| format!("plugs/{}", p.trim()))
+    };
 
-    let deployed_url = use_memo({
-        let plug_name = plug_name.clone();
-        move || format!("https://www.webhtml5.info/{}/", (*plug_name).trim())
-    }, ());
+    let deployed_url = {
+        let plug = (*plug_name).clone();
+        use_memo(plug, |p| format!("https://www.webhtml5.info/{}/", p.trim()))
+    };
 
     let on_token = {
         let token = token.clone();
@@ -237,12 +238,12 @@ fn app() -> Html {
     html! {
       <>
         <div class="bg" aria-hidden="true"></div>
-        <main class="wrap">
+        <main class="wrap" id="top">
           <section class="card">
             <div class="card-h">
               <div class="badge">{ "Rust iPhone Compiler • Mission Control" }</div>
               <h1 class="h1">{ "Deploy plugs from your phone" }</h1>
-              <p class="sub">{ "This does not compile Rust on-device. It triggers GitHub Actions builds and deploys to Hostek." }</p>
+              <p class="sub">{ "This triggers GitHub Actions builds and deploys to Hostek (no local Rust compilation on iPhone)." }</p>
             </div>
 
             <div class="card-b">
@@ -258,11 +259,12 @@ fn app() -> Html {
           <section class="card" style="margin-top:14px;">
             <div class="card-h">
               <h2 class="h2">{ "Deploy a plug" }</h2>
-              <p class="sub">{ "Enter plug_name. app_dir is auto: plugs/[plug_name]" }</p>
+              <p class="sub">{ "Enter plug_name. app_dir auto-fills as plugs/[plug_name]." }</p>
             </div>
             <div class="card-b">
               <label class="label">{ "plug_name" }</label>
               <input class="input" value={(*plug_name).clone()} oninput={on_plug} />
+
               <div class="kv">
                 <div class="k">
                   <div class="label">{ "app_dir" }</div>
@@ -285,7 +287,7 @@ fn app() -> Html {
           <section class="card" style="margin-top:14px;">
             <div class="card-h">
               <h2 class="h2">{ "Recent workflow runs" }</h2>
-              <p class="sub">{ "Shows the latest runs for deploy-hostek-plug.yml" }</p>
+              <p class="sub">{ "Latest runs for deploy-hostek-plug.yml" }</p>
             </div>
             <div class="card-b">
               if !runs_err.is_empty() {
