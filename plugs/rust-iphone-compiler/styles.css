@@ -27,7 +27,7 @@ body{
 
 *{ box-sizing:border-box; }
 a{ color:inherit; text-decoration:none; }
-button, input{ font:inherit; }
+button, input, select, textarea{ font:inherit; }
 
 .bg{
   position:fixed;
@@ -112,6 +112,7 @@ button, input{ font:inherit; }
   gap:10px;
   flex-wrap:wrap;
   margin-top:10px;
+  align-items:center;
 }
 
 .btn{
@@ -162,6 +163,22 @@ button, input{ font:inherit; }
   color: #cfd6ff;
 }
 
+.ta{
+  width:100%;
+  margin-top:10px;
+  padding:12px;
+  border-radius:14px;
+  border:1px solid rgba(255,255,255,.10);
+  background:rgba(0,0,0,.25);
+  color:var(--text);
+  outline:none;
+  min-height: 300px;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 .log{
   white-space:pre-wrap;
   margin-top:12px;
@@ -179,35 +196,57 @@ button, input{ font:inherit; }
   white-space:pre-wrap;
 }
 
-.runs{
-  display:grid;
-  gap:10px;
+.ok{
+  padding:10px 12px;
+  border:1px solid rgba(57,217,138,.28);
+  border-radius:14px;
+  background:rgba(57,217,138,.08);
+  color:#c8ffe6;
+  margin-bottom:10px;
+  white-space:pre-wrap;
 }
 
-.run{
-  display:block;
-  padding:12px;
-  border:1px solid var(--line);
-  border-radius:16px;
-  background:rgba(255,255,255,.03);
+.hr{
+  height:1px;
+  background:var(--line);
+  margin:14px 0;
 }
 
-.run-top{
+.tabs{
   display:flex;
-  justify-content:space-between;
-  gap:10px;
-  align-items:baseline;
   flex-wrap:wrap;
+  gap:8px;
+  margin-top:12px;
 }
 
-.run-name{
-  font-weight:750;
-  letter-spacing:-.01em;
+.tab{
+  padding:10px 12px;
+  border-radius:999px;
+  border:1px solid var(--line);
+  background:rgba(255,255,255,.03);
+  color:var(--text);
+  font-size:14px;
+  cursor:pointer;
 }
 
-.run-meta{
-  color:var(--muted);
-  font-size:13px;
+.tab.active{
+  background:rgba(255,255,255,.07);
+  border-color:rgba(255,255,255,.18);
+}
+
+.progress{
+  width:100%;
+  height:10px;
+  border-radius:999px;
+  border:1px solid var(--line);
+  background:rgba(255,255,255,.04);
+  overflow:hidden;
+  margin-top:10px;
+}
+.progress > div{
+  height:100%;
+  background:linear-gradient(90deg, rgba(124,92,255,.95), rgba(40,215,255,.70));
+  width:0%;
 }
 
 .footer{
