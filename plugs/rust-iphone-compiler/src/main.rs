@@ -2,20 +2,21 @@
 use gloo_net::http::Request;
 use gloo_storage::{LocalStorage, Storage};
 use gloo_timers::future::TimeoutFuture;
-use js_sys::{Function, Reflect};
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::JsCast;
-use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{HtmlInputElement, HtmlTextAreaElement};
 use yew::prelude::*;
 
-// ====== CONFIG ======
 const OWNER: &str = "ekim5sg";
 const REPO: &str = "webhtml5-plug-deployer";
 const WORKFLOW_FILE: &str = "deploy-hostek-plug.yml"; // .github/workflows/<file>
 
-// ====== GITHUB API TYPES ======
+const LS_PAT: &str = "gh_pat";
+const LS_LAST_RUN_ID: &str = "last_run_id";
+const LS_LAST_URL: &str = "last_deployed_url";
+const LS_LAST_PLUG: &str = "last_plug_name";
+
 #[derive(Serialize)]
 struct DispatchBody<'a> {
     #[serde(rename = "ref")]
@@ -41,14 +42,12 @@ struct WorkflowRun {
     html_url: String,
     status: Option<String>,
     conclusion: Option<String>,
-    head_branch: Option<String>,
-    event: Option<String>,
 }
 
-// Minimal response for "contents" API when we only need SHA
 #[derive(Deserialize, Debug)]
-struct ShaResp {
+struct ContentGetResp {
     sha: String,
+    content: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -60,34 +59,58 @@ struct PutContentBody<'a> {
     sha: Option<String>,
 }
 
-// ====== UTIL ======
+#[derive(Deserialize, Debug, Clone)]
+struct JobsResp {
+    jobs: Vec<Job>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+struct Job {
+    name: String,
+    status: Option<String>,
+    conclusion: Option<String>,
+    steps: Vec<JobStep>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+struct JobStep {
+    name: String,
+    status: Option<String>,
+    conclusion: Option<String>,
+}
+
 fn b64_encode(s: &str) -> String {
     base64::engine::general_purpose::STANDARD.encode(s.as_bytes())
 }
 
-// App name -> plug-name (lowercase + hyphen)
-fn slugify_app_name(app_name: &str) -> String {
+fn b64_decode(s: &str) -> Result<String, String> {
+    let cleaned = s.replace('\n', "");
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(cleaned.as_bytes())
+        .map_err(|e| format!("base64 decode failed: {e}"))?;
+    String::from_utf8(bytes).map_err(|e| format!("utf8 decode failed: {e}"))
+}
+
+fn sanitize_slug_from_app_name(app_name: &str) -> Option<String> {
+    let s = app_name.trim();
+    if s.is_empty() {
+        return None;
+    }
     let mut out = String::new();
     let mut prev_dash = false;
 
-    for ch in app_name.trim().chars() {
+    for ch in s.chars() {
         let c = ch.to_ascii_lowercase();
-        let is_ok = c.is_ascii_lowercase() || c.is_ascii_digit();
-
-        if is_ok {
+        if c.is_ascii_alphanumeric() {
             out.push(c);
             prev_dash = false;
-        } else if c.is_whitespace() || c == '-' || c == '_' || c == '.' || c == '/' {
+        } else if c.is_whitespace() || c == '-' || c == '_' {
             if !out.is_empty() && !prev_dash {
                 out.push('-');
                 prev_dash = true;
             }
         } else {
-            // ignore other characters, but treat as separator
-            if !out.is_empty() && !prev_dash {
-                out.push('-');
-                prev_dash = true;
-            }
+            // ignore other punctuation
         }
     }
 
@@ -96,29 +119,25 @@ fn slugify_app_name(app_name: &str) -> String {
     }
 
     if out.is_empty() {
-        "my-new-plug".to_string()
-    } else {
-        out
-    }
-}
-
-fn sanitize_plug_name(s: &str) -> Option<String> {
-    let p = s.trim();
-    if p.is_empty() {
-        return None;
-    }
-    if p.chars()
-        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
-    {
-        Some(p.to_string())
-    } else {
         None
+    } else {
+        Some(out)
     }
 }
 
-// ====== DEFAULT TEMPLATES (generated into the new plug) ======
+fn is_valid_plug_slug(s: &str) -> bool {
+    let p = s.trim();
+    !p.is_empty()
+        && p.chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+fn deployed_url(plug_slug: &str) -> String {
+    format!("https://www.webhtml5.info/{}/", plug_slug.trim())
+}
+
+// IMPORTANT: use r## so #0b1020 inside HTML doesn’t terminate.
 fn default_index_html(title: &str) -> String {
-    // r## so content="#0b1020" is safe
     format!(
         r##"<!doctype html>
 <html lang="en">
@@ -130,7 +149,7 @@ fn default_index_html(title: &str) -> String {
   <title>{}</title>
   <link data-trunk rel="css" href="styles.css" />
 </head>
-<body id="top">
+<body>
   <div id="app"></div>
   <link data-trunk rel="rust" />
 </body>
@@ -141,52 +160,69 @@ fn default_index_html(title: &str) -> String {
 }
 
 fn default_styles_css() -> String {
-    r#"/* MikeGyver Studio • hard-locked dark mode */
+    r#"/* MikeGyver Studio • hard-locked dark mode (no light sections) */
 :root{
   --bg0:#070a12;
   --bg1:#0b1020;
   --text:#e8ecff;
   --muted:#aab3d6;
   --line:rgba(255,255,255,.10);
+  --shadow:rgba(0,0,0,.55);
   --accent:#7c5cff;
   --accent2:#28d7ff;
   --radius:18px;
 }
-
-html,body{ height:100%; background:var(--bg0); color:var(--text); margin:0; }
-body{ font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
-*{ box-sizing:border-box; }
-
+html,body{height:100%;background:var(--bg0)!important;color:var(--text)!important;margin:0;}
+body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;overflow-x:hidden;}
+*{box-sizing:border-box;}
+a{color:inherit;text-decoration:none;}
+button,input,select,textarea{font:inherit;}
 .bg{
-  position:fixed; inset:-20%; z-index:-1;
+  position:fixed;inset:-20%;z-index:-1;
   background:
     radial-gradient(900px 600px at 15% 10%, rgba(124,92,255,.28), transparent 55%),
     radial-gradient(900px 600px at 85% 15%, rgba(40,215,255,.20), transparent 55%),
     linear-gradient(180deg, var(--bg0), var(--bg1));
+  filter:saturate(115%);
+}
+.wrap{width:min(1100px,calc(100% - 32px));margin:0 auto;padding:18px 0 90px;}
+.badge{display:inline-flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.04);box-shadow:0 18px 60px var(--shadow);font-size:13px;color:var(--muted);}
+.h1{margin:14px 0 6px;font-size:clamp(28px,4vw,44px);line-height:1.08;letter-spacing:-.02em;}
+.h2{margin:0 0 6px;font-size:18px;letter-spacing:-.01em;}
+.sub{margin:0;color:var(--muted);font-size:15px;line-height:1.5;max-width:70ch;}
+.grid{display:grid;gap:14px;grid-template-columns:1fr;margin-top:16px;}
+@media (min-width: 860px){.grid{grid-template-columns:1.2fr .8fr;}}
+.card{border:1px solid var(--line);background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.02));border-radius:var(--radius);box-shadow:0 22px 80px var(--shadow);overflow:hidden;}
+.card-h{padding:16px 16px 0;}
+.card-b{padding:0 16px 16px;}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+.btn{appearance:none;border:none;border-radius:14px;padding:12px 14px;font-weight:700;color:var(--text);
+  background:linear-gradient(135deg,rgba(124,92,255,.95),rgba(40,215,255,.70));
+  box-shadow:0 14px 30px rgba(124,92,255,.18);cursor:pointer;}
+.btn:disabled{opacity:.65;cursor:not-allowed;}
+.btn2{background:rgba(255,255,255,.05);border:1px solid var(--line);box-shadow:none;font-weight:650;}
+.input,.ta{width:100%;margin-top:6px;padding:12px;border-radius:14px;border:1px solid rgba(255,255,255,.10);background:rgba(0,0,0,.25);color:var(--text);outline:none;}
+.ta{min-height:200px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;line-height:1.4;}
+.kv{display:grid;grid-template-columns:1fr;gap:10px;margin-top:12px;}
+@media (min-width:700px){.kv{grid-template-columns:1fr 1fr;}}
+.k{padding:12px;border:1px solid var(--line);border-radius:16px;background:rgba(255,255,255,.03);}
+.k .label{color:var(--muted);font-size:12px;}
+.k .value{margin-top:4px;font-size:14px;}
+.log{white-space:pre-wrap;margin-top:12px;color:var(--muted);font-size:13px;}
+.warn{margin-top:10px;padding:10px 12px;border-radius:14px;border:1px solid rgba(255,209,102,.35);background:rgba(255,209,102,.08);color:var(--muted);white-space:pre-wrap;}
+.bar{
+  height:12px;border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,.04);
+  overflow:hidden;margin-top:10px;
+}
+.bar > div{height:100%;background:linear-gradient(135deg,rgba(124,92,255,.95),rgba(40,215,255,.70));width:0%;}
+.footer{margin-top:18px;color:var(--muted);font-size:13px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+.backtop{position:fixed;right:14px;bottom:14px;padding:11px 12px;border-radius:999px;border:1px solid var(--line);background:rgba(10,14,28,.72);color:var(--text);backdrop-filter:blur(10px);box-shadow:0 20px 80px var(--shadow);}
+"#.to_string()
 }
 
-main{
-  width:min(980px, calc(100% - 28px));
-  margin:0 auto;
-  padding:24px 0 80px;
-}
-
-.card{
-  border:1px solid var(--line);
-  background:rgba(255,255,255,.03);
-  border-radius:var(--radius);
-  padding:16px;
-}
-
-h1{ margin:0 0 8px; letter-spacing:-.02em; }
-p{ margin:0; color:var(--muted); line-height:1.45; }
-a{ color:var(--text); }
-"#
-    .to_string()
-}
-
-fn default_cargo_toml(plug_name: &str) -> String {
-    let pkg = plug_name.replace('-', "_");
+fn default_cargo_toml(crate_name: &str) -> String {
+    // crate name must be underscores, not hyphens
+    let pkg = crate_name.replace('-', "_");
     format!(
         r#"[package]
 name = "{pkg}"
@@ -200,27 +236,20 @@ yew = {{ version = "0.21", features = ["csr"] }}
     )
 }
 
-fn default_main_rs(title: &str, plug_name: &str) -> String {
-    let url = format!("https://www.webhtml5.info/{}/", plug_name);
-
+fn default_main_rs(title: &str, plug_slug: &str) -> String {
+    let url = deployed_url(plug_slug);
+    // format! needs doubled braces for literal braces inside the template
     format!(
         r#"use yew::prelude::*;
 
 #[function_component(App)]
 fn app() -> Html {{
     html! {{
-      <>
-        <div class="bg" aria-hidden="true"></div>
-        <main>
-          <div class="card">
-            <h1>{}</h1>
+        <main style="font-family:system-ui; padding:24px;">
+            <h1>{title}</h1>
             <p>{{"Plug scaffold is live. Replace this content with your real app."}}</p>
-            <p style="margin-top:10px;">
-              <a href={} target="_blank">{{"Open deployed URL"}}</a>
-            </p>
-          </div>
+            <p>{url}</p>
         </main>
-      </>
     }}
 }}
 
@@ -228,21 +257,102 @@ fn main() {{
     yew::Renderer::<App>::new().render();
 }}
 "#,
-        format!("{:?}", title.trim()),
-        format!("{:?}", url)
+        title = format!("{:?}", title.trim()),
+        url = format!("{:?}", url),
     )
 }
 
-// ====== GITHUB API HELPERS ======
-fn api_url_contents(path: &str) -> String {
-    format!(
+async fn gh_dispatch_workflow(token: &str, plug_slug: &str) -> Result<(), String> {
+    let url = format!(
+        "https://api.github.com/repos/{}/{}/actions/workflows/{}/dispatches",
+        OWNER, REPO, WORKFLOW_FILE
+    );
+
+    let app_dir = format!("plugs/{}", plug_slug);
+
+    let body = DispatchBody {
+        git_ref: "main",
+        inputs: DispatchInputs {
+            plug_name: plug_slug,
+            app_dir: &app_dir,
+            clean_remote: "false",
+        },
+    };
+
+    let resp = Request::post(&url)
+        .header("Authorization", &format!("Bearer {}", token))
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .header("User-Agent", "webhtml5-rust-iphone-compiler")
+        .json(&body)
+        .map_err(|e| e.to_string())?
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if resp.status() == 204 {
+        Ok(())
+    } else {
+        let st = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        Err(format!("Dispatch failed: {} {}", st, text))
+    }
+}
+
+async fn gh_fetch_runs(token: &str, per_page: u32) -> Result<Vec<WorkflowRun>, String> {
+    let url = format!(
+        "https://api.github.com/repos/{}/{}/actions/workflows/{}/runs?per_page={}",
+        OWNER, REPO, WORKFLOW_FILE, per_page
+    );
+
+    let resp = Request::get(&url)
+        .header("Authorization", &format!("Bearer {}", token))
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .header("User-Agent", "webhtml5-rust-iphone-compiler")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !resp.ok() {
+        let st = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(format!("Fetch runs failed: {} {}", st, text));
+    }
+
+    let json = resp.json::<RunsResp>().await.map_err(|e| e.to_string())?;
+    Ok(json.workflow_runs)
+}
+
+async fn gh_fetch_jobs(token: &str, run_id: u64) -> Result<JobsResp, String> {
+    let url = format!(
+        "https://api.github.com/repos/{}/{}/actions/runs/{}/jobs",
+        OWNER, REPO, run_id
+    );
+
+    let resp = Request::get(&url)
+        .header("Authorization", &format!("Bearer {}", token))
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .header("User-Agent", "webhtml5-rust-iphone-compiler")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !resp.ok() {
+        let st = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(format!("Fetch jobs failed: {} {}", st, text));
+    }
+
+    resp.json::<JobsResp>().await.map_err(|e| e.to_string())
+}
+
+async fn gh_get_file_sha(token: &str, path: &str) -> Result<Option<String>, String> {
+    let url = format!(
         "https://api.github.com/repos/{}/{}/contents/{}",
         OWNER, REPO, path
-    )
-}
-
-async fn github_get_file_sha(token: &str, path: &str) -> Result<Option<String>, String> {
-    let url = api_url_contents(path);
+    );
 
     let resp = Request::get(&url)
         .header("Authorization", &format!("Bearer {}", token))
@@ -256,25 +366,27 @@ async fn github_get_file_sha(token: &str, path: &str) -> Result<Option<String>, 
     if resp.status() == 404 {
         return Ok(None);
     }
-
     if !resp.ok() {
         let st = resp.status();
         let text = resp.text().await.unwrap_or_default();
         return Err(format!("GET sha failed {}: {}", st, text));
     }
 
-    let json = resp.json::<ShaResp>().await.map_err(|e| e.to_string())?;
+    let json = resp.json::<ContentGetResp>().await.map_err(|e| e.to_string())?;
     Ok(Some(json.sha))
 }
 
-async fn github_put_file(
+async fn gh_put_file(
     token: &str,
     path: &str,
     message: &str,
     content: &str,
     sha: Option<String>,
 ) -> Result<(), String> {
-    let url = api_url_contents(path);
+    let url = format!(
+        "https://api.github.com/repos/{}/{}/contents/{}",
+        OWNER, REPO, path
+    );
 
     let body = PutContentBody {
         message,
@@ -299,167 +411,240 @@ async fn github_put_file(
     } else {
         let st = resp.status();
         let text = resp.text().await.unwrap_or_default();
-        Err(format!("PUT {} failed {}: {}", path, st, text))
+        Err(format!("PUT {} failed: {} {}", path, st, text))
     }
 }
 
-async fn github_upsert_file(token: &str, path: &str, msg: &str, content: &str) -> Result<(), String> {
-    let sha = github_get_file_sha(token, path).await?;
-    github_put_file(token, path, msg, content, sha).await
-}
-
-async fn dispatch_workflow(token: &str, plug_name: &str, app_dir: &str) -> Result<(), String> {
-    let url = format!(
-        "https://api.github.com/repos/{}/{}/actions/workflows/{}/dispatches",
-        OWNER, REPO, WORKFLOW_FILE
-    );
-
-    let body = DispatchBody {
-        git_ref: "main",
-        inputs: DispatchInputs {
-            plug_name,
-            app_dir,
-            clean_remote: "false",
-        },
+async fn gh_upsert_file(
+    token: &str,
+    path: &str,
+    message: &str,
+    content: &str,
+) -> Result<(), String> {
+    let sha = match gh_get_file_sha(token, path).await {
+        Ok(s) => s,
+        Err(_) => None, // best-effort; still try create
     };
+    gh_put_file(token, path, message, content, sha).await
+}
 
-    let resp = Request::post(&url)
-        .header("Authorization", &format!("Bearer {}", token))
-        .header("Accept", "application/vnd.github+json")
-        .header("X-GitHub-Api-Version", "2022-11-28")
-        .header("User-Agent", "webhtml5-rust-iphone-compiler")
-        .json(&body)
-        .map_err(|e| e.to_string())?
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
+fn job_progress(jobs: &JobsResp) -> (u32, u32, String) {
+    let mut total: u32 = 0;
+    let mut done: u32 = 0;
+    let mut current = String::new();
 
-    if resp.status() == 204 {
-        Ok(())
+    for j in &jobs.jobs {
+        for s in &j.steps {
+            total += 1;
+            if s.status.as_deref() == Some("completed") {
+                done += 1;
+            } else if current.is_empty() {
+                current = format!("{} → {}", j.name, s.name);
+            }
+        }
+    }
+
+    if total == 0 {
+        (0, 0, "Waiting for job steps…".into())
+    } else if current.is_empty() && done == total {
+        (done, total, "Finalizing…".into())
     } else {
-        let st = resp.status();
-        let text = resp.text().await.unwrap_or_default();
-        Err(format!("Dispatch failed {}: {}", st, text))
+        (done, total, current)
     }
 }
 
-async fn fetch_runs(token: &str, per_page: u32) -> Result<Vec<WorkflowRun>, String> {
-    let url = format!(
-        "https://api.github.com/repos/{}/{}/actions/workflows/{}/runs?per_page={}",
-        OWNER, REPO, WORKFLOW_FILE, per_page
-    );
-
-    let resp = Request::get(&url)
-        .header("Authorization", &format!("Bearer {}", token))
-        .header("Accept", "application/vnd.github+json")
-        .header("X-GitHub-Api-Version", "2022-11-28")
-        .header("User-Agent", "webhtml5-rust-iphone-compiler")
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-
-    if !resp.ok() {
-        let st = resp.status();
-        let text = resp.text().await.unwrap_or_default();
-        return Err(format!("Fetch runs failed {}: {}", st, text));
-    }
-
-    let json = resp.json::<RunsResp>().await.map_err(|e| e.to_string())?;
-    Ok(json.workflow_runs)
-}
-
-// ====== CLIPBOARD ======
+/// Copy helper:
+/// 1) try Clipboard API writeText (promise)
+/// 2) fallback to textarea selection + execCommand("copy") if available
 async fn copy_to_clipboard(text: &str) -> Result<(), String> {
     let window = web_sys::window().ok_or("No window".to_string())?;
     let navigator = window.navigator();
 
-    // In your build, clipboard() returns Clipboard directly (not Option/Result)
+    // Clipboard API path
+    // NOTE: in web-sys, navigator.clipboard() returns Clipboard (not Result/Option)
+    // but it can still fail when calling write_text.
     let clipboard = navigator.clipboard();
-    let promise = clipboard.write_text(text);
-
-    if JsFuture::from(promise).await.is_ok() {
-        return Ok(());
+    let p = clipboard.write_text(text);
+    match JsFuture::from(p).await {
+        Ok(_) => return Ok(()),
+        Err(_) => {
+            // fallback below
+        }
     }
 
-    // Fallback: execCommand("copy") via JS Reflect
+    // Fallback path (older browsers)
     let document = window.document().ok_or("No document".to_string())?;
-    let body = document.body().ok_or("No document body".to_string())?;
-
-    let el = document
+    let ta = document
         .create_element("textarea")
-        .map_err(|_| "Failed to create textarea".to_string())?;
-
-    let ta: web_sys::HtmlTextAreaElement = el
+        .map_err(|_| "create_element failed".to_string())?
         .dyn_into::<web_sys::HtmlTextAreaElement>()
-        .map_err(|_| "Failed to cast textarea".to_string())?;
+        .map_err(|_| "dyn_into textarea failed".to_string())?;
 
     ta.set_value(text);
-    ta.set_attribute(
-        "style",
-        "position:fixed;left:-9999px;top:0;opacity:0;pointer-events:none;",
-    )
-    .map_err(|_| "Failed to set textarea style".to_string())?;
 
+    // keep offscreen
+    let style = ta.style();
+    style
+        .set_property("position", "fixed")
+        .map_err(|_| "style failed".to_string())?;
+    style
+        .set_property("left", "-10000px")
+        .map_err(|_| "style failed".to_string())?;
+    style
+        .set_property("top", "0")
+        .map_err(|_| "style failed".to_string())?;
+
+    let body = document.body().ok_or("No body".to_string())?;
     body.append_child(&ta)
-        .map_err(|_| "Failed to append textarea".to_string())?;
+        .map_err(|_| "append failed".to_string())?;
 
-    ta.focus().ok();
+    ta.focus().map_err(|_| "focus failed".to_string())?;
     ta.select();
 
-    let doc_js: &JsValue = document.as_ref();
-    let exec = Reflect::get(doc_js, &JsValue::from_str("execCommand"))
-        .map_err(|_| "execCommand not available".to_string())?;
+    // execCommand is deprecated but still widely supported
+    let ok = document.exec_command("copy").unwrap_or(false);
 
-    let ok = if exec.is_function() {
-        let f: Function = exec.dyn_into().map_err(|_| "execCommand not a function".to_string())?;
-        let result = f
-            .call1(doc_js, &JsValue::from_str("copy"))
-            .map_err(|_| "execCommand call failed".to_string())?;
-        result.as_bool().unwrap_or(false)
-    } else {
-        false
-    };
-
-    let _ = body.remove_child(&ta);
+    body.remove_child(&ta)
+        .map_err(|_| "remove failed".to_string())?;
 
     if ok {
         Ok(())
     } else {
-        Err("Copy failed (clipboard + fallback)".to_string())
+        Err("Copy failed. Try long-press select and copy.".into())
     }
 }
 
-// ====== APP ======
+/// Find the run that was created by our dispatch.
+/// Strategy:
+/// - baseline = highest run id we can see now
+/// - after dispatch, poll runs list until we find run id > baseline
+async fn wait_for_new_run_id(
+    token: &str,
+    baseline_run_id: u64,
+    timeout_ms: u32,
+) -> Result<WorkflowRun, String> {
+    let start = js_sys::Date::now();
+    let mut backoff_ms: u32 = 1500;
+
+    loop {
+        let now = js_sys::Date::now();
+        if (now - start) as u32 > timeout_ms {
+            return Err("Stopped polling (timeout). Tap Resume Polling.".into());
+        }
+
+        let runs = gh_fetch_runs(token, 8).await?;
+        if let Some(found) = runs.into_iter().find(|r| r.id > baseline_run_id) {
+            return Ok(found);
+        }
+
+        TimeoutFuture::new(backoff_ms).await;
+        backoff_ms = (backoff_ms as f32 * 1.35) as u32;
+        if backoff_ms > 12000 {
+            backoff_ms = 12000;
+        }
+    }
+}
+
+/// Poll the run’s jobs/steps for progress until completed.
+/// Soft timeout: returns Err(timeout) but preserves run id for Resume.
+async fn poll_run_progress(
+    token: &str,
+    run_id: u64,
+    timeout_ms: u32,
+    on_update: impl Fn(u8, String, Option<String>, Option<String>) + 'static,
+) -> Result<(Option<String>, Option<String>), String> {
+    let start = js_sys::Date::now();
+    let mut backoff_ms: u32 = 1600;
+
+    loop {
+        let now = js_sys::Date::now();
+        if (now - start) as u32 > timeout_ms {
+            return Err("Stopped polling (timeout). Tap Resume Polling.".into());
+        }
+
+        let jobs = gh_fetch_jobs(token, run_id).await?;
+        let (done, total, current) = job_progress(&jobs);
+        let pct = if total == 0 {
+            0
+        } else {
+            ((done as f32 / total as f32) * 100.0).round() as u8
+        };
+
+        // Determine overall state:
+        // If all jobs concluded, pick the "worst" conclusion. Otherwise in_progress.
+        let mut any_incomplete = false;
+        let mut any_failure = false;
+        let mut any_cancel = false;
+
+        for j in &jobs.jobs {
+            if j.status.as_deref() != Some("completed") {
+                any_incomplete = true;
+            }
+            if j.conclusion.as_deref() == Some("failure") {
+                any_failure = true;
+            }
+            if j.conclusion.as_deref() == Some("cancelled") {
+                any_cancel = true;
+            }
+        }
+
+        let status = if any_incomplete {
+            Some("in_progress".to_string())
+        } else {
+            Some("completed".to_string())
+        };
+
+        let conclusion = if any_incomplete {
+            None
+        } else if any_failure {
+            Some("failure".to_string())
+        } else if any_cancel {
+            Some("cancelled".to_string())
+        } else {
+            Some("success".to_string())
+        };
+
+        on_update(pct.min(100), current, status.clone(), conclusion.clone());
+
+        if status.as_deref() == Some("completed") {
+            return Ok((status, conclusion));
+        }
+
+        TimeoutFuture::new(backoff_ms).await;
+        backoff_ms = (backoff_ms as f32 * 1.25) as u32;
+        if backoff_ms > 14000 {
+            backoff_ms = 14000;
+        }
+    }
+}
+
 #[function_component(App)]
 fn app() -> Html {
-    // token
-    let token = use_state(|| LocalStorage::get::<String>("gh_pat").ok().unwrap_or_default());
-    let token_status = use_state(|| "".to_string());
+    // auth
+    let token = use_state(|| LocalStorage::get::<String>(LS_PAT).ok().unwrap_or_default());
+    let auth_status = use_state(|| "".to_string());
 
-    // main inputs
+    // app name -> slug
     let app_name = use_state(|| "Rust iPhone Compiler Demo".to_string());
-    let plug_name = use_state(|| slugify_app_name("Rust iPhone Compiler Demo"));
+    let plug_slug = use_state(|| "rust-iphone-compiler-demo".to_string());
 
     // file editors
-    let idx = use_state(|| default_index_html("Rust iPhone Compiler Demo"));
-    let css = use_state(|| default_styles_css());
-    let toml = use_state(|| default_cargo_toml(&slugify_app_name("Rust iPhone Compiler Demo")));
-    let mainrs = use_state(|| {
-        default_main_rs(
-            "Rust iPhone Compiler Demo",
-            &slugify_app_name("Rust iPhone Compiler Demo"),
-        )
-    });
+    let code_main = use_state(|| default_main_rs("Rust iPhone Compiler Demo", "rust-iphone-compiler-demo"));
+    let code_index = use_state(|| default_index_html("Rust iPhone Compiler Demo"));
+    let code_css = use_state(|| default_styles_css());
+    let code_toml = use_state(|| default_cargo_toml("rust-iphone-compiler-demo"));
 
-    // deploy status
+    // run tracking/progress
     let busy = use_state(|| false);
-    let progress = use_state(|| 0u8);
+    let progress_pct = use_state(|| 0u8);
+    let progress_line = use_state(|| "".to_string());
+    let run_status = use_state(|| "".to_string());
+    let run_conclusion = use_state(|| "".to_string());
+    let run_id = use_state(|| LocalStorage::get::<String>(LS_LAST_RUN_ID).ok().and_then(|s| s.parse::<u64>().ok()));
+    let run_url = use_state(|| LocalStorage::get::<String>(LS_LAST_URL).ok().unwrap_or_default());
     let log = use_state(|| "".to_string());
-    let deployed_url = use_state(|| "".to_string());
-    let run_url = use_state(|| "".to_string());
-    let last_conclusion = use_state(|| "".to_string());
 
-    // token handlers
+    // handlers: token
     let on_token = {
         let token = token.clone();
         Callback::from(move |e: InputEvent| {
@@ -467,279 +652,252 @@ fn app() -> Html {
             token.set(v);
         })
     };
-
     let on_save_token = {
         let token = token.clone();
-        let token_status = token_status.clone();
+        let auth_status = auth_status.clone();
         Callback::from(move |_| {
             let t = (*token).clone();
             if t.trim().is_empty() {
-                token_status.set("Token is empty.".into());
+                auth_status.set("Token is empty.".into());
                 return;
             }
-            let _ = LocalStorage::set("gh_pat", t);
-            token_status.set("Saved token to this device (localStorage).".into());
+            let _ = LocalStorage::set(LS_PAT, t);
+            auth_status.set("Saved token to this device (localStorage).".into());
         })
     };
 
+    // app name -> slug auto
     let on_app_name = {
         let app_name = app_name.clone();
-        let plug_name = plug_name.clone();
+        let plug_slug = plug_slug.clone();
+        let code_main = code_main.clone();
+        let code_index = code_index.clone();
+        let code_toml = code_toml.clone();
+
         Callback::from(move |e: InputEvent| {
             let v = e.target_unchecked_into::<HtmlInputElement>().value();
             app_name.set(v.clone());
-            plug_name.set(slugify_app_name(&v));
+
+            if let Some(slug) = sanitize_slug_from_app_name(&v) {
+                plug_slug.set(slug.clone());
+
+                // helpful: also refresh defaults for new plugs (user can edit after)
+                code_index.set(default_index_html(&v));
+                code_toml.set(default_cargo_toml(&slug));
+                code_main.set(default_main_rs(&v, &slug));
+            }
         })
     };
 
-    let on_regen_templates = {
-        let app_name = app_name.clone();
-        let plug_name = plug_name.clone();
-        let idx = idx.clone();
-        let css = css.clone();
-        let toml = toml.clone();
-        let mainrs = mainrs.clone();
-
-        Callback::from(move |_| {
-            let title = (*app_name).clone();
-            let plug = (*plug_name).clone();
-
-            idx.set(default_index_html(&title));
-            css.set(default_styles_css());
-            toml.set(default_cargo_toml(&plug));
-            mainrs.set(default_main_rs(&title, &plug));
-        })
-    };
-
-    // editors
-    let on_idx = {
-        let idx = idx.clone();
+    // editor handlers
+    let on_main = {
+        let code_main = code_main.clone();
         Callback::from(move |e: InputEvent| {
-            idx.set(e.target_unchecked_into::<HtmlTextAreaElement>().value())
+            let v = e.target_unchecked_into::<HtmlTextAreaElement>().value();
+            code_main.set(v);
+        })
+    };
+    let on_index = {
+        let code_index = code_index.clone();
+        Callback::from(move |e: InputEvent| {
+            let v = e.target_unchecked_into::<HtmlTextAreaElement>().value();
+            code_index.set(v);
         })
     };
     let on_css = {
-        let css = css.clone();
+        let code_css = code_css.clone();
         Callback::from(move |e: InputEvent| {
-            css.set(e.target_unchecked_into::<HtmlTextAreaElement>().value())
+            let v = e.target_unchecked_into::<HtmlTextAreaElement>().value();
+            code_css.set(v);
         })
     };
     let on_toml = {
-        let toml = toml.clone();
+        let code_toml = code_toml.clone();
         Callback::from(move |e: InputEvent| {
-            toml.set(e.target_unchecked_into::<HtmlTextAreaElement>().value())
-        })
-    };
-    let on_mainrs = {
-        let mainrs = mainrs.clone();
-        Callback::from(move |e: InputEvent| {
-            mainrs.set(e.target_unchecked_into::<HtmlTextAreaElement>().value())
+            let v = e.target_unchecked_into::<HtmlTextAreaElement>().value();
+            code_toml.set(v);
         })
     };
 
-    // Build + Deploy
+    // Copy URL button
+    let on_copy_url = {
+        let run_url = run_url.clone();
+        let log = log.clone();
+        Callback::from(move |_| {
+            let url = (*run_url).clone();
+            if url.trim().is_empty() {
+                log.set("No URL to copy yet.".into());
+                return;
+            }
+            wasm_bindgen_futures::spawn_local({
+                let log = log.clone();
+                async move {
+                    match copy_to_clipboard(&url).await {
+                        Ok(_) => log.set("Copied URL ✅".into()),
+                        Err(e) => log.set(format!("Copy failed: {}", e)),
+                    }
+                }
+            });
+        })
+    };
+
+    // Core: Build + Deploy
     let on_build_deploy = {
         let token = token.clone();
         let app_name = app_name.clone();
-        let plug_name = plug_name.clone();
-        let idx = idx.clone();
-        let css = css.clone();
-        let toml = toml.clone();
-        let mainrs = mainrs.clone();
+        let plug_slug = plug_slug.clone();
+
+        let code_main = code_main.clone();
+        let code_index = code_index.clone();
+        let code_css = code_css.clone();
+        let code_toml = code_toml.clone();
 
         let busy = busy.clone();
-        let progress = progress.clone();
         let log = log.clone();
-        let deployed_url = deployed_url.clone();
+        let progress_pct = progress_pct.clone();
+        let progress_line = progress_line.clone();
+        let run_status = run_status.clone();
+        let run_conclusion = run_conclusion.clone();
+        let run_id_state = run_id.clone();
         let run_url = run_url.clone();
-        let last_conclusion = last_conclusion.clone();
 
         Callback::from(move |_| {
             if *busy {
                 return;
             }
 
-            let token_v = (*token).clone();
-            if token_v.trim().is_empty() {
-                log.set("Missing GitHub token. Paste it and tap Save token.".into());
+            let token = (*token).clone();
+            if token.trim().is_empty() {
+                log.set("Missing GitHub token.".into());
                 return;
             }
 
-            let plug_v = (*plug_name).clone();
-            let Some(plug_ok) = sanitize_plug_name(&plug_v) else {
-                log.set("plug-name invalid. Use letters/numbers/hyphens only.".into());
-                return;
-            };
-
             let title = (*app_name).clone();
-            let idx_v = (*idx).clone();
-            let css_v = (*css).clone();
-            let toml_v = (*toml).clone();
-            let mainrs_v = (*mainrs).clone();
+            let slug = (*plug_slug).clone();
+            if !is_valid_plug_slug(&slug) {
+                log.set("Invalid plug-name slug. Use App Name field to auto-generate, or ensure lowercase letters/numbers/hyphens.".into());
+                return;
+            }
+
+            let base = format!("plugs/{}", slug);
+            let msg = format!("Rust iPhone Compiler: build {}", slug);
+
+            // Capture content
+            let mainrs = (*code_main).clone();
+            let idx = (*code_index).clone();
+            let css = (*code_css).clone();
+            let toml = (*code_toml).clone();
 
             busy.set(true);
-            progress.set(5);
-            deployed_url.set(format!("https://www.webhtml5.info/{}/", plug_ok));
-            run_url.set("".into());
-            last_conclusion.set("".into());
-            log.set(format!(
-                "Starting build for: {}\nplug-name: {}\n",
-                title.trim(),
-                plug_ok
-            ));
+            progress_pct.set(0);
+            progress_line.set("Starting…".into());
+            run_status.set("".into());
+            run_conclusion.set("".into());
+            log.set(format!("Preparing repo files for: {}\nplug: {}", title, slug));
 
             wasm_bindgen_futures::spawn_local({
                 let busy = busy.clone();
-                let progress = progress.clone();
                 let log = log.clone();
-                let deployed_url = deployed_url.clone();
+                let progress_pct = progress_pct.clone();
+                let progress_line = progress_line.clone();
+                let run_status = run_status.clone();
+                let run_conclusion = run_conclusion.clone();
+                let run_id_state = run_id_state.clone();
                 let run_url = run_url.clone();
-                let last_conclusion = last_conclusion.clone();
 
                 async move {
-                    let base = format!("plugs/{}", plug_ok);
-                    let msg = format!("Rust iPhone Compiler: update {}", plug_ok);
+                    // 1) baseline run id
+                    let baseline = match gh_fetch_runs(&token, 1).await {
+                        Ok(list) => list.first().map(|r| r.id).unwrap_or(0),
+                        Err(_) => 0,
+                    };
 
-                    progress.set(15);
-                    log.set(format!("{}\nUploading files to GitHub…", (*log)));
+                    // 2) upsert files (overwrite-safe via sha)
+                    progress_line.set("Uploading files…".into());
+                    let r1 = gh_upsert_file(&token, &format!("{}/index.html", base), &msg, &idx).await;
+                    let r2 = gh_upsert_file(&token, &format!("{}/styles.css", base), &msg, &css).await;
+                    let r3 = gh_upsert_file(&token, &format!("{}/Cargo.toml", base), &msg, &toml).await;
+                    let r4 = gh_upsert_file(&token, &format!("{}/src/main.rs", base), &msg, &mainrs).await;
 
-                    let r1 = github_upsert_file(
-                        &token_v,
-                        &format!("{}/index.html", base),
-                        &msg,
-                        &idx_v,
-                    )
-                    .await;
-                    let r2 = github_upsert_file(
-                        &token_v,
-                        &format!("{}/styles.css", base),
-                        &msg,
-                        &css_v,
-                    )
-                    .await;
-                    let r3 = github_upsert_file(
-                        &token_v,
-                        &format!("{}/Cargo.toml", base),
-                        &msg,
-                        &toml_v,
-                    )
-                    .await;
-                    let r4 = github_upsert_file(
-                        &token_v,
-                        &format!("{}/src/main.rs", base),
-                        &msg,
-                        &mainrs_v,
-                    )
-                    .await;
-
-                    if let Err(e) = r1 {
-                        log.set(format!("Upload error:\n{}", e));
-                        busy.set(false);
-                        return;
+                    let mut errs = vec![];
+                    for r in [r1, r2, r3, r4] {
+                        if let Err(e) = r {
+                            errs.push(e);
+                        }
                     }
-                    if let Err(e) = r2 {
-                        log.set(format!("Upload error:\n{}", e));
-                        busy.set(false);
-                        return;
-                    }
-                    if let Err(e) = r3 {
-                        log.set(format!("Upload error:\n{}", e));
-                        busy.set(false);
-                        return;
-                    }
-                    if let Err(e) = r4 {
-                        log.set(format!("Upload error:\n{}", e));
+                    if !errs.is_empty() {
+                        log.set(format!("Create/update file error:\n{}", errs.join("\n")));
                         busy.set(false);
                         return;
                     }
 
-                    progress.set(55);
+                    // 3) dispatch
+                    progress_line.set("Dispatching workflow…".into());
+                    if let Err(e) = gh_dispatch_workflow(&token, &slug).await {
+                        log.set(format!("Dispatch error: {}", e));
+                        busy.set(false);
+                        return;
+                    }
+
+                    // 4) find new run
+                    progress_line.set("Finding the run that was created…".into());
+                    let run = match wait_for_new_run_id(&token, baseline, 120_000).await {
+                        Ok(r) => r,
+                        Err(e) => {
+                            log.set(format!("{e}\nTip: Refresh runs or resume polling."));
+                            busy.set(false);
+                            return;
+                        }
+                    };
+
+                    let rid = run.id;
+                    let url = deployed_url(&slug);
+                    run_id_state.set(Some(rid));
+                    run_url.set(url.clone());
+
+                    let _ = LocalStorage::set(LS_LAST_RUN_ID, rid.to_string());
+                    let _ = LocalStorage::set(LS_LAST_URL, url.clone());
+                    let _ = LocalStorage::set(LS_LAST_PLUG, slug.clone());
+
                     log.set(format!(
-                        "{}\nFiles uploaded ✅\nDispatching workflow…",
-                        (*log)
+                        "Run attached ✅\nRun ID: {}\nGitHub run: {}\nDeployed URL: {}",
+                        rid, run.html_url, url
                     ));
 
-                    let app_dir = format!("plugs/{}", plug_ok);
-                    if let Err(e) = dispatch_workflow(&token_v, &plug_ok, &app_dir).await {
-                        log.set(format!("Dispatch error:\n{}", e));
-                        busy.set(false);
-                        return;
-                    }
+                    // 5) poll jobs/steps for progress
+                    let updater = {
+                        let progress_pct = progress_pct.clone();
+                        let progress_line = progress_line.clone();
+                        let run_status = run_status.clone();
+                        let run_conclusion = run_conclusion.clone();
+                        move |pct: u8, line: String, st: Option<String>, conc: Option<String>| {
+                            progress_pct.set(pct);
+                            progress_line.set(line);
+                            if let Some(s) = st { run_status.set(s); }
+                            if let Some(c) = conc { run_conclusion.set(c); }
+                        }
+                    };
 
-                    progress.set(70);
-                    log.set(format!(
-                        "{}\nWorkflow dispatched ✅\nPolling workflow runs…",
-                        (*log)
-                    ));
-
-                    let mut attempts = 0u32;
-                    loop {
-                        attempts += 1;
-
-                        match fetch_runs(&token_v, 12).await {
-                            Ok(runs) => {
-                                let mut picked: Option<WorkflowRun> = None;
-                                for r in runs {
-                                    let is_main = r.head_branch.as_deref().unwrap_or("") == "main";
-                                    let is_dispatch =
-                                        r.event.as_deref().unwrap_or("") == "workflow_dispatch";
-                                    if is_main && is_dispatch {
-                                        picked = Some(r);
-                                        break;
-                                    }
-                                }
-
-                                if let Some(r) = picked {
-                                    run_url.set(r.html_url.clone());
-                                    let st = r.status.clone().unwrap_or_else(|| "unknown".into());
-                                    let conc = r.conclusion.clone().unwrap_or_else(|| "—".into());
-                                    last_conclusion.set(conc.clone());
-
-                                    let p = if conc != "—" && !conc.is_empty() {
-                                        100
-                                    } else if st == "completed" {
-                                        100
-                                    } else {
-                                        let cur = *progress;
-                                        cur.saturating_add(5).min(95)
-                                    };
-                                    progress.set(p);
-
-                                    log.set(format!(
-                                        "{}\nRun: {}\nstatus: {} • conclusion: {}",
-                                        (*log),
-                                        r.id,
-                                        st,
-                                        conc
-                                    ));
-
-                                    if st == "completed" {
-                                        progress.set(100);
-                                        log.set(format!(
-                                            "{}\n\nDone ✅\nOpen: {}",
-                                            (*log),
-                                            (*deployed_url)
-                                        ));
-                                        break;
-                                    }
-                                } else {
-                                    log.set(format!("{}\nNo dispatch run found yet…", (*log)));
-                                }
-                            }
-                            Err(e) => {
-                                log.set(format!("{}\nPoll error: {}", (*log), e));
+                    progress_line.set("Polling progress…".into());
+                    match poll_run_progress(&token, rid, 1_200_000, updater).await {
+                        Ok((_st, conc)) => {
+                            let conc = conc.unwrap_or_else(|| "unknown".into());
+                            if conc == "success" {
+                                log.set(format!("✅ Success!\nDeployed: {}", url));
+                            } else {
+                                log.set(format!(
+                                    "Run completed with conclusion: {}\nOpen GitHub run for full logs if needed.\nDeployed URL: {}",
+                                    conc, url
+                                ));
                             }
                         }
-
-                        if attempts >= 30 {
+                        Err(e) => {
+                            // soft timeout – allow resume
                             log.set(format!(
-                                "{}\n\nStopped polling (timeout). You can open the run in GitHub and refresh the site.",
-                                (*log)
+                                "{}\nRun ID: {}\nYou can tap Resume Polling, or open the GitHub run link shown above.",
+                                e, rid
                             ));
-                            break;
                         }
-
-                        TimeoutFuture::new(3000).await;
                     }
 
                     busy.set(false);
@@ -748,28 +906,80 @@ fn app() -> Html {
         })
     };
 
-    let on_copy_url = {
-        let deployed_url = deployed_url.clone();
+    // Resume polling button (uses saved run id)
+    let on_resume = {
+        let token = token.clone();
+        let run_id_state = run_id.clone();
+        let busy = busy.clone();
+        let progress_pct = progress_pct.clone();
+        let progress_line = progress_line.clone();
+        let run_status = run_status.clone();
+        let run_conclusion = run_conclusion.clone();
         let log = log.clone();
+
         Callback::from(move |_| {
-            let url = (*deployed_url).clone();
-            if url.trim().is_empty() {
-                log.set(format!("{}\nNothing to copy yet.", (*log)));
+            if *busy {
                 return;
             }
+            let token = (*token).clone();
+            if token.trim().is_empty() {
+                log.set("Missing GitHub token.".into());
+                return;
+            }
+            let Some(rid) = *run_id_state else {
+                log.set("No saved run id. Build + Deploy first.".into());
+                return;
+            };
+
+            busy.set(true);
+            progress_line.set("Resuming polling…".into());
+            log.set(format!("Resuming run {}…", rid));
+
             wasm_bindgen_futures::spawn_local({
+                let busy = busy.clone();
+                let progress_pct = progress_pct.clone();
+                let progress_line = progress_line.clone();
+                let run_status = run_status.clone();
+                let run_conclusion = run_conclusion.clone();
                 let log = log.clone();
                 async move {
-                    match copy_to_clipboard(&url).await {
-                        Ok(_) => log.set(format!("{}\nCopied URL ✅", (*log))),
-                        Err(e) => log.set(format!("{}\nCopy failed: {}", (*log), e)),
+                    let updater = {
+                        let progress_pct = progress_pct.clone();
+                        let progress_line = progress_line.clone();
+                        let run_status = run_status.clone();
+                        let run_conclusion = run_conclusion.clone();
+                        move |pct: u8, line: String, st: Option<String>, conc: Option<String>| {
+                            progress_pct.set(pct);
+                            progress_line.set(line);
+                            if let Some(s) = st { run_status.set(s); }
+                            if let Some(c) = conc { run_conclusion.set(c); }
+                        }
+                    };
+
+                    match poll_run_progress(&token, rid, 1_200_000, updater).await {
+                        Ok((_st, conc)) => {
+                            let conc = conc.unwrap_or_else(|| "unknown".into());
+                            log.set(format!("Run complete: {}", conc));
+                        }
+                        Err(e) => log.set(e),
                     }
+
+                    busy.set(false);
                 }
             });
         })
     };
 
-    let progress_width = format!("width:{}%;", *progress);
+    // UI derived
+    let slug_preview = (*plug_slug).clone();
+    let url_preview = if is_valid_plug_slug(&slug_preview) {
+        deployed_url(&slug_preview)
+    } else {
+        "".into()
+    };
+    let pct = *progress_pct;
+    let pct_style = format!("width:{}%;", pct.min(100));
+    let can_go = !(*run_url).trim().is_empty();
 
     html! {
       <>
@@ -778,18 +988,23 @@ fn app() -> Html {
         <main class="wrap" id="top">
           <section class="card">
             <div class="card-h">
-              <div class="badge">{ "Rust iPhone Compiler • Build & deploy Yew apps from your phone" }</div>
-              <h1 class="h1">{ "Rust iPhone Compiler" }</h1>
-              <p class="sub">{ "You paste code on iPhone, tap Build + Deploy, and GitHub Actions compiles + uploads to Hostek." }</p>
+              <div class="badge">{ "Rust iPhone Compiler • Build + Deploy from iPhone" }</div>
+              <h1 class="h1">{ "Compile Rust Yew WASM on GitHub, deploy to Hostek" }</h1>
+              <p class="sub">{ "Enter App Name, edit files, tap Build + Deploy. Progress is tracked by run id + job steps (no GitHub required)." }</p>
             </div>
             <div class="card-b">
               <label class="sub" style="display:block; margin:0 0 6px; max-width:none;">{ "GitHub token (PAT) — stored on this device" }</label>
               <input class="input" value={(*token).clone()} oninput={on_token} placeholder="ghp_..." />
               <div class="row" style="margin-top:10px;">
                 <button class="btn btn2" onclick={on_save_token}>{ "Save token" }</button>
+                <button class="btn btn2" onclick={on_resume} disabled={*busy}>{ "Resume Polling" }</button>
+                <button class="btn btn2" onclick={on_copy_url} disabled={!can_go}>{ "Copy URL" }</button>
+                if can_go {
+                  <a class="btn btn2" href={(*run_url).clone()} target="_blank">{ "Go to deployed app" }</a>
+                }
               </div>
-              if !token_status.is_empty() {
-                <pre class="log">{ (*token_status).clone() }</pre>
+              if !(*auth_status).is_empty() {
+                <pre class="log">{ (*auth_status).clone() }</pre>
               }
             </div>
           </section>
@@ -797,86 +1012,72 @@ fn app() -> Html {
           <div class="grid">
             <section class="card">
               <div class="card-h">
-                <h2 class="h2">{ "1) App Name → plug-name" }</h2>
-                <p class="sub">{ "Enter the app name. plug-name auto-generates (lowercase + hyphens). This is the Hostek folder." }</p>
+                <h2 class="h2">{ "1) App Name → plug-name slug" }</h2>
+                <p class="sub">{ "Slug is the Hostek top-level directory. It auto-generates from the App Name." }</p>
               </div>
               <div class="card-b">
-                <label class="sub" style="display:block; margin:0 0 6px; max-width:none;">{ "App name" }</label>
-                <input class="input" value={(*app_name).clone()} oninput={on_app_name} placeholder="My Cool App" />
+                <label class="sub" style="display:block; margin:0 0 6px; max-width:none;">{ "App Name" }</label>
+                <input class="input" value={(*app_name).clone()} oninput={on_app_name} placeholder="Rust iPhone Compiler Demo" />
 
-                <div class="kv" style="margin-top:10px;">
+                <div class="kv">
                   <div class="k">
-                    <div class="label">{ "plug-name (Hostek folder)" }</div>
-                    <div class="value mono">{ (*plug_name).clone() }</div>
+                    <div class="label">{ "plug-name (auto)" }</div>
+                    <div class="value">{ slug_preview }</div>
                   </div>
                   <div class="k">
                     <div class="label">{ "Hostek URL" }</div>
-                    <div class="value mono">{ format!("https://www.webhtml5.info/{}/", (*plug_name).clone()) }</div>
+                    <div class="value">{ url_preview }</div>
                   </div>
                 </div>
 
                 <div class="row" style="margin-top:12px;">
-                  <button class="btn btn2" onclick={on_regen_templates}>{ "Generate templates" }</button>
+                  <button class="btn" onclick={on_build_deploy} disabled={*busy}>{ if *busy { "Working…" } else { "Build + Deploy" } }</button>
                 </div>
+
+                <div class="bar"><div style={pct_style}></div></div>
+                <pre class="log">
+{ format!(
+"Progress: {}%\nCurrent: {}\nRun status: {}\nConclusion: {}\nSaved run id: {}\nSaved URL: {}",
+pct,
+(*progress_line).clone(),
+(*run_status).clone(),
+(*run_conclusion).clone(),
+match *run_id { Some(x) => x.to_string(), None => "—".into() },
+(*run_url).clone()
+) }
+                </pre>
+
+                <pre class="log">{ (*log).clone() }</pre>
               </div>
             </section>
 
             <section class="card">
               <div class="card-h">
-                <h2 class="h2">{ "2) Build + Deploy" }</h2>
-                <p class="sub">{ "Uploads files into plugs/[plug-name]/..., triggers the workflow, then polls status." }</p>
+                <h2 class="h2">{ "2) Edit files" }</h2>
+                <p class="sub">{ "These are written into plugs/[plug-name]/ and compiled by your workflow." }</p>
               </div>
               <div class="card-b">
-                <div class="progress" style="margin-top:6px;">
-                  <div style={progress_width}></div>
+                <label class="sub" style="display:block; margin:0 0 6px; max-width:none;">{ "Cargo.toml" }</label>
+                <textarea class="ta" value={(*code_toml).clone()} oninput={on_toml}></textarea>
+
+                <label class="sub" style="display:block; margin:12px 0 6px; max-width:none;">{ "index.html" }</label>
+                <textarea class="ta" value={(*code_index).clone()} oninput={on_index}></textarea>
+
+                <label class="sub" style="display:block; margin:12px 0 6px; max-width:none;">{ "styles.css" }</label>
+                <textarea class="ta" value={(*code_css).clone()} oninput={on_css}></textarea>
+
+                <label class="sub" style="display:block; margin:12px 0 6px; max-width:none;">{ "src/main.rs" }</label>
+                <textarea class="ta" value={(*code_main).clone()} oninput={on_main}></textarea>
+
+                <div class="warn">
+{ "Tip: If a build fails, the Jobs/Steps view will usually show the failing step name here — without opening GitHub." }
                 </div>
-
-                <div class="row" style="margin-top:12px;">
-                  <button class="btn" onclick={on_build_deploy} disabled={*busy}>
-                    { if *busy { "Working…" } else { "Build + Deploy" } }
-                  </button>
-                  <button class="btn btn2" onclick={on_copy_url} disabled={(*deployed_url).is_empty()}>
-                    { "Copy URL" }
-                  </button>
-                  <a class="btn btn2" href={(*deployed_url).clone()} target="_blank" style={ if (*deployed_url).is_empty() { "pointer-events:none;opacity:.55" } else { "" } }>
-                    { "Open URL" }
-                  </a>
-                </div>
-
-                if !run_url.is_empty() {
-                  <div class="ok">
-                    <div>{ "Workflow run:" }{" "}<a href={(*run_url).clone()} target="_blank">{ (*run_url).clone() }</a></div>
-                  </div>
-                }
-
-                <pre class="log">{ (*log).clone() }</pre>
               </div>
             </section>
           </div>
 
-          <section class="card" style="margin-top:14px;">
-            <div class="card-h">
-              <h2 class="h2">{ "3) Paste your files" }</h2>
-              <p class="sub">{ "These four textareas are exactly what gets pushed into GitHub under plugs/[plug-name]/" }</p>
-            </div>
-
-            <div class="card-b">
-              <label class="sub" style="display:block; margin:0 0 6px; max-width:none;">{ "index.html" }</label>
-              <textarea class="ta" value={(*idx).clone()} oninput={on_idx}></textarea>
-
-              <label class="sub" style="display:block; margin:12px 0 6px; max-width:none;">{ "styles.css" }</label>
-              <textarea class="ta" value={(*css).clone()} oninput={on_css}></textarea>
-
-              <label class="sub" style="display:block; margin:12px 0 6px; max-width:none;">{ "Cargo.toml" }</label>
-              <textarea class="ta" value={(*toml).clone()} oninput={on_toml}></textarea>
-
-              <label class="sub" style="display:block; margin:12px 0 6px; max-width:none;">{ "src/main.rs" }</label>
-              <textarea class="ta" value={(*mainrs).clone()} oninput={on_mainrs}></textarea>
-            </div>
-          </section>
-
           <div class="footer">
-            <span>{ "webhtml5.info • Hostek deployer" }</span>
+            <span>{ "webhtml5.info • Rust iPhone Compiler" }</span>
             <a class="backtop" href="#top">{ "↑" }</a>
           </div>
         </main>
