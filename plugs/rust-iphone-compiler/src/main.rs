@@ -41,16 +41,14 @@ struct WorkflowRun {
     html_url: String,
     status: Option<String>,
     conclusion: Option<String>,
-    created_at: Option<String>,
     head_branch: Option<String>,
     event: Option<String>,
 }
 
+// Minimal response for "contents" API when we only need SHA
 #[derive(Deserialize, Debug)]
-struct ContentGetResp {
+struct ShaResp {
     sha: String,
-    content: Option<String>,
-    encoding: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -65,20 +63,6 @@ struct PutContentBody<'a> {
 // ====== UTIL ======
 fn b64_encode(s: &str) -> String {
     base64::engine::general_purpose::STANDARD.encode(s.as_bytes())
-}
-fn b64_decode(s: &str) -> Result<String, String> {
-    let cleaned = s.replace('\n', "");
-    let bytes = base64::engine::general_purpose::STANDARD
-        .decode(cleaned.as_bytes())
-        .map_err(|e| format!("base64 decode failed: {}", e))?;
-    String::from_utf8(bytes).map_err(|e| format!("utf8 decode failed: {}", e))
-}
-
-fn iso_short(s: &Option<String>) -> String {
-    s.as_deref()
-        .unwrap_or("")
-        .replace('T', " ")
-        .replace('Z', "")
 }
 
 // App name -> plug-name (lowercase + hyphen)
@@ -99,7 +83,7 @@ fn slugify_app_name(app_name: &str) -> String {
                 prev_dash = true;
             }
         } else {
-            // ignore other characters
+            // ignore other characters, but treat as separator
             if !out.is_empty() && !prev_dash {
                 out.push('-');
                 prev_dash = true;
@@ -157,7 +141,6 @@ fn default_index_html(title: &str) -> String {
 }
 
 fn default_styles_css() -> String {
-    // You can swap this later with your canonical storypack css if you want.
     r#"/* MikeGyver Studio • hard-locked dark mode */
 :root{
   --bg0:#070a12;
@@ -220,7 +203,6 @@ yew = {{ version = "0.21", features = ["csr"] }}
 fn default_main_rs(title: &str, plug_name: &str) -> String {
     let url = format!("https://www.webhtml5.info/{}/", plug_name);
 
-    // Not using format strings that contain html! braces inside format! except via {:?} strings.
     format!(
         r#"use yew::prelude::*;
 
@@ -281,7 +263,7 @@ async fn github_get_file_sha(token: &str, path: &str) -> Result<Option<String>, 
         return Err(format!("GET sha failed {}: {}", st, text));
     }
 
-    let json = resp.json::<ContentGetResp>().await.map_err(|e| e.to_string())?;
+    let json = resp.json::<ShaResp>().await.map_err(|e| e.to_string())?;
     Ok(Some(json.sha))
 }
 
@@ -386,7 +368,7 @@ async fn fetch_runs(token: &str, per_page: u32) -> Result<Vec<WorkflowRun>, Stri
     Ok(json.workflow_runs)
 }
 
-// ====== CLIPBOARD (works with your web-sys shape) ======
+// ====== CLIPBOARD ======
 async fn copy_to_clipboard(text: &str) -> Result<(), String> {
     let window = web_sys::window().ok_or("No window".to_string())?;
     let navigator = window.navigator();
@@ -399,7 +381,7 @@ async fn copy_to_clipboard(text: &str) -> Result<(), String> {
         return Ok(());
     }
 
-    // Fallback: execCommand("copy") via JS Reflect (no web-sys exec_command needed)
+    // Fallback: execCommand("copy") via JS Reflect
     let document = window.document().ok_or("No document".to_string())?;
     let body = document.body().ok_or("No document body".to_string())?;
 
@@ -462,7 +444,12 @@ fn app() -> Html {
     let idx = use_state(|| default_index_html("Rust iPhone Compiler Demo"));
     let css = use_state(|| default_styles_css());
     let toml = use_state(|| default_cargo_toml(&slugify_app_name("Rust iPhone Compiler Demo")));
-    let mainrs = use_state(|| default_main_rs("Rust iPhone Compiler Demo", &slugify_app_name("Rust iPhone Compiler Demo")));
+    let mainrs = use_state(|| {
+        default_main_rs(
+            "Rust iPhone Compiler Demo",
+            &slugify_app_name("Rust iPhone Compiler Demo"),
+        )
+    });
 
     // deploy status
     let busy = use_state(|| false);
@@ -472,7 +459,7 @@ fn app() -> Html {
     let run_url = use_state(|| "".to_string());
     let last_conclusion = use_state(|| "".to_string());
 
-    // ===== handlers =====
+    // token handlers
     let on_token = {
         let token = token.clone();
         Callback::from(move |e: InputEvent| {
@@ -525,10 +512,30 @@ fn app() -> Html {
     };
 
     // editors
-    let on_idx = { let idx = idx.clone(); Callback::from(move |e: InputEvent| idx.set(e.target_unchecked_into::<HtmlTextAreaElement>().value())) };
-    let on_css = { let css = css.clone(); Callback::from(move |e: InputEvent| css.set(e.target_unchecked_into::<HtmlTextAreaElement>().value())) };
-    let on_toml = { let toml = toml.clone(); Callback::from(move |e: InputEvent| toml.set(e.target_unchecked_into::<HtmlTextAreaElement>().value())) };
-    let on_mainrs = { let mainrs = mainrs.clone(); Callback::from(move |e: InputEvent| mainrs.set(e.target_unchecked_into::<HtmlTextAreaElement>().value())) };
+    let on_idx = {
+        let idx = idx.clone();
+        Callback::from(move |e: InputEvent| {
+            idx.set(e.target_unchecked_into::<HtmlTextAreaElement>().value())
+        })
+    };
+    let on_css = {
+        let css = css.clone();
+        Callback::from(move |e: InputEvent| {
+            css.set(e.target_unchecked_into::<HtmlTextAreaElement>().value())
+        })
+    };
+    let on_toml = {
+        let toml = toml.clone();
+        Callback::from(move |e: InputEvent| {
+            toml.set(e.target_unchecked_into::<HtmlTextAreaElement>().value())
+        })
+    };
+    let on_mainrs = {
+        let mainrs = mainrs.clone();
+        Callback::from(move |e: InputEvent| {
+            mainrs.set(e.target_unchecked_into::<HtmlTextAreaElement>().value())
+        })
+    };
 
     // Build + Deploy
     let on_build_deploy = {
@@ -548,7 +555,9 @@ fn app() -> Html {
         let last_conclusion = last_conclusion.clone();
 
         Callback::from(move |_| {
-            if *busy { return; }
+            if *busy {
+                return;
+            }
 
             let token_v = (*token).clone();
             if token_v.trim().is_empty() {
@@ -573,7 +582,11 @@ fn app() -> Html {
             deployed_url.set(format!("https://www.webhtml5.info/{}/", plug_ok));
             run_url.set("".into());
             last_conclusion.set("".into());
-            log.set(format!("Starting build for: {}\nplug-name: {}\n", title.trim(), plug_ok));
+            log.set(format!(
+                "Starting build for: {}\nplug-name: {}\n",
+                title.trim(),
+                plug_ok
+            ));
 
             wasm_bindgen_futures::spawn_local({
                 let busy = busy.clone();
@@ -590,11 +603,34 @@ fn app() -> Html {
                     progress.set(15);
                     log.set(format!("{}\nUploading files to GitHub…", (*log)));
 
-                    // Upsert the 4 files
-                    let r1 = github_upsert_file(&token_v, &format!("{}/index.html", base), &msg, &idx_v).await;
-                    let r2 = github_upsert_file(&token_v, &format!("{}/styles.css", base), &msg, &css_v).await;
-                    let r3 = github_upsert_file(&token_v, &format!("{}/Cargo.toml", base), &msg, &toml_v).await;
-                    let r4 = github_upsert_file(&token_v, &format!("{}/src/main.rs", base), &msg, &mainrs_v).await;
+                    let r1 = github_upsert_file(
+                        &token_v,
+                        &format!("{}/index.html", base),
+                        &msg,
+                        &idx_v,
+                    )
+                    .await;
+                    let r2 = github_upsert_file(
+                        &token_v,
+                        &format!("{}/styles.css", base),
+                        &msg,
+                        &css_v,
+                    )
+                    .await;
+                    let r3 = github_upsert_file(
+                        &token_v,
+                        &format!("{}/Cargo.toml", base),
+                        &msg,
+                        &toml_v,
+                    )
+                    .await;
+                    let r4 = github_upsert_file(
+                        &token_v,
+                        &format!("{}/src/main.rs", base),
+                        &msg,
+                        &mainrs_v,
+                    )
+                    .await;
 
                     if let Err(e) = r1 {
                         log.set(format!("Upload error:\n{}", e));
@@ -618,7 +654,10 @@ fn app() -> Html {
                     }
 
                     progress.set(55);
-                    log.set(format!("{}\nFiles uploaded ✅\nDispatching workflow…", (*log)));
+                    log.set(format!(
+                        "{}\nFiles uploaded ✅\nDispatching workflow…",
+                        (*log)
+                    ));
 
                     let app_dir = format!("plugs/{}", plug_ok);
                     if let Err(e) = dispatch_workflow(&token_v, &plug_ok, &app_dir).await {
@@ -633,18 +672,17 @@ fn app() -> Html {
                         (*log)
                     ));
 
-                    // Poll latest run (best-effort single-user mode)
                     let mut attempts = 0u32;
                     loop {
                         attempts += 1;
 
                         match fetch_runs(&token_v, 12).await {
                             Ok(runs) => {
-                                // choose newest workflow_dispatch on main
                                 let mut picked: Option<WorkflowRun> = None;
                                 for r in runs {
                                     let is_main = r.head_branch.as_deref().unwrap_or("") == "main";
-                                    let is_dispatch = r.event.as_deref().unwrap_or("") == "workflow_dispatch";
+                                    let is_dispatch =
+                                        r.event.as_deref().unwrap_or("") == "workflow_dispatch";
                                     if is_main && is_dispatch {
                                         picked = Some(r);
                                         break;
@@ -657,13 +695,11 @@ fn app() -> Html {
                                     let conc = r.conclusion.clone().unwrap_or_else(|| "—".into());
                                     last_conclusion.set(conc.clone());
 
-                                    // progress heuristic
-                                    let p = if conc != "—" && conc != "" {
+                                    let p = if conc != "—" && !conc.is_empty() {
                                         100
                                     } else if st == "completed" {
                                         100
                                     } else {
-                                        // creep upward to 95 while running
                                         let cur = *progress;
                                         cur.saturating_add(5).min(95)
                                     };
