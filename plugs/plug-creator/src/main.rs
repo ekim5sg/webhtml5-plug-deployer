@@ -283,45 +283,58 @@ async fn github_put_file(
         OWNER, REPO, file_path
     );
 
-    let sha = match github_get_sha(token, file_path).await? {
-        Some(existing_sha) => {
-            if overwrite {
-                Some(existing_sha)
-            } else {
-                return Err(format!(
-                    "File already exists (overwrite disabled): {}",
-                    file_path
-                ));
+    // We'll try twice. If the SHA changed between GET and PUT, GitHub returns 409.
+    // On 409, refetch sha and retry once.
+    for attempt in 1..=2 {
+        let sha = match github_get_sha(token, file_path).await? {
+            Some(existing_sha) => {
+                if overwrite {
+                    Some(existing_sha)
+                } else {
+                    return Err(format!(
+                        "File already exists (overwrite disabled): {}",
+                        file_path
+                    ));
+                }
             }
+            None => None,
+        };
+
+        let body = PutContentBody {
+            message,
+            content: b64(content),
+            branch: "main",
+            sha,
+        };
+
+        let resp = Request::put(&url)
+            .header("Authorization", &format!("Bearer {}", token))
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .header("User-Agent", "webhtml5-plug-creator")
+            .json(&body)
+            .map_err(|e| e.to_string())?
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if resp.ok() {
+            return Ok(());
         }
-        None => None,
-    };
 
-    let body = PutContentBody {
-        message,
-        content: b64(content),
-        branch: "main",
-        sha,
-    };
-
-    let resp = Request::put(&url)
-        .header("Authorization", &format!("Bearer {}", token))
-        .header("Accept", "application/vnd.github+json")
-        .header("X-GitHub-Api-Version", "2022-11-28")
-        .header("User-Agent", "webhtml5-plug-creator")
-        .json(&body)
-        .map_err(|e| e.to_string())?
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-
-    if resp.ok() {
-        Ok(())
-    } else {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
-        Err(format!("PUT {} failed: {} {}", file_path, status, text))
+
+        // 409 means: sha mismatch / file changed since we fetched sha
+        if status == 409 && attempt == 1 {
+            // retry once after refetching sha
+            continue;
+        }
+
+        return Err(format!("PUT {} failed: {} {}", file_path, status, text));
     }
+
+    Err(format!("PUT {} failed: sha mismatch after retry", file_path))
 }
 
 async fn github_dispatch(token: &str, plug_name: &str) -> Result<(), String> {
