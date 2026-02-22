@@ -1,4 +1,3 @@
-// src/main.rs
 use gloo::console::log;
 use gloo_file::callbacks::FileReader;
 use gloo_file::File;
@@ -63,11 +62,11 @@ fn app() -> Html {
         }
     };
 
-    // Autosave inventory to LocalStorage
+    // Autosave inventory to LocalStorage whenever inventory changes
     {
         let inventory = inventory.clone();
         let push_log = push_log.clone();
-        use_effect_with(*inventory, move |_| {
+        use_effect_with((*inventory).clone(), move |_| {
             if let Err(e) = LocalStorage::set(STORAGE_KEY, &*inventory) {
                 push_log(&format!("⚠️ Failed to save to LocalStorage: {e:?}"));
             }
@@ -135,7 +134,7 @@ fn app() -> Html {
         Callback::from(move |_| {
             let mut s = (*draft).clone();
 
-            // Minimal validation/cleanup
+            // Minimal cleanup
             s.title = s.title.trim().to_string();
             s.length_mmss = s.length_mmss.trim().to_string();
             s.cover_art_url = s.cover_art_url.trim().to_string();
@@ -366,7 +365,7 @@ fn app() -> Html {
                                 {"Lyrics (optional)"}
                             </label>
                             <textarea
-                                value={draft_song.lyrics}
+                                value={draft_song.lyrics.clone()}
                                 oninput={on_change_lyrics}
                                 rows="8"
                                 style="width:100%; border:1px solid #e5e5e5; border-radius:10px; padding:10px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;"
@@ -494,7 +493,7 @@ fn load_from_storage() -> Inventory {
 
 fn download_text_file(filename: &str, content: &str) -> Result<(), String> {
     let mut bag = BlobPropertyBag::new();
-    bag.type_("application/json");
+    bag.set_type("application/json");
 
     let parts = js_sys::Array::new();
     parts.push(&wasm_bindgen::JsValue::from_str(content));
@@ -507,21 +506,34 @@ fn download_text_file(filename: &str, content: &str) -> Result<(), String> {
 
     let window = web_sys::window().ok_or("No window".to_string())?;
     let document = window.document().ok_or("No document".to_string())?;
-    let a = document
+
+    // Create <a> and treat it as Element for set_attribute
+    let a_el = document
         .create_element("a")
-        .map_err(|_| "Could not create <a> element".to_string())?
+        .map_err(|_| "Could not create <a> element".to_string())?;
+
+    a_el.set_attribute("href", &url).map_err(|_| "Could not set href".to_string())?;
+    a_el
+        .set_attribute("download", filename)
+        .map_err(|_| "Could not set download".to_string())?;
+    a_el
+        .set_attribute("style", "display:none")
+        .map_err(|_| "Could not set style".to_string())?;
+
+    let body = document.body().ok_or("No body".to_string())?;
+    body.append_child(&a_el)
+        .map_err(|_| "Could not append link".to_string())?;
+
+    // Click it (cast to HtmlAnchorElement to call click())
+    let a: web_sys::HtmlAnchorElement = a_el
         .dyn_into::<web_sys::HtmlAnchorElement>()
         .map_err(|_| "Could not cast to HtmlAnchorElement".to_string())?;
 
-    a.set_href(&url);
-    a.set_download(filename);
-    a.style().set_property("display", "none").ok();
-
-    let body = document.body().ok_or("No body".to_string())?;
-    body.append_child(&a)
-        .map_err(|_| "Could not append link".to_string())?;
     a.click();
-    body.remove_child(&a).ok();
+    // Remove from DOM
+    let a_el: web_sys::Element = a.dyn_into::<web_sys::Element>()
+        .map_err(|_| "Could not cast anchor back to Element".to_string())?;
+    body.remove_child(&a_el).ok();
 
     Url::revoke_object_url(&url).ok();
     log!(format!("Downloaded file: {filename}"));
@@ -529,18 +541,14 @@ fn download_text_file(filename: &str, content: &str) -> Result<(), String> {
 }
 
 fn btn() -> String {
-    "padding:10px 12px; border-radius:10px; border:1px solid #ddd; background:#fff; cursor:pointer;"
-        .into()
+    "padding:10px 12px; border-radius:10px; border:1px solid #ddd; background:#fff; cursor:pointer;".into()
 }
 fn btn_primary() -> String {
-    "padding:10px 12px; border-radius:10px; border:1px solid #1b66ff; background:#1b66ff; color:#fff; cursor:pointer;"
-        .into()
+    "padding:10px 12px; border-radius:10px; border:1px solid #1b66ff; background:#1b66ff; color:#fff; cursor:pointer;".into()
 }
 fn btn_danger() -> String {
-    "padding:10px 12px; border-radius:10px; border:1px solid #d33; background:#fff; color:#d33; cursor:pointer;"
-        .into()
+    "padding:10px 12px; border-radius:10px; border:1px solid #d33; background:#fff; color:#d33; cursor:pointer;".into()
 }
 fn btn_disabled() -> String {
-    "padding:10px 12px; border-radius:10px; border:1px solid #ddd; background:#f3f3f3; color:#888; cursor:not-allowed;"
-        .into()
+    "padding:10px 12px; border-radius:10px; border:1px solid #ddd; background:#f3f3f3; color:#888; cursor:not-allowed;".into()
 }
