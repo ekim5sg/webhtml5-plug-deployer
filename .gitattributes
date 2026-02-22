@@ -1,2 +1,7 @@
-﻿# Normalize TOML files to LF and UTF-8 (no BOM)
 *.toml text eol=lf working-tree-encoding=UTF-8
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.rs   text eol=lf
+*.css  text eol=lf
+*.html text eol=lf
+*.ps1  text eol=crlf
