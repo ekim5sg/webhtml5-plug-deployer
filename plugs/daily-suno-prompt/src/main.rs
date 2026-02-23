@@ -10,14 +10,14 @@ struct Prompt {
     lyrics: String,
 }
 
-fn get_db_json_from_dom() -> Result<String, String> {
+fn try_get_db_json_from_dom() -> Result<String, String> {
     let win = window().ok_or("no window")?;
     let doc = win.document().ok_or("no document")?;
     let el = doc
         .get_element_by_id("prompt-db")
         .ok_or("missing <script id=\"prompt-db\" type=\"application/json\">")?;
 
-    // Reliable for script tags: inner_html() returns the raw text inside the node.
+    // inner_html() is reliable for script tag text
     let s = el.inner_html();
     if s.trim().is_empty() {
         Err("prompt-db element found but empty".to_string())
@@ -26,6 +26,7 @@ fn get_db_json_from_dom() -> Result<String, String> {
     }
 }
 
+// Deterministic "daily" index based on YYYY-MM-DD.
 fn daily_index(date_ymd: &str, len: usize) -> usize {
     let mut hash: u64 = 1469598103934665603;
     for b in date_ymd.as_bytes() {
@@ -83,30 +84,52 @@ fn app() -> Html {
     let toast = use_state(|| Option::<String>::None);
     let today = use_state(today_ymd);
 
-    // Load prompts once from embedded JSON.
+    // ✅ Robust loader: retry until prompt-db exists (up to ~3 seconds)
     {
         let prompts = prompts.clone();
         let toast = toast.clone();
         use_effect_with((), move |_| {
-            match get_db_json_from_dom() {
-                Ok(json) => match serde_json::from_str::<Vec<Prompt>>(&json) {
-                    Ok(v) => prompts.set(v),
-                    Err(e) => toast.set(Some(format!("JSON parse error: {e}"))),
-                },
-                Err(e) => toast.set(Some(format!("JSON load error: {e}"))),
-            }
+            spawn_local(async move {
+                // Try 60 times with 50ms delay ~= 3 seconds
+                for attempt in 1..=60 {
+                    match try_get_db_json_from_dom() {
+                        Ok(json) => {
+                            match serde_json::from_str::<Vec<Prompt>>(&json) {
+                                Ok(v) => {
+                                    prompts.set(v);
+                                    return;
+                                }
+                                Err(e) => {
+                                    toast.set(Some(format!("JSON parse error: {e}")));
+                                    return;
+                                }
+                            }
+                        }
+                        Err(_e) => {
+                            // Still not in DOM — wait a bit and retry
+                            gloo::timers::future::TimeoutFuture::new(50).await;
+                            if attempt == 60 {
+                                toast.set(Some(
+                                    "JSON load error: prompt-db not found after retries. Move it into <head>."
+                                        .to_string(),
+                                ));
+                            }
+                        }
+                    }
+                }
+            });
+
             || ()
         });
     }
 
-    // Choose initial prompt after load.
+    // Choose initial prompt after load
     {
         let idx = idx.clone();
         let today = (*today).clone();
         use_effect_with(prompts.clone(), move |p| {
             if !p.is_empty() {
                 let mut chosen: Option<usize> = None;
-
                 if let Some(saved) = ls_get("daily_suno_prompt:last_index") {
                     if let Ok(n) = saved.parse::<usize>() {
                         if n < p.len() {
@@ -114,7 +137,6 @@ fn app() -> Html {
                         }
                     }
                 }
-
                 let di = chosen.unwrap_or_else(|| daily_index(&today, p.len()));
                 idx.set(di);
             }
@@ -331,7 +353,7 @@ fn app() -> Html {
                     }
 
                     <div class="footer">
-                      {"If you ever move to an external prompts.json, Trunk can copy it via data-trunk rel=\"copy-file\"."}
+                      {"Now robust against head-loader timing. JSON can live in head or body."}
                     </div>
                 </div>
             </div>
@@ -348,51 +370,9 @@ fn app() -> Html {
 }
 
 fn main() {
-    // ✅ CRITICAL: mount into #app so the JSON <script> remains in the DOM.
+    // Mount into #app (keeps other DOM nodes intact)
     let win = window().expect("no window");
     let doc = win.document().expect("no document");
-    let root = doc
-        .get_element_by_id("app")
-        .expect("missing <div id=\"app\"></div> in index.html");
-
+    let root = doc.get_element_by_id("app").expect("missing <div id=\"app\"></div>");
     yew::Renderer::<App>::with_root(root).render();
-}                              <div class="label">{"Lyrics"}</div>
-                                    <button onclick={c_lyrics}>{"Copy"}</button>
-                                  </div>
-                                  <textarea value={p.lyrics} />
-                                </div>
-                              </div>
-                            }
-                        } else {
-                            html! {
-                              <div class="field">
-                                <div class="field-head">
-                                  <div class="label">{"Status"}</div>
-                                  <button disabled=true>{"Copy"}</button>
-                                </div>
-                                <textarea value={"Loading database…"} />
-                              </div>
-                            }
-                        }
-                    }
-
-                    <div class="footer">
-                      {"Tip: If you ever move to an external prompts.json, Trunk can copy it too via data-trunk rel=\"copy-file\"."}
-                    </div>
-                </div>
-            </div>
-
-            {
-                if let Some(msg) = (*toast).clone() {
-                    html!{ <div class="toast">{msg}</div> }
-                } else {
-                    html!{}
-                }
-            }
-        </div>
-    }
-}
-
-fn main() {
-    yew::Renderer::<App>::new().render();
 }
