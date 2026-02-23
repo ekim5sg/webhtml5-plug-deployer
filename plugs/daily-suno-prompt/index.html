@@ -6,7 +6,9 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <meta name="description" content="Daily random Suno song prompt — title, style, lyrics with copy buttons." />
   <title>Daily Suno Prompt • MikeGyver Studio</title>
-  <link rel="stylesheet" href="styles.css" />
+
+  <!-- IMPORTANT: Let Trunk manage & copy the CSS into dist/ -->
+  <link data-trunk rel="css" href="styles.css" />
 
   <!-- Let Trunk build & inject the wasm/js bundle -->
   <link data-trunk rel="rust" data-wasm-opt="z" />
@@ -15,11 +17,7 @@
 <body>
   <div id="app"></div>
 
-  <!--
-    “Database” JSON (20 items).
-    In this 4-file constraint, we embed it here.
-    If/when your pipeline allows a 5th file, move this JSON into ./prompts.json and fetch it.
-  -->
+  <!-- Embedded JSON “database” (20 items). -->
   <script id="prompt-db" type="application/json">
 [
   {
