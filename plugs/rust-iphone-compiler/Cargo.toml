@@ -8,16 +8,16 @@ yew = { version = "0.21", features = ["csr"] }
 
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
-js-sys = "0.3"
 
 gloo-net = "0.6"
 gloo-storage = "0.3"
-gloo-timers = { version = "0.3", features = ["futures"] }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 base64 = "0.22"
+
+js-sys = "0.3"
 
 web-sys = { version = "0.3", features = [
   "Window",
@@ -26,6 +26,7 @@ web-sys = { version = "0.3", features = [
   "Document",
   "HtmlInputElement",
   "HtmlTextAreaElement",
-  "HtmlTextAreaElement",
-  "CssStyleDeclaration"
+  "HtmlElement",
+  "Element",
+  "Node",
 ] }
