@@ -1,7 +1,6 @@
 use serde::Deserialize;
-use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::{spawn_local, JsFuture};
-use web_sys::{window, HtmlTextAreaElement};
+use web_sys::window;
 use yew::prelude::*;
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -27,12 +26,18 @@ fn daily_index(date_ymd: &str, len: usize) -> usize {
         hash ^= *b as u64;
         hash = hash.wrapping_mul(1099511628211);
     }
-    if len == 0 { 0 } else { (hash as usize) % len }
+    if len == 0 {
+        0
+    } else {
+        (hash as usize) % len
+    }
 }
 
 /// Random index using JS Math.random()
 fn random_index(len: usize) -> usize {
-    if len == 0 { return 0; }
+    if len == 0 {
+        return 0;
+    }
     let r = js_sys::Math::random(); // [0,1)
     let idx = (r * (len as f64)) as usize;
     idx.min(len.saturating_sub(1))
@@ -41,7 +46,7 @@ fn random_index(len: usize) -> usize {
 fn today_ymd() -> String {
     let d = js_sys::Date::new_0();
     let y = d.get_full_year() as i32;
-    let m = (d.get_month() + 1) as i32; // ✅ FIX E0277 (u32 + 1, not + 1.0)
+    let m = (d.get_month() + 1) as i32; // 0-based => +1 (u32 + 1 is OK)
     let day = d.get_date() as i32;
 
     format!("{:04}-{:02}-{:02}", y, m, day)
@@ -65,8 +70,7 @@ async fn copy_to_clipboard(text: String) -> Result<(), String> {
     let win = window().ok_or("no window")?;
     let nav = win.navigator();
 
-    // ✅ In your build, navigator.clipboard() returns Clipboard (not Option),
-    // so we must NOT call ok_or on it.
+    // In this environment, navigator.clipboard() returns Clipboard (not Option)
     let clipboard = nav.clipboard();
 
     JsFuture::from(clipboard.write_text(&text))
@@ -109,22 +113,25 @@ fn app() -> Html {
         let prompts = prompts.clone();
         let idx = idx.clone();
         let today = (*today).clone();
+
+        // IMPORTANT: Do NOT return early with `return || ();`
+        // Just run logic, then return a single cleanup closure at the end.
         use_effect_with(prompts, move |p| {
             if !p.is_empty() {
+                let mut chosen: Option<usize> = None;
+
                 if let Some(saved) = ls_get("daily_suno_prompt:last_index") {
                     if let Ok(n) = saved.parse::<usize>() {
                         if n < p.len() {
-                            idx.set(n);
-                            return || ();
+                            chosen = Some(n);
                         }
                     }
                 }
 
-                let di = daily_index(&today, p.len());
+                let di = chosen.unwrap_or_else(|| daily_index(&today, p.len()));
                 idx.set(di);
             }
 
-            // ✅ Always return exactly one cleanup closure type (fixes E0308)
             || ()
         });
     }
@@ -138,7 +145,8 @@ fn app() -> Html {
             let toast2 = toast.clone();
             gloo::timers::callback::Timeout::new(1800, move || {
                 toast2.set(None);
-            }).forget();
+            })
+            .forget();
         })
     };
 
@@ -162,7 +170,9 @@ fn app() -> Html {
         let prompts = prompts.clone();
         let idx = idx.clone();
         Callback::from(move |_| {
-            if prompts.is_empty() { return; }
+            if prompts.is_empty() {
+                return;
+            }
             let len = prompts.len();
             let cur = *idx;
             let n = if cur == 0 { len - 1 } else { cur - 1 };
@@ -175,7 +185,9 @@ fn app() -> Html {
         let prompts = prompts.clone();
         let idx = idx.clone();
         Callback::from(move |_| {
-            if prompts.is_empty() { return; }
+            if prompts.is_empty() {
+                return;
+            }
             let len = prompts.len();
             let cur = *idx;
             let n = (cur + 1) % len;
