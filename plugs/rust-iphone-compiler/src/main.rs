@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use web_sys::{HtmlInputElement, HtmlTextAreaElement};
 use yew::prelude::*;
 
-// ✅ NEW imports (for clipboard + reflection fallback)
+// clipboard + reflection fallback
 use js_sys::{Function, Reflect};
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::{spawn_local, JsFuture};
@@ -48,7 +48,7 @@ struct WorkflowRun {
 struct ContentGetResp {
     sha: String,
     content: Option<String>,
-    encoding: Option<String>,
+    // NOTE: removed `encoding` because we never read it and it triggers a dead_code warning.
 }
 
 #[derive(Serialize)]
@@ -360,7 +360,6 @@ yew = {{ version = "0.21", features = ["csr"] }}
 fn scaffold_main_rs(title: &str, plug_name: &str) -> String {
     let url = format!("https://www.webhtml5.info/{}/", plug_name);
 
-    // inside format!(): literal braces must be doubled
     format!(
         r#"use yew::prelude::*;
 
@@ -530,30 +529,26 @@ fn sanitize_plug_name(s: &str) -> Option<String> {
     }
 }
 
-//
-// ✅ FIXED copy_to_clipboard: Clipboard API returns Promise (not Result) + reflection fallback
-//
 async fn copy_to_clipboard(text: &str) -> Result<(), String> {
-    let window = web_sys::window().ok_or_else(|| "window not available".to_string())?;
+    let window = web_sys::window().ok_or("window not available".to_string())?;
 
-    // 1) Modern Clipboard API (preferred) — write_text returns Promise
+    // 1) Modern Clipboard API (returns a Promise, not a Result)
     {
         let clipboard = window.navigator().clipboard();
         let promise = clipboard.write_text(text);
         if JsFuture::from(promise).await.is_ok() {
             return Ok(());
         }
-        // if it fails, fall back
     }
 
     // 2) Fallback: hidden textarea + document["execCommand"]("copy") via reflection
     let document = window
         .document()
-        .ok_or_else(|| "document not available".to_string())?;
+        .ok_or("document not available".to_string())?;
 
     let body = document
         .body()
-        .ok_or_else(|| "document.body not available".to_string())?;
+        .ok_or("document.body not available".to_string())?;
 
     let ta_el = document
         .create_element("textarea")
@@ -662,13 +657,30 @@ fn app() -> Html {
             plug_name.set(v);
         })
     };
+
+    // ✅ Copy URL (uses copy_to_clipboard so it isn't "never used")
+    let on_copy_deployed_url = {
+        let status = status.clone();
+        let url = (*deployed_url).clone();
+        Callback::from(move |_: MouseEvent| {
+            let status = status.clone();
+            let url = url.clone();
+            spawn_local(async move {
+                match copy_to_clipboard(&url).await {
+                    Ok(_) => status.set("Copied URL ✅".into()),
+                    Err(e) => status.set(format!("Copy failed: {}", e)),
+                }
+            });
+        })
+    };
+
     let on_deploy = {
         let token = token.clone();
         let plug_name = plug_name.clone();
         let status = status.clone();
         let busy = busy.clone();
 
-        Callback::from(move |_| {
+        Callback::from(move |_: MouseEvent| {
             if *busy {
                 return;
             }
@@ -713,7 +725,7 @@ fn app() -> Html {
         let runs_err = runs_err.clone();
         let runs_busy = runs_busy.clone();
 
-        Callback::from(move |_| {
+        Callback::from(move |_: MouseEvent| {
             let token = (*token).clone();
             if token.trim().is_empty() {
                 runs_err.set("Enter token first to view workflow runs.".into());
@@ -760,7 +772,7 @@ fn app() -> Html {
         let create_status = create_status.clone();
         let create_busy = create_busy.clone();
 
-        Callback::from(move |_| {
+        Callback::from(move |_: MouseEvent| {
             if *create_busy {
                 return;
             }
@@ -884,7 +896,7 @@ fn app() -> Html {
         let sha_map = sha_map.clone();
         let edit_file = edit_file.clone();
 
-        Callback::from(move |_| {
+        Callback::from(move |_: MouseEvent| {
             if *edit_busy {
                 return;
             }
@@ -936,7 +948,7 @@ fn app() -> Html {
         let edit_busy = edit_busy.clone();
         let sha_map = sha_map.clone();
 
-        Callback::from(move |_| {
+        Callback::from(move |_: MouseEvent| {
             if *edit_busy {
                 return;
             }
@@ -997,14 +1009,6 @@ fn app() -> Html {
         })
     };
 
-    // ✅ FIX: onclick needs MouseEvent callback, but on_save_file is Callback<()>
-    let on_save_file_click = {
-        let on_save_file = on_save_file.clone();
-        Callback::from(move |_| {
-            on_save_file.emit(());
-        })
-    };
-
     let on_save_and_deploy = {
         let on_save_file = on_save_file.clone();
         let token = token.clone();
@@ -1012,8 +1016,8 @@ fn app() -> Html {
         let status = status.clone();
         let busy = busy.clone();
 
-        Callback::from(move |_| {
-            on_save_file.emit(());
+        Callback::from(move |_: MouseEvent| {
+            on_save_file.emit(MouseEvent::new("click").unwrap());
 
             let token = (*token).clone();
             let plug = (*edit_plug).clone();
@@ -1103,12 +1107,7 @@ fn app() -> Html {
 
                 <div class="row" style="margin-top:12px;">
                   <button class="btn btn2" onclick={on_load_file} disabled={*edit_busy}>{ if *edit_busy { "Loading…" } else { "Load" } }</button>
-
-                  // ✅ FIXED: Save button uses MouseEvent wrapper
-                  <button class="btn btn2" onclick={on_save_file_click} disabled={*edit_busy}>
-                    { if *edit_busy { "Saving…" } else { "Save" } }
-                  </button>
-
+                  <button class="btn btn2" onclick={on_save_file} disabled={*edit_busy}>{ if *edit_busy { "Saving…" } else { "Save" } }</button>
                   <button class="btn" onclick={on_save_and_deploy} disabled={*edit_busy || *busy}>{ "Save + Deploy" }</button>
                 </div>
 
@@ -1158,9 +1157,14 @@ fn app() -> Html {
                 </div>
               </div>
 
-              <button class="btn" onclick={on_deploy} disabled={*busy} style="margin-top:12px;">
-                { if *busy { "Working…" } else { "Deploy plug" } }
-              </button>
+              <div class="row" style="margin-top:12px;">
+                <button class="btn" onclick={on_deploy} disabled={*busy}>
+                  { if *busy { "Working…" } else { "Deploy plug" } }
+                </button>
+                <button class="btn btn2" onclick={on_copy_deployed_url}>
+                  { "Copy URL" }
+                </button>
+              </div>
 
               <pre class="log">{ (*status).clone() }</pre>
             </div>
