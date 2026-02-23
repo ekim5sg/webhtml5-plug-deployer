@@ -531,29 +531,29 @@ fn sanitize_plug_name(s: &str) -> Option<String> {
 }
 
 //
-// ✅ UPDATED copy_to_clipboard: no Document.exec_command binding required
+// ✅ FIXED copy_to_clipboard: Clipboard API returns Promise (not Result) + reflection fallback
 //
 async fn copy_to_clipboard(text: &str) -> Result<(), String> {
-    let window = web_sys::window().ok_or("window not available".to_string())?;
+    let window = web_sys::window().ok_or_else(|| "window not available".to_string())?;
 
-    // 1) Modern Clipboard API (preferred)
+    // 1) Modern Clipboard API (preferred) — write_text returns Promise
     {
         let clipboard = window.navigator().clipboard();
-        if let Ok(promise) = clipboard.write_text(text) {
-            if JsFuture::from(promise).await.is_ok() {
-                return Ok(());
-            }
+        let promise = clipboard.write_text(text);
+        if JsFuture::from(promise).await.is_ok() {
+            return Ok(());
         }
+        // if it fails, fall back
     }
 
     // 2) Fallback: hidden textarea + document["execCommand"]("copy") via reflection
     let document = window
         .document()
-        .ok_or("document not available".to_string())?;
+        .ok_or_else(|| "document not available".to_string())?;
 
     let body = document
         .body()
-        .ok_or("document.body not available".to_string())?;
+        .ok_or_else(|| "document.body not available".to_string())?;
 
     let ta_el = document
         .create_element("textarea")
@@ -997,6 +997,14 @@ fn app() -> Html {
         })
     };
 
+    // ✅ FIX: onclick needs MouseEvent callback, but on_save_file is Callback<()>
+    let on_save_file_click = {
+        let on_save_file = on_save_file.clone();
+        Callback::from(move |_| {
+            on_save_file.emit(());
+        })
+    };
+
     let on_save_and_deploy = {
         let on_save_file = on_save_file.clone();
         let token = token.clone();
@@ -1042,10 +1050,6 @@ fn app() -> Html {
             });
         })
     };
-
-    // ✅ Example: Copy deployed URL button would call copy_to_clipboard(&url)
-    // Make sure your actual call sites borrow `&url`:
-    // copy_to_clipboard(&url).await
 
     html! {
       <>
@@ -1099,7 +1103,12 @@ fn app() -> Html {
 
                 <div class="row" style="margin-top:12px;">
                   <button class="btn btn2" onclick={on_load_file} disabled={*edit_busy}>{ if *edit_busy { "Loading…" } else { "Load" } }</button>
-                  <button class="btn btn2" onclick={on_save_file} disabled={*edit_busy}>{ if *edit_busy { "Saving…" } else { "Save" } }</button>
+
+                  // ✅ FIXED: Save button uses MouseEvent wrapper
+                  <button class="btn btn2" onclick={on_save_file_click} disabled={*edit_busy}>
+                    { if *edit_busy { "Saving…" } else { "Save" } }
+                  </button>
+
                   <button class="btn" onclick={on_save_and_deploy} disabled={*edit_busy || *busy}>{ "Save + Deploy" }</button>
                 </div>
 
