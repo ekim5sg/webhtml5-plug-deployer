@@ -1,4 +1,4 @@
-<!-- index.html — Daily Suno Prompt (Rust iPhone Compiler Demo) -->
+<!-- index.html — Daily Suno Prompt (Rust iPhone Compiler app) -->
 <!doctype html>
 <html lang="en">
 <head>
@@ -7,15 +7,18 @@
   <meta name="description" content="Daily random Suno song prompt — title, style, lyrics with copy buttons." />
   <title>Daily Suno Prompt • MikeGyver Studio</title>
   <link rel="stylesheet" href="styles.css" />
+
+  <!-- Let Trunk build & inject the wasm/js bundle -->
+  <link data-trunk rel="rust" data-wasm-opt="z" />
 </head>
 
 <body>
   <div id="app"></div>
 
   <!--
-    “Database” JSON (20 items) — stored in the same folder as the app build.
-    In this 4-file pipeline, we embed it here. If your runner allows extra files,
-    move this block into ./prompts.json and fetch it from Rust instead.
+    “Database” JSON (20 items).
+    In this 4-file constraint, we embed it here.
+    If/when your pipeline allows a 5th file, move this JSON into ./prompts.json and fetch it.
   -->
   <script id="prompt-db" type="application/json">
 [
@@ -120,11 +123,6 @@
     "lyrics": "[Verse]\nBless the hands that kept on building\nBless the heart that chose to stay\n\n[Chorus]\nThis is my skyline benediction\nA brand new song for a brand new day\nI will rise with no condition\nI will love my life this way"
   }
 ]
-  </script>
-
-  <script type="module">
-    import init from "./pkg/daily_suno_prompt.js";
-    init();
   </script>
 </body>
 </html>
