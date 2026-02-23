@@ -1,5 +1,6 @@
 use serde::Deserialize;
 use wasm_bindgen::JsCast;
+use wasm_bindgen_futures::{spawn_local, JsFuture};
 use web_sys::{window, HtmlTextAreaElement};
 use yew::prelude::*;
 
@@ -21,7 +22,6 @@ fn get_db_json_from_dom() -> Result<String, String> {
 
 /// Deterministic "daily" index based on YYYY-MM-DD string, stable across reloads.
 fn daily_index(date_ymd: &str, len: usize) -> usize {
-    // Simple, stable hash (FNV-1a-ish) without extra deps
     let mut hash: u64 = 1469598103934665603;
     for b in date_ymd.as_bytes() {
         hash ^= *b as u64;
@@ -39,19 +39,12 @@ fn random_index(len: usize) -> usize {
 }
 
 fn today_ymd() -> String {
-    // Use JS Date in local timezone
     let d = js_sys::Date::new_0();
-    let y = d.get_full_year();
-    let m = d.get_month() + 1.0; // 0-based
-    let day = d.get_date();
+    let y = d.get_full_year() as i32;
+    let m = (d.get_month() + 1) as i32; // ✅ FIX E0277 (u32 + 1, not + 1.0)
+    let day = d.get_date() as i32;
 
-    // Format as YYYY-MM-DD
-    format!(
-        "{:04}-{:02}-{:02}",
-        y as i32,
-        m as i32,
-        day as i32
-    )
+    format!("{:04}-{:02}-{:02}", y, m, day)
 }
 
 fn ls_get(key: &str) -> Option<String> {
@@ -71,10 +64,15 @@ fn ls_set(key: &str, val: &str) {
 async fn copy_to_clipboard(text: String) -> Result<(), String> {
     let win = window().ok_or("no window")?;
     let nav = win.navigator();
-    let clipboard = nav.clipboard().ok_or("clipboard not available")?;
-    wasm_bindgen_futures::JsFuture::from(clipboard.write_text(&text))
+
+    // ✅ In your build, navigator.clipboard() returns Clipboard (not Option),
+    // so we must NOT call ok_or on it.
+    let clipboard = nav.clipboard();
+
+    JsFuture::from(clipboard.write_text(&text))
         .await
         .map_err(|_| "clipboard write failed".to_string())?;
+
     Ok(())
 }
 
@@ -92,14 +90,16 @@ fn app() -> Html {
             let json = match get_db_json_from_dom() {
                 Ok(s) => s,
                 Err(e) => {
-                    web_sys::console::error_1(&e.into());
+                    web_sys::console::error_1(&e.clone().into());
                     "[]".to_string()
                 }
             };
+
             match serde_json::from_str::<Vec<Prompt>>(&json) {
                 Ok(v) => prompts.set(v),
                 Err(e) => web_sys::console::error_1(&format!("JSON parse error: {e}").into()),
-            };
+            }
+
             || ()
         });
     }
@@ -110,22 +110,21 @@ fn app() -> Html {
         let idx = idx.clone();
         let today = (*today).clone();
         use_effect_with(prompts, move |p| {
-            if p.is_empty() {
-                return || ();
-            }
-
-            // If user previously shuffled and we saved it, restore that index
-            if let Some(saved) = ls_get("daily_suno_prompt:last_index") {
-                if let Ok(n) = saved.parse::<usize>() {
-                    if n < p.len() {
-                        idx.set(n);
-                        return || ();
+            if !p.is_empty() {
+                if let Some(saved) = ls_get("daily_suno_prompt:last_index") {
+                    if let Ok(n) = saved.parse::<usize>() {
+                        if n < p.len() {
+                            idx.set(n);
+                            return || ();
+                        }
                     }
                 }
+
+                let di = daily_index(&today, p.len());
+                idx.set(di);
             }
 
-            let di = daily_index(&today, p.len());
-            idx.set(di);
+            // ✅ Always return exactly one cleanup closure type (fixes E0308)
             || ()
         });
     }
@@ -136,12 +135,10 @@ fn app() -> Html {
         let toast = toast.clone();
         Callback::from(move |msg: String| {
             toast.set(Some(msg));
-            // Auto-clear toast after ~1.8s using a JS timeout
             let toast2 = toast.clone();
-            let _ = gloo::timers::callback::Timeout::new(1800, move || {
+            gloo::timers::callback::Timeout::new(1800, move || {
                 toast2.set(None);
-            })
-            .forget();
+            }).forget();
         })
     };
 
@@ -208,11 +205,11 @@ fn app() -> Html {
         let set_toast = set_toast.clone();
         Callback::from(move |_| {
             let v = value.clone();
-            let set_toast = set_toast.clone();
-            wasm_bindgen_futures::spawn_local(async move {
+            let set_toast2 = set_toast.clone();
+            spawn_local(async move {
                 match copy_to_clipboard(v).await {
-                    Ok(_) => set_toast.emit(format!("Copied {label}.")),
-                    Err(_) => set_toast.emit("Copy failed (clipboard permission?).".to_string()),
+                    Ok(_) => set_toast2.emit(format!("Copied {label}.")),
+                    Err(_) => set_toast2.emit("Copy failed (clipboard permission?).".to_string()),
                 }
             });
         })
@@ -222,36 +219,23 @@ fn app() -> Html {
         let set_toast = set_toast.clone();
         let current = current.clone();
         Callback::from(move |_| {
-            let set_toast = set_toast.clone();
+            let set_toast2 = set_toast.clone();
             if let Some(p) = current.clone() {
                 let blob = format!(
                     "TITLE:\n{}\n\nSTYLE:\n{}\n\nLYRICS:\n{}",
                     p.song_title, p.style, p.lyrics
                 );
-                wasm_bindgen_futures::spawn_local(async move {
+                spawn_local(async move {
                     match copy_to_clipboard(blob).await {
-                        Ok(_) => set_toast.emit("Copied ALL (title + style + lyrics).".to_string()),
-                        Err(_) => set_toast.emit("Copy failed (clipboard permission?).".to_string()),
+                        Ok(_) => set_toast2.emit("Copied ALL (title + style + lyrics).".to_string()),
+                        Err(_) => set_toast2.emit("Copy failed (clipboard permission?).".to_string()),
                     }
                 });
             } else {
-                set_toast.emit("Nothing to copy yet.".to_string());
+                set_toast2.emit("Nothing to copy yet.".to_string());
             }
         })
     };
-
-    // Optional: autoresize textareas on input (purely cosmetic). Keep simple.
-    let on_textarea_input = Callback::from(|e: InputEvent| {
-        if let Some(target) = e.target() {
-            if let Ok(ta) = target.dyn_into::<HtmlTextAreaElement>() {
-                let _ = ta.style().set_property("height", "auto");
-                let h = ta.scroll_height();
-                let _ = ta
-                    .style()
-                    .set_property("height", &format!("{}px", h.max(72)));
-            }
-        }
-    });
 
     html! {
         <div class="wrap">
@@ -319,7 +303,7 @@ fn app() -> Html {
                                     <div class="label">{"Song Title"}</div>
                                     <button onclick={c_title}>{"Copy"}</button>
                                   </div>
-                                  <textarea value={p.song_title} oninput={on_textarea_input.clone()} />
+                                  <textarea value={p.song_title} />
                                 </div>
 
                                 <div class="field">
@@ -327,7 +311,7 @@ fn app() -> Html {
                                     <div class="label">{"Style"}</div>
                                     <button onclick={c_style}>{"Copy"}</button>
                                   </div>
-                                  <textarea value={p.style} oninput={on_textarea_input.clone()} />
+                                  <textarea value={p.style} />
                                 </div>
 
                                 <div class="field">
@@ -335,7 +319,7 @@ fn app() -> Html {
                                     <div class="label">{"Lyrics"}</div>
                                     <button onclick={c_lyrics}>{"Copy"}</button>
                                   </div>
-                                  <textarea value={p.lyrics} oninput={on_textarea_input} />
+                                  <textarea value={p.lyrics} />
                                 </div>
                               </div>
                             }
@@ -353,7 +337,7 @@ fn app() -> Html {
                     }
 
                     <div class="footer">
-                      {"Tip: if you want the JSON as a standalone file later, move the <script id=\"prompt-db\"> content into prompts.json and fetch it. This build keeps everything in the 4-file constraint."}
+                      {"Tip: later you can move the JSON into prompts.json and fetch it; this build embeds JSON to respect the 4-file constraint."}
                     </div>
                 </div>
             </div>
