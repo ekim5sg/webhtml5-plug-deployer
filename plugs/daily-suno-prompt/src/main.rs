@@ -16,29 +16,28 @@ fn get_db_json_from_dom() -> Result<String, String> {
     let el = doc
         .get_element_by_id("prompt-db")
         .ok_or("missing <script id=\"prompt-db\" type=\"application/json\">")?;
-    Ok(el.text_content().unwrap_or_default())
+
+    // Reliable for script tags: inner_html() returns the raw text inside the node.
+    let s = el.inner_html();
+    if s.trim().is_empty() {
+        Err("prompt-db element found but empty".to_string())
+    } else {
+        Ok(s)
+    }
 }
 
-/// Deterministic "daily" index based on YYYY-MM-DD string, stable across reloads.
 fn daily_index(date_ymd: &str, len: usize) -> usize {
     let mut hash: u64 = 1469598103934665603;
     for b in date_ymd.as_bytes() {
         hash ^= *b as u64;
         hash = hash.wrapping_mul(1099511628211);
     }
-    if len == 0 {
-        0
-    } else {
-        (hash as usize) % len
-    }
+    if len == 0 { 0 } else { (hash as usize) % len }
 }
 
-/// Random index using JS Math.random()
 fn random_index(len: usize) -> usize {
-    if len == 0 {
-        return 0;
-    }
-    let r = js_sys::Math::random(); // [0,1)
+    if len == 0 { return 0; }
+    let r = js_sys::Math::random();
     let idx = (r * (len as f64)) as usize;
     idx.min(len.saturating_sub(1))
 }
@@ -46,9 +45,8 @@ fn random_index(len: usize) -> usize {
 fn today_ymd() -> String {
     let d = js_sys::Date::new_0();
     let y = d.get_full_year() as i32;
-    let m = (d.get_month() + 1) as i32; // 0-based => +1 (u32 + 1 is OK)
+    let m = (d.get_month() + 1) as i32;
     let day = d.get_date() as i32;
-
     format!("{:04}-{:02}-{:02}", y, m, day)
 }
 
@@ -69,8 +67,6 @@ fn ls_set(key: &str, val: &str) {
 async fn copy_to_clipboard(text: String) -> Result<(), String> {
     let win = window().ok_or("no window")?;
     let nav = win.navigator();
-
-    // In this environment, navigator.clipboard() returns Clipboard (not Option)
     let clipboard = nav.clipboard();
 
     JsFuture::from(clipboard.write_text(&text))
@@ -87,36 +83,27 @@ fn app() -> Html {
     let toast = use_state(|| Option::<String>::None);
     let today = use_state(today_ymd);
 
-    // Load prompts from embedded JSON once.
+    // Load prompts once from embedded JSON.
     {
         let prompts = prompts.clone();
+        let toast = toast.clone();
         use_effect_with((), move |_| {
-            let json = match get_db_json_from_dom() {
-                Ok(s) => s,
-                Err(e) => {
-                    web_sys::console::error_1(&e.clone().into());
-                    "[]".to_string()
-                }
-            };
-
-            match serde_json::from_str::<Vec<Prompt>>(&json) {
-                Ok(v) => prompts.set(v),
-                Err(e) => web_sys::console::error_1(&format!("JSON parse error: {e}").into()),
+            match get_db_json_from_dom() {
+                Ok(json) => match serde_json::from_str::<Vec<Prompt>>(&json) {
+                    Ok(v) => prompts.set(v),
+                    Err(e) => toast.set(Some(format!("JSON parse error: {e}"))),
+                },
+                Err(e) => toast.set(Some(format!("JSON load error: {e}"))),
             }
-
             || ()
         });
     }
 
-    // After prompts load, choose index: localStorage override else daily.
+    // Choose initial prompt after load.
     {
-        let prompts = prompts.clone();
         let idx = idx.clone();
         let today = (*today).clone();
-
-        // IMPORTANT: Do NOT return early with `return || ();`
-        // Just run logic, then return a single cleanup closure at the end.
-        use_effect_with(prompts, move |p| {
+        use_effect_with(prompts.clone(), move |p| {
             if !p.is_empty() {
                 let mut chosen: Option<usize> = None;
 
@@ -131,7 +118,6 @@ fn app() -> Html {
                 let di = chosen.unwrap_or_else(|| daily_index(&today, p.len()));
                 idx.set(di);
             }
-
             || ()
         });
     }
@@ -170,9 +156,7 @@ fn app() -> Html {
         let prompts = prompts.clone();
         let idx = idx.clone();
         Callback::from(move |_| {
-            if prompts.is_empty() {
-                return;
-            }
+            if prompts.is_empty() { return; }
             let len = prompts.len();
             let cur = *idx;
             let n = if cur == 0 { len - 1 } else { cur - 1 };
@@ -185,9 +169,7 @@ fn app() -> Html {
         let prompts = prompts.clone();
         let idx = idx.clone();
         Callback::from(move |_| {
-            if prompts.is_empty() {
-                return;
-            }
+            if prompts.is_empty() { return; }
             let len = prompts.len();
             let cur = *idx;
             let n = (cur + 1) % len;
@@ -349,7 +331,53 @@ fn app() -> Html {
                     }
 
                     <div class="footer">
-                      {"Tip: later you can move the JSON into prompts.json and fetch it; this build embeds JSON to respect the 4-file constraint."}
+                      {"If you ever move to an external prompts.json, Trunk can copy it via data-trunk rel=\"copy-file\"."}
+                    </div>
+                </div>
+            </div>
+
+            {
+                if let Some(msg) = (*toast).clone() {
+                    html!{ <div class="toast">{msg}</div> }
+                } else {
+                    html!{}
+                }
+            }
+        </div>
+    }
+}
+
+fn main() {
+    // ✅ CRITICAL: mount into #app so the JSON <script> remains in the DOM.
+    let win = window().expect("no window");
+    let doc = win.document().expect("no document");
+    let root = doc
+        .get_element_by_id("app")
+        .expect("missing <div id=\"app\"></div> in index.html");
+
+    yew::Renderer::<App>::with_root(root).render();
+}                              <div class="label">{"Lyrics"}</div>
+                                    <button onclick={c_lyrics}>{"Copy"}</button>
+                                  </div>
+                                  <textarea value={p.lyrics} />
+                                </div>
+                              </div>
+                            }
+                        } else {
+                            html! {
+                              <div class="field">
+                                <div class="field-head">
+                                  <div class="label">{"Status"}</div>
+                                  <button disabled=true>{"Copy"}</button>
+                                </div>
+                                <textarea value={"Loading database…"} />
+                              </div>
+                            }
+                        }
+                    }
+
+                    <div class="footer">
+                      {"Tip: If you ever move to an external prompts.json, Trunk can copy it too via data-trunk rel=\"copy-file\"."}
                     </div>
                 </div>
             </div>
