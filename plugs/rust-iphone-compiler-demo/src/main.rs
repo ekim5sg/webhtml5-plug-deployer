@@ -17,16 +17,15 @@ fn get_db_json_from_dom() -> Result<String, String> {
         .get_element_by_id("prompt-db")
         .ok_or("missing <script id=\"prompt-db\" type=\"application/json\">")?;
 
-    // More reliable than text_content() for script tags in some environments.
+    // Reliable for script tags: inner_html() returns the raw text inside the node.
     let s = el.inner_html();
     if s.trim().is_empty() {
-        Err("prompt-db element found but empty (inner_html was empty)".to_string())
+        Err("prompt-db element found but empty".to_string())
     } else {
         Ok(s)
     }
 }
 
-/// Deterministic "daily" index based on YYYY-MM-DD string.
 fn daily_index(date_ymd: &str, len: usize) -> usize {
     let mut hash: u64 = 1469598103934665603;
     for b in date_ymd.as_bytes() {
@@ -96,7 +95,6 @@ fn app() -> Html {
                 },
                 Err(e) => toast.set(Some(format!("JSON load error: {e}"))),
             }
-
             || ()
         });
     }
@@ -133,7 +131,8 @@ fn app() -> Html {
             let toast2 = toast.clone();
             gloo::timers::callback::Timeout::new(1800, move || {
                 toast2.set(None);
-            }).forget();
+            })
+            .forget();
         })
     };
 
@@ -312,6 +311,52 @@ fn app() -> Html {
                                 <div class="field">
                                   <div class="field-head">
                                     <div class="label">{"Lyrics"}</div>
+                                    <button onclick={c_lyrics}>{"Copy"}</button>
+                                  </div>
+                                  <textarea value={p.lyrics} />
+                                </div>
+                              </div>
+                            }
+                        } else {
+                            html! {
+                              <div class="field">
+                                <div class="field-head">
+                                  <div class="label">{"Status"}</div>
+                                  <button disabled=true>{"Copy"}</button>
+                                </div>
+                                <textarea value={"Loading database…"} />
+                              </div>
+                            }
+                        }
+                    }
+
+                    <div class="footer">
+                      {"If you ever move to an external prompts.json, Trunk can copy it via data-trunk rel=\"copy-file\"."}
+                    </div>
+                </div>
+            </div>
+
+            {
+                if let Some(msg) = (*toast).clone() {
+                    html!{ <div class="toast">{msg}</div> }
+                } else {
+                    html!{}
+                }
+            }
+        </div>
+    }
+}
+
+fn main() {
+    // ✅ CRITICAL: mount into #app so the JSON <script> remains in the DOM.
+    let win = window().expect("no window");
+    let doc = win.document().expect("no document");
+    let root = doc
+        .get_element_by_id("app")
+        .expect("missing <div id=\"app\"></div> in index.html");
+
+    yew::Renderer::<App>::with_root(root).render();
+}                              <div class="label">{"Lyrics"}</div>
                                     <button onclick={c_lyrics}>{"Copy"}</button>
                                   </div>
                                   <textarea value={p.lyrics} />
