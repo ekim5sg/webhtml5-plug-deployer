@@ -23,12 +23,15 @@ fn tab_label(t: Tab) -> &'static str {
 }
 
 async fn copy_to_clipboard(text: String) -> Result<(), String> {
-    let w = window().ok_or("No window")?;
+    let w = window().ok_or("No window".to_string())?;
     let nav = w.navigator();
-    let cb = nav.clipboard().ok_or("Clipboard not available (non-secure context?)")?;
+
+    // web-sys returns Clipboard (not Option). Browser may still reject if not secure / no gesture.
+    let cb = nav.clipboard();
     wasm_bindgen_futures::JsFuture::from(cb.write_text(&text))
         .await
-        .map_err(|_| "Failed to write to clipboard".to_string())?;
+        .map_err(|_| "Clipboard write failed (requires HTTPS + user gesture in many browsers)".to_string())?;
+
     Ok(())
 }
 
@@ -50,7 +53,6 @@ fn decode_jwt_part(part: &str) -> Result<String, String> {
         .map_err(|e| format!("base64url decode error: {e}"))?;
     let s = String::from_utf8(bytes).map_err(|e| format!("utf8 error: {e}"))?;
 
-    // If it's JSON, pretty print; otherwise return as-is.
     match pretty_json(&s) {
         Ok(p) => Ok(p),
         Err(_) => Ok(s),
@@ -61,23 +63,23 @@ fn decode_jwt_part(part: &str) -> Result<String, String> {
 fn app() -> Html {
     let tab = use_state(|| Tab::Json);
 
-    // JSON tab state
+    // JSON tab
     let json_in = use_state(|| String::new());
     let json_out = use_state(|| String::new());
     let json_msg = use_state(|| String::new());
 
-    // JWT tab state
+    // JWT tab
     let jwt_in = use_state(|| String::new());
     let jwt_header = use_state(|| String::new());
     let jwt_payload = use_state(|| String::new());
     let jwt_msg = use_state(|| String::new());
 
-    // Base64 tab state
+    // Base64 tab
     let b64_in = use_state(|| String::new());
     let b64_out = use_state(|| String::new());
     let b64_msg = use_state(|| String::new());
 
-    // URL tab state
+    // URL tab
     let url_in = use_state(|| String::new());
     let url_out = use_state(|| String::new());
     let url_msg = use_state(|| String::new());
@@ -87,7 +89,7 @@ fn app() -> Html {
         Callback::from(move |t: Tab| tab.set(t))
     };
 
-    // --- JSON actions
+    // JSON actions
     let on_json_pretty = {
         let json_in = json_in.clone();
         let json_out = json_out.clone();
@@ -99,9 +101,7 @@ fn app() -> Html {
                     json_out.set(s);
                     json_msg.set("Pretty-printed OK.".to_string());
                 }
-                Err(e) => {
-                    json_msg.set(e);
-                }
+                Err(e) => json_msg.set(e),
             }
         })
     };
@@ -117,9 +117,7 @@ fn app() -> Html {
                     json_out.set(s);
                     json_msg.set("Minified OK.".to_string());
                 }
-                Err(e) => {
-                    json_msg.set(e);
-                }
+                Err(e) => json_msg.set(e),
             }
         })
     };
@@ -152,7 +150,7 @@ fn app() -> Html {
         })
     };
 
-    // --- JWT actions
+    // JWT actions
     let on_jwt_decode = {
         let jwt_in = jwt_in.clone();
         let jwt_header = jwt_header.clone();
@@ -218,7 +216,7 @@ fn app() -> Html {
         })
     };
 
-    // --- Base64 actions (standard base64, not base64url)
+    // Base64 actions
     let on_b64_encode = {
         let b64_in = b64_in.clone();
         let b64_out = b64_out.clone();
@@ -265,7 +263,7 @@ fn app() -> Html {
         })
     };
 
-    // --- URL actions
+    // URL actions
     let on_url_encode = {
         let url_in = url_in.clone();
         let url_out = url_out.clone();
@@ -311,7 +309,10 @@ fn app() -> Html {
     let msg_view = |s: &str| -> Html {
         if s.trim().is_empty() {
             html! { <div class="smallnote">{ " " }</div> }
-        } else if s.to_lowercase().contains("error") || s.to_lowercase().contains("failed") || s.to_lowercase().contains("doesn't") {
+        } else if s.to_lowercase().contains("error")
+            || s.to_lowercase().contains("failed")
+            || s.to_lowercase().contains("doesn't")
+        {
             html! { <div class="alert">{ s }</div> }
         } else {
             html! { <div class="ok">{ s }</div> }
@@ -534,5 +535,11 @@ fn app() -> Html {
 }
 
 fn main() {
-    yew::Renderer::<App>::with_root(web_sys::window().unwrap().document().unwrap().get_element_by_id("app").unwrap()).render();
+    let root = web_sys::window()
+        .unwrap()
+        .document()
+        .unwrap()
+        .get_element_by_id("app")
+        .unwrap();
+    yew::Renderer::<App>::with_root(root).render();
 }
