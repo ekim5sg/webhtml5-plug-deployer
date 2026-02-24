@@ -1,7 +1,23 @@
+# Cargo.toml
 [package]
-name = "devtools_swiss_army_knife"
+name = "devpocket"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 yew = { version = "0.21", features = ["csr"] }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+base64 = "0.22"
+urlencoding = "2.1"
+
+wasm-bindgen = "0.2"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = [
+  "Window",
+  "Document",
+  "Navigator",
+  "Clipboard",
+] }
