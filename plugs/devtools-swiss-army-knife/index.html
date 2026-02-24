@@ -1,15 +1,60 @@
+<!-- index.html -->
 <!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <meta name="color-scheme" content="dark" />
-  <meta name="theme-color" content="#0b1020" />
-  <title>DevTools Swiss-Army Knife</title>
-  <link data-trunk rel="css" href="styles.css" />
+  <meta name="description" content="DevPocket — a tiny developer toolbox in Rust + Yew (JSON, JWT, Base64, URL) running fully in your browser." />
+  <title>DevPocket • Rust Yew Dev Toolbox</title>
+  <link rel="stylesheet" href="styles.css" />
 </head>
-<body id="top">
-  <div id="app"></div>
-  <link data-trunk rel="rust" />
+<body>
+  <div class="bg" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="wrap topbar-inner">
+      <div class="brand">
+        <div class="logo" aria-hidden="true">⛭</div>
+        <div class="brand-text">
+          <div class="title">DevPocket</div>
+          <div class="subtitle">Rust + Yew • Developer Toolbox (Client-side)</div>
+        </div>
+      </div>
+
+      <div class="right">
+        <a class="chip" href="https://www.rust-lang.org/" target="_blank" rel="noreferrer">Rust</a>
+        <a class="chip" href="https://yew.rs/" target="_blank" rel="noreferrer">Yew</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="hero">
+      <h1>Fast, local, private dev utilities.</h1>
+      <p>
+        Paste data, transform it instantly, copy results. No servers. No tracking. Just WASM.
+      </p>
+      <div class="hero-row">
+        <div class="pill">JSON</div>
+        <div class="pill">JWT</div>
+        <div class="pill">Base64</div>
+        <div class="pill">URL</div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div id="app"></div>
+    </section>
+
+    <footer class="footer">
+      <div>Built for your Rust iPhone Compiler pipeline.</div>
+      <div class="muted">Tip: bookmark it on mobile and use it anywhere.</div>
+    </footer>
+  </main>
+
+  <script type="module">
+    import init from "./devpocket.js";
+    init();
+  </script>
 </body>
 </html>
