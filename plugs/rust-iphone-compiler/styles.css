@@ -1,4 +1,4 @@
-﻿/* MikeGyver Studio • hard-locked dark mode (no light sections) */
+/* MikeGyver Studio • hard-locked dark mode (no light sections) */
 :root{
   --bg0:#070a12;
   --bg1:#0b1020;
@@ -218,6 +218,29 @@ button, input, select, textarea{ font:inherit; }
   color:var(--muted);
   white-space:pre-wrap;
 }
+
+.runs{
+  display:grid;
+  gap:10px;
+  margin-top:10px;
+}
+.run{
+  display:block;
+  padding:12px;
+  border:1px solid var(--line);
+  border-radius:16px;
+  background:rgba(255,255,255,.03);
+}
+.run:hover{ background:rgba(255,255,255,.05); }
+.run-top{
+  display:flex;
+  justify-content:space-between;
+  gap:10px;
+  align-items:baseline;
+  flex-wrap:wrap;
+}
+.run-name{ font-weight:800; }
+.run-meta{ color:var(--muted); font-size:12px; }
 
 .footer{
   margin-top:18px;

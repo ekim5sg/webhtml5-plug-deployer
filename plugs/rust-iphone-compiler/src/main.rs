@@ -1,4 +1,4 @@
-﻿use base64::Engine;
+use base64::Engine;
 use gloo_net::http::Request;
 use gloo_storage::{LocalStorage, Storage};
 use serde::{Deserialize, Serialize};
@@ -364,6 +364,29 @@ button, input, select, textarea{ font:inherit; }
   white-space:pre-wrap;
 }
 
+.runs{
+  display:grid;
+  gap:10px;
+  margin-top:10px;
+}
+.run{
+  display:block;
+  padding:12px;
+  border:1px solid var(--line);
+  border-radius:16px;
+  background:rgba(255,255,255,.03);
+}
+.run:hover{ background:rgba(255,255,255,.05); }
+.run-top{
+  display:flex;
+  justify-content:space-between;
+  gap:10px;
+  align-items:baseline;
+  flex-wrap:wrap;
+}
+.run-name{ font-weight:800; }
+.run-meta{ color:var(--muted); font-size:12px; }
+
 .footer{
   margin-top:18px;
   color:var(--muted);
@@ -632,7 +655,7 @@ fn app() -> Html {
     let status = use_state(|| "".to_string());
     let busy = use_state(|| false);
 
-    // ✅ create + deploy (now with 4 file textareas)
+    // create + deploy (with 4 file textareas)
     let app_name = use_state(|| "My New Plug".to_string()); // human-friendly
     let new_plug = use_state(|| "my-new-plug".to_string()); // slug folder
     let new_title = use_state(|| "My New Plug".to_string());
@@ -796,7 +819,7 @@ fn app() -> Html {
         })
     };
 
-    // ✅ Create section handlers
+    // Create section handlers
     let on_app_name = {
         let app_name = app_name.clone();
         let new_title = new_title.clone();
@@ -930,6 +953,40 @@ fn app() -> Html {
         })
     };
 
+    // Load defaults: repopulate the 4 textareas from scaffolds (even after edits)
+    let on_load_defaults = {
+        let new_plug = new_plug.clone();
+        let new_title = new_title.clone();
+
+        let new_index_html = new_index_html.clone();
+        let new_styles_css = new_styles_css.clone();
+        let new_cargo_toml = new_cargo_toml.clone();
+        let new_main_rs = new_main_rs.clone();
+
+        let dirty_index = dirty_index.clone();
+        let dirty_css = dirty_css.clone();
+        let dirty_toml = dirty_toml.clone();
+        let dirty_main = dirty_main.clone();
+
+        Callback::from(move |_: MouseEvent| {
+            let title = (*new_title).clone();
+            let plug = (*new_plug).clone();
+
+            let title = if title.trim().is_empty() { "My New Plug".to_string() } else { title };
+            let plug = if plug.trim().is_empty() { "my-new-plug".to_string() } else { plug };
+
+            new_index_html.set(scaffold_index_html(title.trim()));
+            new_styles_css.set(scaffold_styles_css());
+            new_cargo_toml.set(scaffold_cargo_toml(plug.trim()));
+            new_main_rs.set(scaffold_main_rs(title.trim(), plug.trim()));
+
+            dirty_index.set(false);
+            dirty_css.set(false);
+            dirty_toml.set(false);
+            dirty_main.set(false);
+        })
+    };
+
     let on_create_and_deploy = {
         let token = token.clone();
 
@@ -968,6 +1025,16 @@ fn app() -> Html {
             }
 
             let idx = (*new_index_html).clone();
+
+            // Guardrail: Trunk only bundles CSS if the data-trunk css link exists.
+            if !idx.contains(r#"data-trunk rel="css""#) || !idx.contains(r#"href="styles.css""#) {
+                create_status.set(
+                    r#"index.html must include: <link data-trunk rel="css" href="styles.css" /> (Trunk will not bundle your CSS without it)."#
+                        .into(),
+                );
+                return;
+            }
+
             let css = (*new_styles_css).clone();
             let toml = (*new_cargo_toml).clone();
             let mainrs = (*new_main_rs).clone();
@@ -1325,6 +1392,10 @@ fn app() -> Html {
 
                 <label class="sub" style="display:block; margin:12px 0 6px; max-width:none;">{ "title (for index.html scaffold)" }</label>
                 <input class="input" value={(*new_title).clone()} oninput={on_new_title} />
+
+                <div class="row" style="margin-top:12px;">
+                  <button class="btn btn2" onclick={on_load_defaults}>{ "Load defaults" }</button>
+                </div>
 
                 <div class="kv" style="margin-top:10px;">
                   <div class="k">

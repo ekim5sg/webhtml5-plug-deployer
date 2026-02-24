@@ -8,7 +8,7 @@ on:
         required: true
         default: "my-new-plug"
       app_dir:
-        description: "Path to Trunk project folder (contains index.html + Cargo.toml). Example: plugs/my-new-plug"
+        description: "Path to Trunk project folder (contains index.html + Cargo.toml + styles.css). Example: plugs/my-new-plug"
         required: true
         default: "plugs/my-new-plug"
       clean_remote:
@@ -32,13 +32,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Preflight
+      - name: Preflight (ensure CSS will be bundled)
         shell: bash
         run: |
           set -euo pipefail
           APP_DIR="${{ github.event.inputs.app_dir }}"
           test -f "$APP_DIR/index.html"
           test -f "$APP_DIR/Cargo.toml"
+          test -f "$APP_DIR/styles.css"
+          grep -q 'data-trunk rel="css"' "$APP_DIR/index.html"
+          grep -q 'href="styles.css"' "$APP_DIR/index.html"
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -55,6 +58,18 @@ jobs:
         working-directory: ${{ github.event.inputs.app_dir }}
         shell: bash
         run: trunk build --release --public-url "/${{ github.event.inputs.plug_name }}/"
+
+      - name: Verify dist contains CSS + dist/index.html references it
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_DIR="${{ github.event.inputs.app_dir }}"
+          echo "=== dist listing ==="
+          ls -la "$APP_DIR/dist"
+          echo "=== dist css files ==="
+          ls -la "$APP_DIR/dist"/*.css
+          echo "=== dist/index.html css references ==="
+          grep -n "\.css" "$APP_DIR/dist/index.html"
 
       - name: Add web.config
         shell: bash
