@@ -185,6 +185,7 @@ fn run_regex(pattern: &str, text: &str) -> Result<(Vec<String>, usize), String> 
             m0.end(),
             m0.as_str()
         );
+
         for gi in 1..caps.len() {
             if let Some(g) = caps.get(gi) {
                 line.push_str(&format!(
@@ -715,36 +716,33 @@ fn app() -> Html {
         let rx_count = rx_count.clone();
         let rx_msg = rx_msg.clone();
 
-        use_effect_with_deps(
-            move |(p, t, l)| {
-                if !*l {
-                    return || {};
-                }
+        use_effect_with((pat, txt, live), move |deps: &(String, String, bool)| {
+            let (p, t, l) = deps;
 
-                if p.trim().is_empty() {
+            if !*l {
+                return;
+            }
+
+            if p.trim().is_empty() {
+                rx_out.set(String::new());
+                rx_count.set(0);
+                rx_msg.set("Enter a regex pattern.".to_string());
+                return;
+            }
+
+            match run_regex(p, t) {
+                Ok((lines, count)) => {
+                    rx_out.set(lines.join("\n\n"));
+                    rx_count.set(count);
+                    rx_msg.set("Live: updated.".to_string());
+                }
+                Err(e) => {
                     rx_out.set(String::new());
                     rx_count.set(0);
-                    rx_msg.set("Enter a regex pattern.".to_string());
-                    return || {};
+                    rx_msg.set(e);
                 }
-
-                match run_regex(p, t) {
-                    Ok((lines, count)) => {
-                        rx_out.set(lines.join("\n\n"));
-                        rx_count.set(count);
-                        rx_msg.set("Live: updated.".to_string());
-                    }
-                    Err(e) => {
-                        rx_out.set(String::new());
-                        rx_count.set(0);
-                        rx_msg.set(e);
-                    }
-                }
-
-                || {}
-            },
-            (pat, txt, live),
-        );
+            }
+        });
     }
 
     /* ---------- Views ---------- */
