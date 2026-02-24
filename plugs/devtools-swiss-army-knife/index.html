@@ -4,9 +4,14 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <meta name="description" content="DevPocket — a tiny developer toolbox in Rust + Yew (JSON, JWT, Base64, URL) running fully in your browser." />
+  <meta name="description" content="DevPocket — Rust + Yew developer toolbox (JSON, JWT, Base64, URL, UUID, Hash, Diff, Regex) running fully in your browser." />
   <title>DevPocket • Rust Yew Dev Toolbox</title>
-  <link rel="stylesheet" href="styles.css" />
+
+  <!-- IMPORTANT: Let Trunk bundle the CSS -->
+  <link data-trunk rel="css" href="styles.css" />
+
+  <!-- IMPORTANT: Let Trunk handle Rust/WASM wiring -->
+  <link data-trunk rel="rust" data-wasm-opt="z" />
 </head>
 <body>
   <div class="bg" aria-hidden="true"></div>
@@ -24,21 +29,24 @@
       <div class="right">
         <a class="chip" href="https://www.rust-lang.org/" target="_blank" rel="noreferrer">Rust</a>
         <a class="chip" href="https://yew.rs/" target="_blank" rel="noreferrer">Yew</a>
+        <a class="chip" href="#top">{ "WASM" }</a>
       </div>
     </div>
   </header>
 
-  <main class="wrap">
+  <main class="wrap" id="top">
     <section class="hero">
       <h1>Fast, local, private dev utilities.</h1>
-      <p>
-        Paste data, transform it instantly, copy results. No servers. No tracking. Just WASM.
-      </p>
+      <p>Paste data, transform it instantly, copy results. No servers. No tracking. Just WASM.</p>
       <div class="hero-row">
         <div class="pill">JSON</div>
         <div class="pill">JWT</div>
         <div class="pill">Base64</div>
         <div class="pill">URL</div>
+        <div class="pill">UUID</div>
+        <div class="pill">Hash</div>
+        <div class="pill">Diff</div>
+        <div class="pill">Regex</div>
       </div>
     </section>
 
@@ -51,10 +59,5 @@
       <div class="muted">Tip: bookmark it on mobile and use it anywhere.</div>
     </footer>
   </main>
-
-  <script type="module">
-    import init from "./devpocket.js";
-    init();
-  </script>
 </body>
 </html>
