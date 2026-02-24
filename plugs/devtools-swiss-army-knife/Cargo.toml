@@ -1,7 +1,7 @@
 # Cargo.toml
 [package]
 name = "devpocket"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 [dependencies]
@@ -13,6 +13,12 @@ serde_json = "1"
 base64 = "0.22"
 urlencoding = "2.1"
 
+uuid = { version = "1", features = ["v4", "js"] }
+sha2 = "0.10"
+md5 = "0.7"
+regex = "1"
+similar = "2"
+
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 
@@ -22,4 +28,7 @@ web-sys = { version = "0.3", features = [
   "Document",
   "Navigator",
   "Clipboard",
+  "Element",
+  "HtmlTextAreaElement",
+  "HtmlInputElement",
 ] }
