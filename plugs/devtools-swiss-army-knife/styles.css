@@ -1,4 +1,4 @@
-/* styles.css — hard-locked dark mode */
+/* styles.css — hard-locked dark mode (Hostek-safe layering) */
 :root{
   --bg0:#070a12;
   --bg1:#0b1020;
@@ -18,16 +18,20 @@
 *{ box-sizing:border-box; }
 html, body { height:100%; }
 html { color-scheme: dark; }
+
 body{
   margin:0;
   font-family: var(--sans);
   background: var(--bg0);
   color: var(--text);
+  position: relative;
 }
 
+/* background behind everything */
 .bg{
   position:fixed;
   inset:0;
+  z-index:-1;
   pointer-events:none;
   background:
     radial-gradient(1200px 800px at 20% 0%, rgba(120,140,255,.18), transparent 60%),
@@ -36,6 +40,9 @@ body{
     linear-gradient(180deg, var(--bg0), var(--bg1));
   filter:saturate(1.05);
 }
+
+/* keep content above bg */
+.topbar, main, footer{ position: relative; z-index: 1; }
 
 .wrap{ width:min(1120px, calc(100% - 32px)); margin:0 auto; }
 
@@ -94,9 +101,7 @@ body{
 }
 .chip:hover{ border-color: rgba(255,255,255,.22); background: rgba(255,255,255,.06); }
 
-.hero{
-  padding: 22px 0 16px;
-}
+.hero{ padding: 22px 0 16px; }
 .hero h1{
   margin: 18px 0 8px;
   font-size: clamp(22px, 3.2vw, 34px);
@@ -219,11 +224,8 @@ body{
 .btn:hover{ border-color: rgba(255,255,255,.22); background: rgba(255,255,255,.06); }
 .btn:active{ transform: translateY(1px); }
 
-textarea{
+textarea, input[type="text"]{
   width:100%;
-  resize: vertical;
-  min-height: 190px;
-  padding: 12px;
   border:0;
   outline:none;
   background: transparent;
@@ -231,6 +233,21 @@ textarea{
   font-family: var(--mono);
   font-size: 12.5px;
   line-height:1.45;
+}
+
+textarea{
+  resize: vertical;
+  min-height: 190px;
+  padding: 12px;
+}
+
+.textline{
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(0,0,0,.10);
+}
+.textline input[type="text"]{
+  padding: 0;
 }
 
 .smallnote{
@@ -254,4 +271,55 @@ textarea{
   padding: 10px 12px;
   border-radius: 14px;
   font-size: 12px;
+}
+
+/* Diff output */
+.diff{
+  margin:0;
+  padding: 12px;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre;
+  overflow:auto;
+}
+
+.diff .add{
+  background: rgba(110,255,210,.10);
+  border-left: 3px solid rgba(110,255,210,.35);
+  padding-left: 8px;
+  display:block;
+}
+.diff .del{
+  background: rgba(255,120,120,.10);
+  border-left: 3px solid rgba(255,120,120,.35);
+  padding-left: 8px;
+  display:block;
+}
+.diff .ctx{
+  color: rgba(232,236,255,.88);
+  padding-left: 11px;
+  display:block;
+}
+.diff .meta{
+  color: rgba(169,179,217,.9);
+  opacity: .95;
+  display:block;
+}
+
+/* Regex match list */
+.kv{
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+  padding: 10px 12px;
+  border-top: 1px solid var(--line);
+}
+.kv .tag{
+  border:1px solid var(--line);
+  background: rgba(255,255,255,.03);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--text);
 }
