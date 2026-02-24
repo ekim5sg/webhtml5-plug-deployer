@@ -61,11 +61,9 @@ fn minify_json(input: &str) -> Result<String, String> {
 fn sort_json_value(v: &mut serde_json::Value) {
     match v {
         serde_json::Value::Object(map) => {
-            // Recursively sort children first
             for (_k, child) in map.iter_mut() {
                 sort_json_value(child);
             }
-            // Rebuild as BTreeMap to get key order
             let mut bt = std::collections::BTreeMap::<String, serde_json::Value>::new();
             for (k, val) in std::mem::take(map).into_iter() {
                 bt.insert(k, val);
@@ -133,9 +131,7 @@ fn hex_lower(bytes: &[u8]) -> String {
 
 fn unified_diff(a: &str, b: &str) -> String {
     let diff = TextDiff::from_lines(a, b);
-    diff.unified_diff()
-        .header("left", "right")
-        .to_string()
+    diff.unified_diff().header("left", "right").to_string()
 }
 
 #[derive(Clone)]
@@ -155,7 +151,11 @@ enum DiffKind {
 fn classify_unified_diff(diff: &str) -> Vec<DiffLine> {
     diff.lines()
         .map(|line| {
-            let (kind, text) = if line.starts_with("+++") || line.starts_with("---") || line.starts_with("@@") {
+            let (kind, text) = if line.starts_with("+++")
+                || line.starts_with("---")
+                || line.starts_with("@@")
+                || line.starts_with("\\ No newline at end of file")
+            {
                 (DiffKind::Meta, line.to_string())
             } else if line.starts_with('+') {
                 (DiffKind::Add, line.to_string())
@@ -171,11 +171,13 @@ fn classify_unified_diff(diff: &str) -> Vec<DiffLine> {
 
 /* ---------- Regex helpers ---------- */
 
-fn run_regex(pattern: &str, text: &str) -> Result<Vec<String>, String> {
+fn run_regex(pattern: &str, text: &str) -> Result<(Vec<String>, usize), String> {
     let re = Regex::new(pattern).map_err(|e| format!("Regex error: {e}"))?;
     let mut out = vec![];
+    let mut count = 0usize;
 
     for (i, caps) in re.captures_iter(text).enumerate() {
+        count += 1;
         let m0 = caps.get(0).unwrap();
         let mut line = format!(
             "#{i} match [{}..{}] = {:?}",
@@ -183,7 +185,6 @@ fn run_regex(pattern: &str, text: &str) -> Result<Vec<String>, String> {
             m0.end(),
             m0.as_str()
         );
-        // capture groups
         for gi in 1..caps.len() {
             if let Some(g) = caps.get(gi) {
                 line.push_str(&format!(
@@ -203,7 +204,7 @@ fn run_regex(pattern: &str, text: &str) -> Result<Vec<String>, String> {
         out.push("No matches.".to_string());
     }
 
-    Ok(out)
+    Ok((out, count))
 }
 
 #[function_component(App)]
@@ -246,13 +247,16 @@ fn app() -> Html {
     let diff_left = use_state(|| String::new());
     let diff_right = use_state(|| String::new());
     let diff_is_json = use_state(|| true);
+    let diff_show_meta = use_state(|| true);
     let diff_out = use_state(|| Vec::<DiffLine>::new());
     let diff_msg = use_state(|| String::new());
 
     // Regex
     let rx_pat = use_state(|| String::new());
     let rx_text = use_state(|| String::new());
+    let rx_live = use_state(|| true);
     let rx_out = use_state(|| String::new());
+    let rx_count = use_state(|| 0usize);
     let rx_msg = use_state(|| String::new());
 
     let set_tab = {
@@ -282,7 +286,10 @@ fn app() -> Html {
         let json_msg = json_msg.clone();
         Callback::from(move |_| {
             match pretty_json(&json_in) {
-                Ok(s) => { json_out.set(s); json_msg.set("Pretty-printed OK.".to_string()); }
+                Ok(s) => {
+                    json_out.set(s);
+                    json_msg.set("Pretty-printed OK.".to_string());
+                }
                 Err(e) => json_msg.set(e),
             }
         })
@@ -294,7 +301,10 @@ fn app() -> Html {
         let json_msg = json_msg.clone();
         Callback::from(move |_| {
             match minify_json(&json_in) {
-                Ok(s) => { json_out.set(s); json_msg.set("Minified OK.".to_string()); }
+                Ok(s) => {
+                    json_out.set(s);
+                    json_msg.set("Minified OK.".to_string());
+                }
                 Err(e) => json_msg.set(e),
             }
         })
@@ -348,11 +358,17 @@ fn app() -> Html {
             }
             match decode_jwt_part(parts[0]) {
                 Ok(h) => jwt_header.set(h),
-                Err(e) => { jwt_msg.set(format!("Header: {e}")); return; }
+                Err(e) => {
+                    jwt_msg.set(format!("Header: {e}"));
+                    return;
+                }
             }
             match decode_jwt_part(parts[1]) {
                 Ok(p) => jwt_payload.set(p),
-                Err(e) => { jwt_msg.set(format!("Payload: {e}")); return; }
+                Err(e) => {
+                    jwt_msg.set(format!("Payload: {e}"));
+                    return;
+                }
             }
             jwt_msg.set("Decoded header + payload (signature not verified).".to_string());
         })
@@ -409,7 +425,10 @@ fn app() -> Html {
             let input = (*b64_in).trim().to_string();
             match base64::engine::general_purpose::STANDARD.decode(input.as_bytes()) {
                 Ok(bytes) => match String::from_utf8(bytes) {
-                    Ok(s) => { b64_out.set(s); b64_msg.set("Decoded OK.".to_string()); }
+                    Ok(s) => {
+                        b64_out.set(s);
+                        b64_msg.set("Decoded OK.".to_string());
+                    }
                     Err(e) => b64_msg.set(format!("utf8 error: {e} (decoded bytes aren't UTF-8)")),
                 },
                 Err(e) => b64_msg.set(format!("base64 decode error: {e}")),
@@ -450,7 +469,10 @@ fn app() -> Html {
         let url_msg = url_msg.clone();
         Callback::from(move |_| {
             match decode(&*url_in) {
-                Ok(s) => { url_out.set(s.to_string()); url_msg.set("Decoded OK.".to_string()); }
+                Ok(s) => {
+                    url_out.set(s.to_string());
+                    url_msg.set("Decoded OK.".to_string());
+                }
                 Err(e) => url_msg.set(format!("decode error: {e}")),
             }
         })
@@ -479,7 +501,9 @@ fn app() -> Html {
         let uuid_msg = uuid_msg.clone();
         Callback::from(move |_| {
             let mut u = Uuid::new_v4().to_string();
-            if *uuid_upper { u = u.to_uppercase(); }
+            if *uuid_upper {
+                u = u.to_uppercase();
+            }
             uuid_out.set(u);
             uuid_msg.set("Generated UUID v4.".to_string());
         })
@@ -557,6 +581,11 @@ fn app() -> Html {
         Callback::from(move |_| diff_is_json.set(!*diff_is_json))
     };
 
+    let on_diff_toggle_meta = {
+        let diff_show_meta = diff_show_meta.clone();
+        Callback::from(move |_| diff_show_meta.set(!*diff_show_meta))
+    };
+
     let on_diff_run = {
         let diff_left = diff_left.clone();
         let diff_right = diff_right.clone();
@@ -567,19 +596,33 @@ fn app() -> Html {
             let left = (*diff_left).clone();
             let right = (*diff_right).clone();
 
-            let (a, b) = if *diff_is_json {
+            let (mut a, mut b) = if *diff_is_json {
                 let na = match normalize_json_for_diff(&left) {
                     Ok(s) => s,
-                    Err(e) => { diff_msg.set(format!("Left: {e}")); return; }
+                    Err(e) => {
+                        diff_msg.set(format!("Left: {e}"));
+                        return;
+                    }
                 };
                 let nb = match normalize_json_for_diff(&right) {
                     Ok(s) => s,
-                    Err(e) => { diff_msg.set(format!("Right: {e}")); return; }
+                    Err(e) => {
+                        diff_msg.set(format!("Right: {e}"));
+                        return;
+                    }
                 };
                 (na, nb)
             } else {
                 (left, right)
             };
+
+            // UX polish: avoid "\ No newline at end of file"
+            if !a.ends_with('\n') {
+                a.push('\n');
+            }
+            if !b.ends_with('\n') {
+                b.push('\n');
+            }
 
             let u = unified_diff(&a, &b);
             diff_out.set(classify_unified_diff(&u));
@@ -612,24 +655,37 @@ fn app() -> Html {
 
     /* ---------- Regex actions ---------- */
 
+    let on_regex_toggle_live = {
+        let rx_live = rx_live.clone();
+        Callback::from(move |_| rx_live.set(!*rx_live))
+    };
+
     let on_regex_run = {
         let rx_pat = rx_pat.clone();
         let rx_text = rx_text.clone();
         let rx_out = rx_out.clone();
+        let rx_count = rx_count.clone();
         let rx_msg = rx_msg.clone();
         Callback::from(move |_| {
             let p = (*rx_pat).clone();
             let t = (*rx_text).clone();
             if p.trim().is_empty() {
                 rx_msg.set("Enter a regex pattern.".to_string());
+                rx_out.set(String::new());
+                rx_count.set(0);
                 return;
             }
             match run_regex(&p, &t) {
-                Ok(lines) => {
+                Ok((lines, count)) => {
                     rx_out.set(lines.join("\n\n"));
+                    rx_count.set(count);
                     rx_msg.set("Regex executed.".to_string());
                 }
-                Err(e) => rx_msg.set(e),
+                Err(e) => {
+                    rx_msg.set(e);
+                    rx_out.set(String::new());
+                    rx_count.set(0);
+                }
             }
         })
     };
@@ -649,21 +705,69 @@ fn app() -> Html {
         })
     };
 
+    // Live regex evaluation whenever pattern/text changes (when Live mode is ON)
+    {
+        let pat = (*rx_pat).clone();
+        let txt = (*rx_text).clone();
+        let live = *rx_live;
+
+        let rx_out = rx_out.clone();
+        let rx_count = rx_count.clone();
+        let rx_msg = rx_msg.clone();
+
+        use_effect_with_deps(
+            move |(p, t, l)| {
+                if !*l {
+                    return || {};
+                }
+
+                if p.trim().is_empty() {
+                    rx_out.set(String::new());
+                    rx_count.set(0);
+                    rx_msg.set("Enter a regex pattern.".to_string());
+                    return || {};
+                }
+
+                match run_regex(p, t) {
+                    Ok((lines, count)) => {
+                        rx_out.set(lines.join("\n\n"));
+                        rx_count.set(count);
+                        rx_msg.set("Live: updated.".to_string());
+                    }
+                    Err(e) => {
+                        rx_out.set(String::new());
+                        rx_count.set(0);
+                        rx_msg.set(e);
+                    }
+                }
+
+                || {}
+            },
+            (pat, txt, live),
+        );
+    }
+
     /* ---------- Views ---------- */
 
     let render_diff = {
         let lines = (*diff_out).clone();
+        let show_meta = *diff_show_meta;
         html! {
           <pre class="diff">
-            { for lines.into_iter().map(|l| {
+            {
+              for lines.into_iter().filter_map(|l| {
+                if !show_meta && l.kind == DiffKind::Meta {
+                    return None;
+                }
                 let cls = match l.kind {
                     DiffKind::Meta => "meta",
                     DiffKind::Add => "add",
                     DiffKind::Del => "del",
                     DiffKind::Ctx => "ctx",
                 };
-                html!{ <span class={cls}>{ format!("{}\n", l.text) }</span> }
-            })}
+                Some(html!{ <span class={cls}>{ format!("{}\n", l.text) }</span> })
+              })
+            }
           </pre>
         }
     };
@@ -867,7 +971,9 @@ fn app() -> Html {
                   <div class="block-title">{ "UUID v4 Generator" }</div>
                   <div class="btnrow">
                     <button class="btn" onclick={on_uuid_generate}>{ "Generate" }</button>
-                    <button class="btn" onclick={on_uuid_toggle_upper}>{ if *uuid_upper { "Uppercase: ON" } else { "Uppercase: OFF" } }</button>
+                    <button class="btn" onclick={on_uuid_toggle_upper}>
+                      { if *uuid_upper { "Uppercase: ON" } else { "Uppercase: OFF" } }
+                    </button>
                     <button class="btn" onclick={on_uuid_copy}>{ "Copy" }</button>
                   </div>
                 </div>
@@ -935,6 +1041,9 @@ fn app() -> Html {
                     <button class="btn" onclick={on_diff_toggle_mode}>
                       { if *diff_is_json { "Mode: JSON (normalized)" } else { "Mode: Text (raw)" } }
                     </button>
+                    <button class="btn" onclick={on_diff_toggle_meta}>
+                      { if *diff_show_meta { "Meta: SHOW" } else { "Meta: HIDE" } }
+                    </button>
                     <button class="btn" onclick={on_diff_run}>{ "Diff" }</button>
                     <button class="btn" onclick={on_diff_copy}>{ "Copy Diff" }</button>
                   </div>
@@ -982,7 +1091,7 @@ fn app() -> Html {
               </div>
 
               <div class="smallnote">
-                { "JSON mode parses + sorts keys + pretty-prints before diffing. Text mode diffs raw input." }
+                { "JSON mode parses + sorts keys + pretty-prints before diffing. Text mode diffs raw input. Meta toggle hides headers/markers." }
               </div>
             </div>
         },
@@ -993,6 +1102,9 @@ fn app() -> Html {
                 <div class="block-head">
                   <div class="block-title">{ "Regex Sandbox" }</div>
                   <div class="btnrow">
+                    <button class="btn" onclick={on_regex_toggle_live}>
+                      { if *rx_live { "Live: ON" } else { "Live: OFF" } }
+                    </button>
                     <button class="btn" onclick={on_regex_run}>{ "Run" }</button>
                     <button class="btn" onclick={on_regex_copy}>{ "Copy Results" }</button>
                   </div>
@@ -1031,6 +1143,11 @@ fn app() -> Html {
               <div class="block">
                 <div class="block-head">
                   <div class="block-title">{ "Matches / Captures" }</div>
+                  <div class="btnrow">
+                    <span class="btn" style="cursor:default;">
+                      { format!("Matches: {}", *rx_count) }
+                    </span>
+                  </div>
                 </div>
                 <pre class="diff">{ (*rx_out).clone() }</pre>
                 <div class="kv">
@@ -1045,7 +1162,8 @@ fn app() -> Html {
     html! {
       <div class="app">
         <div class="tabs" role="tablist" aria-label="DevPocket Tabs">
-          { for [
+          {
+            for [
               Tab::Json, Tab::Jwt, Tab::Base64, Tab::Url,
               Tab::Uuid, Tab::Hash, Tab::Diff, Tab::Regex
             ].into_iter().map(|t| {
@@ -1062,7 +1180,8 @@ fn app() -> Html {
                   { tab_label(t) }
                 </button>
               }
-          })}
+            })
+          }
         </div>
 
         { content }
