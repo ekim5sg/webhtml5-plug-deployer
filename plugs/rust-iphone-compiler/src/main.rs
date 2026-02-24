@@ -79,6 +79,46 @@ fn iso_short(s: &Option<String>) -> String {
         .replace('Z', "")
 }
 
+/// Convert "My Cool App" -> "my-cool-app"
+fn slugify_app_name(s: &str) -> String {
+    let mut out = String::new();
+    let mut last_dash = false;
+
+    for ch in s.trim().chars() {
+        let c = ch.to_ascii_lowercase();
+        if c.is_ascii_alphanumeric() {
+            out.push(c);
+            last_dash = false;
+        } else if c.is_whitespace() || c == '-' || c == '_' {
+            if !out.is_empty() && !last_dash {
+                out.push('-');
+                last_dash = true;
+            }
+        } else {
+            // drop other punctuation/symbols
+        }
+    }
+
+    while out.ends_with('-') {
+        out.pop();
+    }
+    out
+}
+
+fn sanitize_plug_name(s: &str) -> Option<String> {
+    let p = s.trim();
+    if p.is_empty() {
+        return None;
+    }
+    if p.chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    {
+        Some(p.to_string())
+    } else {
+        None
+    }
+}
+
 // IMPORTANT: r##" .. "## so `content="#0b1020"` does not terminate raw strings.
 fn scaffold_index_html(title: &str) -> String {
     format!(
@@ -188,7 +228,7 @@ button, input, select, textarea{ font:inherit; }
   color:var(--muted);
   font-size:15px;
   line-height:1.5;
-  max-width:70ch;
+  max-width:72ch;
 }
 
 .grid{
@@ -224,7 +264,7 @@ button, input, select, textarea{ font:inherit; }
   border:none;
   border-radius:14px;
   padding:12px 14px;
-  font-weight:700;
+  font-weight:800;
   color:var(--text);
   background:linear-gradient(135deg, rgba(124,92,255,.95), rgba(40,215,255,.70));
   box-shadow: 0 14px 30px rgba(124,92,255,.18);
@@ -232,11 +272,13 @@ button, input, select, textarea{ font:inherit; }
   transform: translateZ(0);
 }
 .btn:active{ transform: scale(.99); }
+.btn:disabled{ opacity:.65; cursor:not-allowed; }
 
 .btn2{
   background:rgba(255,255,255,.05);
   border:1px solid var(--line);
   box-shadow:none;
+  font-weight:700;
 }
 
 .input, .select, .ta{
@@ -250,12 +292,10 @@ button, input, select, textarea{ font:inherit; }
   outline:none;
 }
 
-.select{
-  appearance:none;
-}
+.select{ appearance:none; }
 
 .ta{
-  min-height: 320px;
+  min-height: 280px;
   resize: vertical;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 13px;
@@ -280,42 +320,49 @@ button, input, select, textarea{ font:inherit; }
 .k .label{ color:var(--muted); font-size:12px; }
 .k .value{ margin-top:4px; font-size:14px; }
 
+.mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+.progress{
+  width:100%;
+  height:12px;
+  border-radius:999px;
+  background:rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.10);
+  overflow:hidden;
+  box-shadow: 0 12px 30px rgba(0,0,0,.25);
+}
+.progress > div{
+  height:100%;
+  width:0%;
+  background:linear-gradient(135deg, rgba(57,217,138,.85), rgba(40,215,255,.70));
+}
+
 .log{
   white-space:pre-wrap;
   margin-top:12px;
   color:var(--muted);
+  font-size:13px;
 }
 
 .warn{
   margin-top:10px;
   padding:10px 12px;
   border-radius:14px;
-  border:1px solid rgba(255,209,102,.35);
-  background:rgba(255,209,102,.08);
+  border:1px solid rgba(255,92,122,.35);
+  background:rgba(255,92,122,.08);
   color:var(--muted);
+  white-space:pre-wrap;
 }
 
-.runs{
-  display:flex;
-  flex-direction:column;
-  gap:10px;
+.ok{
+  margin-top:10px;
+  padding:10px 12px;
+  border-radius:14px;
+  border:1px solid rgba(57,217,138,.35);
+  background:rgba(57,217,138,.08);
+  color:var(--muted);
+  white-space:pre-wrap;
 }
-
-.run{
-  padding:12px;
-  border:1px solid var(--line);
-  border-radius:16px;
-  background:rgba(255,255,255,.03);
-}
-
-.run-top{
-  display:flex;
-  justify-content:space-between;
-  gap:10px;
-  flex-wrap:wrap;
-}
-
-.mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 
 .footer{
   margin-top:18px;
@@ -515,24 +562,10 @@ async fn github_put_file(
     }
 }
 
-fn sanitize_plug_name(s: &str) -> Option<String> {
-    let p = s.trim();
-    if p.is_empty() {
-        return None;
-    }
-    if p.chars()
-        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
-    {
-        Some(p.to_string())
-    } else {
-        None
-    }
-}
-
 async fn copy_to_clipboard(text: &str) -> Result<(), String> {
     let window = web_sys::window().ok_or("window not available".to_string())?;
 
-    // 1) Modern Clipboard API (returns a Promise, not a Result)
+    // 1) Modern Clipboard API (returns a Promise)
     {
         let clipboard = window.navigator().clipboard();
         let promise = clipboard.write_text(text);
@@ -599,9 +632,22 @@ fn app() -> Html {
     let status = use_state(|| "".to_string());
     let busy = use_state(|| false);
 
-    // create + deploy
-    let new_plug = use_state(|| "my-new-plug".to_string());
+    // ✅ create + deploy (now with 4 file textareas)
+    let app_name = use_state(|| "My New Plug".to_string()); // human-friendly
+    let new_plug = use_state(|| "my-new-plug".to_string()); // slug folder
     let new_title = use_state(|| "My New Plug".to_string());
+
+    let new_index_html = use_state(|| scaffold_index_html("My New Plug"));
+    let new_styles_css = use_state(|| scaffold_styles_css());
+    let new_cargo_toml = use_state(|| scaffold_cargo_toml("my-new-plug"));
+    let new_main_rs = use_state(|| scaffold_main_rs("My New Plug", "my-new-plug"));
+
+    // dirty flags: prevents auto-overwriting if you already edited
+    let dirty_index = use_state(|| false);
+    let dirty_css = use_state(|| false);
+    let dirty_toml = use_state(|| false);
+    let dirty_main = use_state(|| false);
+
     let create_status = use_state(|| "".to_string());
     let create_busy = use_state(|| false);
 
@@ -638,7 +684,7 @@ fn app() -> Html {
     let on_save_token = {
         let token = token.clone();
         let status = status.clone();
-        Callback::from(move |_| {
+        Callback::from(move |_: MouseEvent| {
             let t = (*token).clone();
             if t.trim().is_empty() {
                 status.set("Token is empty.".into());
@@ -658,7 +704,7 @@ fn app() -> Html {
         })
     };
 
-    // ✅ Copy URL (uses copy_to_clipboard so it isn't "never used")
+    // Copy deployed URL
     let on_copy_deployed_url = {
         let status = status.clone();
         let url = (*deployed_url).clone();
@@ -750,25 +796,151 @@ fn app() -> Html {
         })
     };
 
-    // create + deploy scaffold
+    // ✅ Create section handlers
+    let on_app_name = {
+        let app_name = app_name.clone();
+        let new_title = new_title.clone();
+        let new_plug = new_plug.clone();
+
+        let new_index_html = new_index_html.clone();
+        let new_styles_css = new_styles_css.clone();
+        let new_cargo_toml = new_cargo_toml.clone();
+        let new_main_rs = new_main_rs.clone();
+
+        let dirty_index = dirty_index.clone();
+        let dirty_css = dirty_css.clone();
+        let dirty_toml = dirty_toml.clone();
+        let dirty_main = dirty_main.clone();
+
+        Callback::from(move |e: InputEvent| {
+            let v = e.target_unchecked_into::<HtmlInputElement>().value();
+            app_name.set(v.clone());
+
+            let slug = slugify_app_name(&v);
+            if !slug.is_empty() {
+                new_plug.set(slug.clone());
+            }
+            new_title.set(v.clone());
+
+            // only refresh scaffolds if you haven't typed into those textareas yet
+            if !*dirty_index {
+                new_index_html.set(scaffold_index_html(v.trim()));
+            }
+            if !*dirty_css {
+                new_styles_css.set(scaffold_styles_css());
+            }
+            if !*dirty_toml {
+                let p = if slug.is_empty() { "my-new-plug".to_string() } else { slug.clone() };
+                new_cargo_toml.set(scaffold_cargo_toml(&p));
+            }
+            if !*dirty_main {
+                let p = if slug.is_empty() { "my-new-plug".to_string() } else { slug.clone() };
+                new_main_rs.set(scaffold_main_rs(v.trim(), &p));
+            }
+        })
+    };
+
     let on_new_plug = {
         let new_plug = new_plug.clone();
+        let new_cargo_toml = new_cargo_toml.clone();
+        let new_main_rs = new_main_rs.clone();
+        let new_title = new_title.clone();
+
+        let dirty_toml = dirty_toml.clone();
+        let dirty_main = dirty_main.clone();
+
         Callback::from(move |e: InputEvent| {
             let v = e.target_unchecked_into::<HtmlInputElement>().value();
-            new_plug.set(v);
+            new_plug.set(v.clone());
+
+            // if user hasn't edited TOML/main yet, keep them aligned with plug name
+            if !*dirty_toml {
+                let p = slugify_app_name(&v);
+                let p = if p.is_empty() { v.clone() } else { p };
+                new_cargo_toml.set(scaffold_cargo_toml(&p));
+            }
+            if !*dirty_main {
+                let p = slugify_app_name(&v);
+                let p = if p.is_empty() { v.clone() } else { p };
+                new_main_rs.set(scaffold_main_rs(new_title.trim(), &p));
+            }
         })
     };
+
     let on_new_title = {
         let new_title = new_title.clone();
+        let new_index_html = new_index_html.clone();
+        let new_main_rs = new_main_rs.clone();
+        let new_plug = new_plug.clone();
+
+        let dirty_index = dirty_index.clone();
+        let dirty_main = dirty_main.clone();
+
         Callback::from(move |e: InputEvent| {
             let v = e.target_unchecked_into::<HtmlInputElement>().value();
-            new_title.set(v);
+            new_title.set(v.clone());
+
+            let plug = (*new_plug).clone();
+            if !*dirty_index {
+                new_index_html.set(scaffold_index_html(v.trim()));
+            }
+            if !*dirty_main {
+                new_main_rs.set(scaffold_main_rs(v.trim(), plug.trim()));
+            }
         })
     };
+
+    let on_index_html = {
+        let new_index_html = new_index_html.clone();
+        let dirty_index = dirty_index.clone();
+        Callback::from(move |e: InputEvent| {
+            let v = e.target_unchecked_into::<HtmlTextAreaElement>().value();
+            new_index_html.set(v);
+            dirty_index.set(true);
+        })
+    };
+
+    let on_styles_css = {
+        let new_styles_css = new_styles_css.clone();
+        let dirty_css = dirty_css.clone();
+        Callback::from(move |e: InputEvent| {
+            let v = e.target_unchecked_into::<HtmlTextAreaElement>().value();
+            new_styles_css.set(v);
+            dirty_css.set(true);
+        })
+    };
+
+    let on_cargo_toml = {
+        let new_cargo_toml = new_cargo_toml.clone();
+        let dirty_toml = dirty_toml.clone();
+        Callback::from(move |e: InputEvent| {
+            let v = e.target_unchecked_into::<HtmlTextAreaElement>().value();
+            new_cargo_toml.set(v);
+            dirty_toml.set(true);
+        })
+    };
+
+    let on_main_rs = {
+        let new_main_rs = new_main_rs.clone();
+        let dirty_main = dirty_main.clone();
+        Callback::from(move |e: InputEvent| {
+            let v = e.target_unchecked_into::<HtmlTextAreaElement>().value();
+            new_main_rs.set(v);
+            dirty_main.set(true);
+        })
+    };
+
     let on_create_and_deploy = {
         let token = token.clone();
+
         let new_plug = new_plug.clone();
         let new_title = new_title.clone();
+
+        let new_index_html = new_index_html.clone();
+        let new_styles_css = new_styles_css.clone();
+        let new_cargo_toml = new_cargo_toml.clone();
+        let new_main_rs = new_main_rs.clone();
+
         let create_status = create_status.clone();
         let create_busy = create_busy.clone();
 
@@ -778,13 +950,14 @@ fn app() -> Html {
             }
 
             let token = (*token).clone();
-            let plug = (*new_plug).clone();
-            let title = (*new_title).clone();
-
             if token.trim().is_empty() {
                 create_status.set("Missing GitHub token.".into());
                 return;
             }
+
+            let plug = (*new_plug).clone();
+            let title = (*new_title).clone();
+
             let Some(plug) = sanitize_plug_name(&plug) else {
                 create_status.set("plug_name must be lowercase letters, numbers, hyphens.".into());
                 return;
@@ -794,15 +967,20 @@ fn app() -> Html {
                 return;
             }
 
+            let idx = (*new_index_html).clone();
+            let css = (*new_styles_css).clone();
+            let toml = (*new_cargo_toml).clone();
+            let mainrs = (*new_main_rs).clone();
+
             create_busy.set(true);
-            create_status.set("Creating/overwriting scaffold files…".into());
+            create_status.set("Writing 4 files to GitHub…".into());
 
             spawn_local({
                 let create_status = create_status.clone();
                 let create_busy = create_busy.clone();
                 async move {
                     let base = format!("plugs/{}", plug);
-                    let msg = format!("Add plug scaffold: {}", plug);
+                    let msg = format!("Create plug via rust-iphone-compiler: {}", plug);
 
                     async fn upsert(
                         token: &str,
@@ -818,11 +996,6 @@ fn app() -> Html {
                         github_put_file(token, path, msg, content, sha).await
                     }
 
-                    let idx = scaffold_index_html(title.trim());
-                    let css = scaffold_styles_css();
-                    let toml = scaffold_cargo_toml(&plug);
-                    let mainrs = scaffold_main_rs(title.trim(), &plug);
-
                     let r1 = upsert(&token, &format!("{}/index.html", base), &msg, &idx).await;
                     let r2 = upsert(&token, &format!("{}/styles.css", base), &msg, &css).await;
                     let r3 = upsert(&token, &format!("{}/Cargo.toml", base), &msg, &toml).await;
@@ -830,7 +1003,7 @@ fn app() -> Html {
 
                     match (r1, r2, r3, r4) {
                         (Ok(_), Ok(_), Ok(_), Ok(_)) => {
-                            create_status.set("Files created ✅ Dispatching deploy workflow…".into());
+                            create_status.set("Files saved ✅ Dispatching deploy workflow…".into());
                             let app_dir = format!("plugs/{}", plug);
                             match dispatch_workflow(&token, &plug, &app_dir).await {
                                 Ok(_) => create_status.set(format!(
@@ -842,10 +1015,10 @@ fn app() -> Html {
                         }
                         (a, b, c, d) => {
                             let mut errs = vec![];
-                            if let Err(e) = a { errs.push(e); }
-                            if let Err(e) = b { errs.push(e); }
-                            if let Err(e) = c { errs.push(e); }
-                            if let Err(e) = d { errs.push(e); }
+                            if let Err(e) = a { errs.push(format!("index.html: {e}")); }
+                            if let Err(e) = b { errs.push(format!("styles.css: {e}")); }
+                            if let Err(e) = c { errs.push(format!("Cargo.toml: {e}")); }
+                            if let Err(e) = d { errs.push(format!("src/main.rs: {e}")); }
                             create_status.set(format!("Create error:\n{}", errs.join("\n")));
                         }
                     }
@@ -1010,17 +1183,19 @@ fn app() -> Html {
     };
 
     let on_save_and_deploy = {
-        let on_save_file = on_save_file.clone();
         let token = token.clone();
         let edit_plug = edit_plug.clone();
         let status = status.clone();
         let busy = busy.clone();
+        let on_save_file = on_save_file.clone();
 
         Callback::from(move |_: MouseEvent| {
+            // fire save
             on_save_file.emit(MouseEvent::new("click").unwrap());
 
             let token = (*token).clone();
             let plug = (*edit_plug).clone();
+
             if token.trim().is_empty() {
                 status.set("Missing GitHub token.".into());
                 return;
@@ -1029,7 +1204,6 @@ fn app() -> Html {
                 status.set("plug_name must be lowercase letters, numbers, hyphens.".into());
                 return;
             };
-
             if *busy {
                 return;
             }
@@ -1050,6 +1224,26 @@ fn app() -> Html {
                         Err(e) => status.set(format!("Dispatch error: {}", e)),
                     }
                     busy.set(false);
+                }
+            });
+        })
+    };
+
+    // handy create URL + copy button
+    let created_url = {
+        let p = (*new_plug).clone();
+        use_memo(p, |plug| format!("https://www.webhtml5.info/{}/", plug.trim()))
+    };
+    let on_copy_created_url = {
+        let create_status = create_status.clone();
+        let url = (*created_url).clone();
+        Callback::from(move |_: MouseEvent| {
+            let create_status = create_status.clone();
+            let url = url.clone();
+            spawn_local(async move {
+                match copy_to_clipboard(&url).await {
+                    Ok(_) => create_status.set("Copied new app URL ✅".into()),
+                    Err(e) => create_status.set(format!("Copy failed: {}", e)),
                 }
             });
         })
@@ -1119,18 +1313,49 @@ fn app() -> Html {
             <section class="card">
               <div class="card-h">
                 <h2 class="h2">{ "Create a new plug + deploy" }</h2>
-                <p class="sub">{ "Creates/overwrites scaffold files, then deploys." }</p>
+                <p class="sub">{ "Paste your 4 files (index.html, styles.css, Cargo.toml, src/main.rs), then deploy." }</p>
               </div>
-              <div class="card-b">
-                <label class="sub" style="display:block; margin:0 0 6px; max-width:none;">{ "new plug_name" }</label>
-                <input class="input" value={(*new_plug).clone()} oninput={on_new_plug} />
 
-                <label class="sub" style="display:block; margin:12px 0 6px; max-width:none;">{ "title" }</label>
+              <div class="card-b">
+                <label class="sub" style="display:block; margin:0 0 6px; max-width:none;">{ "App name (auto-slugifies to plug-name)" }</label>
+                <input class="input" value={(*app_name).clone()} oninput={on_app_name} placeholder="My Cool App" />
+
+                <label class="sub" style="display:block; margin:12px 0 6px; max-width:none;">{ "plug_name (Hostek folder)" }</label>
+                <input class="input" value={(*new_plug).clone()} oninput={on_new_plug} placeholder="my-cool-app" />
+
+                <label class="sub" style="display:block; margin:12px 0 6px; max-width:none;">{ "title (for index.html scaffold)" }</label>
                 <input class="input" value={(*new_title).clone()} oninput={on_new_title} />
 
-                <button class="btn" onclick={on_create_and_deploy} disabled={*create_busy} style="margin-top:12px;">
-                  { if *create_busy { "Working…" } else { "Create + Deploy" } }
-                </button>
+                <div class="kv" style="margin-top:10px;">
+                  <div class="k">
+                    <div class="label">{ "new app URL" }</div>
+                    <div class="value mono">{ (*created_url).clone() }</div>
+                  </div>
+                  <div class="k">
+                    <div class="label">{ "GitHub path" }</div>
+                    <div class="value mono">{ format!("plugs/{}/", (*new_plug).trim()) }</div>
+                  </div>
+                </div>
+
+                <label class="sub" style="display:block; margin:14px 0 6px; max-width:none;">{ "index.html" }</label>
+                <textarea class="ta" style="min-height:180px;" value={(*new_index_html).clone()} oninput={on_index_html}></textarea>
+
+                <label class="sub" style="display:block; margin:14px 0 6px; max-width:none;">{ "styles.css" }</label>
+                <textarea class="ta" style="min-height:180px;" value={(*new_styles_css).clone()} oninput={on_styles_css}></textarea>
+
+                <label class="sub" style="display:block; margin:14px 0 6px; max-width:none;">{ "Cargo.toml" }</label>
+                <textarea class="ta" style="min-height:180px;" value={(*new_cargo_toml).clone()} oninput={on_cargo_toml}></textarea>
+
+                <label class="sub" style="display:block; margin:14px 0 6px; max-width:none;">{ "src/main.rs" }</label>
+                <textarea class="ta" style="min-height:220px;" value={(*new_main_rs).clone()} oninput={on_main_rs}></textarea>
+
+                <div class="row" style="margin-top:12px;">
+                  <button class="btn" onclick={on_create_and_deploy} disabled={*create_busy}>
+                    { if *create_busy { "Working…" } else { "Create + Deploy" } }
+                  </button>
+                  <button class="btn btn2" onclick={on_copy_created_url}>{ "Copy URL" }</button>
+                  <a class="btn btn2" href={(*created_url).clone()} target="_blank">{ "Open URL" }</a>
+                </div>
 
                 <pre class="log">{ (*create_status).clone() }</pre>
               </div>
@@ -1161,9 +1386,7 @@ fn app() -> Html {
                 <button class="btn" onclick={on_deploy} disabled={*busy}>
                   { if *busy { "Working…" } else { "Deploy plug" } }
                 </button>
-                <button class="btn btn2" onclick={on_copy_deployed_url}>
-                  { "Copy URL" }
-                </button>
+                <button class="btn btn2" onclick={on_copy_deployed_url}>{ "Copy URL" }</button>
               </div>
 
               <pre class="log">{ (*status).clone() }</pre>
