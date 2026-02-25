@@ -277,7 +277,7 @@ fn corporate_translate(s: &str) -> String {
 }
 
 #[wasm_bindgen(start)]
-pub fn main() {
+pub fn start() {
     let w = window().expect("no window");
     let doc = w.document().expect("no document");
 
