@@ -18,17 +18,21 @@
 *{ box-sizing:border-box; }
 html, body { height:100%; }
 html { color-scheme: dark; }
+
 body{
   margin:0;
   font-family: var(--sans);
   background: var(--bg0);
   color: var(--text);
+  position: relative; /* helps ensure correct stacking contexts */
 }
 
+/* Background layer — must NEVER cover content */
 .bg{
   position:fixed;
   inset:0;
   pointer-events:none;
+  z-index:-1; /* critical: keep behind everything */
   background:
     radial-gradient(1200px 800px at 20% 0%, rgba(120,140,255,.18), transparent 60%),
     radial-gradient(900px 700px at 90% 20%, rgba(110,255,210,.10), transparent 60%),
@@ -37,12 +41,18 @@ body{
   filter:saturate(1.05);
 }
 
+/* Ensure UI sits above bg even if the browser creates odd stacking contexts */
+.topbar, main, .card, #app{
+  position: relative;
+  z-index: 1;
+}
+
 .wrap{ width:min(1120px, calc(100% - 32px)); margin:0 auto; }
 
 .topbar{
   position:sticky;
   top:0;
-  z-index:10;
+  z-index:10; /* stays above content */
   backdrop-filter: blur(14px);
   background: rgba(7,10,18,.55);
   border-bottom:1px solid var(--line);
@@ -203,6 +213,7 @@ body{
   font-size: 12px;
 }
 .btn:hover{ border-color: rgba(255,255,255,.22); background: rgba(255,255,255,.06); }
+.btn:active{ transform: translateY(1px); }
 
 textarea{
   width:100%;
