@@ -1,7 +1,6 @@
 use regex::Regex;
-use serde::{Deserialize, Serialize};
-use wasm_bindgen_futures::spawn_local;
-use web_sys::{window, Clipboard};
+use wasm_bindgen_futures::{spawn_local, JsFuture};
+use web_sys::window;
 use yew::prelude::*;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -31,35 +30,99 @@ fn lint(setup: &str, punch: &str) -> LintResult {
     let b = tokenize(punch);
 
     let reuse = (overlap(&a, &b) * 100.0) as i32;
-    let pun_density = reuse.min(100).max(0) as u8;
+    let pun_density = reuse.clamp(0, 100) as u8;
 
     let mut groan = 30;
-    if b.len() <= 8 && a.len() >= 20 { groan += 25; }
-    if punch.trim().ends_with("...") { groan += 10; }
+    if b.len() <= 8 && a.len() >= 20 {
+        groan += 25;
+    }
+    if punch.trim().ends_with("...") {
+        groan += 10;
+    }
     let groan_factor = groan.min(100) as u8;
 
-    let kid_safe = if punch.contains("kill") { "FAIL" } else { "G" };
+    // Super simple kid-safe gate for MVP
+    let lower = format!("{} {}", setup, punch).to_lowercase();
+    let kid_safe = if lower.contains("kill") || lower.contains("suicide") || lower.contains("porn") {
+        "FAIL"
+    } else {
+        "G"
+    };
 
     let mut messages = vec![];
+    if setup.trim().is_empty() {
+        messages.push("error[INPUT001]: Missing setup".into());
+    }
+    if punch.trim().is_empty() {
+        messages.push("error[INPUT002]: Missing punchline".into());
+    }
+
     if reuse > 10 {
         messages.push("info[PUN001]: Twist reuses setup keywords".into());
     } else {
         messages.push("warning[PUN000]: Low keyword reuse".into());
     }
-
-    if b.len() <= 8 {
+    if b.len() <= 8 && !punch.trim().is_empty() {
         messages.push("info[GROAN001]: Short punchline boosts groan factor".into());
     }
 
     LintResult { pun_density, groan_factor, kid_safe, messages }
 }
 
-async fn copy(text: String) {
-    if let Some(win) = window() {
-        if let Some(clip) = win.navigator().clipboard() {
-            let _ = clip.write_text(&text).await;
+async fn copy_to_clipboard(text: String) -> Result<(), String> {
+    let win = window().ok_or("No window available")?;
+    let cb = win.navigator().clipboard(); // Clipboard (NOT Option)
+    let promise = cb.write_text(&text);
+    JsFuture::from(promise)
+        .await
+        .map_err(|_| "Clipboard write rejected".to_string())?;
+    Ok(())
+}
+
+fn safe_lines(s: &str) -> Vec<String> {
+    let trimmed = s.trim_end_matches('\n');
+    if trimmed.trim().is_empty() {
+        vec![]
+    } else {
+        trimmed.lines().map(|x| x.to_string()).collect()
+    }
+}
+
+fn pretty_git_like(setup: &str, punch: &str) -> String {
+    let old_lines = safe_lines(setup);
+    let new_lines = safe_lines(punch);
+
+    let old_n = old_lines.len().max(1);
+    let new_n = new_lines.len().max(1);
+
+    let mut out = String::new();
+    out.push_str("diff --git a/joke.txt b/joke.txt\n");
+    out.push_str("index dad000..groan999 100644\n");
+    out.push_str("--- a/joke.txt  (setup)\n");
+    out.push_str("+++ b/joke.txt  (punchline)\n");
+    out.push_str(&format!("@@ -1,{} +1,{} @@\n", old_n, new_n));
+
+    if old_lines.is_empty() {
+        out.push_str("- (empty)\n");
+    } else {
+        for l in old_lines {
+            out.push_str("- ");
+            out.push_str(&l);
+            out.push('\n');
         }
     }
+
+    if new_lines.is_empty() {
+        out.push_str("+ (empty)\n");
+    } else {
+        for l in new_lines {
+            out.push_str("+ ");
+            out.push_str(&l);
+            out.push('\n');
+        }
+    }
+
+    out
 }
 
 #[function_component(App)]
@@ -68,6 +131,7 @@ fn app() -> Html {
     let punch = use_state(|| "".to_string());
     let result = use_state(|| lint("", ""));
     let output = use_state(|| "".to_string());
+    let copy_status = use_state(|| "".to_string());
 
     let on_lint = {
         let setup = setup.clone();
@@ -83,18 +147,66 @@ fn app() -> Html {
         let punch = punch.clone();
         let output = output.clone();
         Callback::from(move |_| {
-            let diff = format!("- {}\n+ {}", *setup, *punch);
-            output.set(diff);
+            output.set(pretty_git_like(&setup, &punch));
         })
     };
 
     let on_copy = {
         let output = output.clone();
+        let copy_status = copy_status.clone();
         Callback::from(move |_| {
             let txt = (*output).clone();
-            spawn_local(copy(txt));
+            if txt.trim().is_empty() {
+                copy_status.set("Nothing to copy yet.".into());
+                return;
+            }
+            copy_status.set("Copying…".into());
+            let copy_status2 = copy_status.clone();
+            spawn_local(async move {
+                match copy_to_clipboard(txt).await {
+                    Ok(_) => copy_status2.set("Copied ✅".into()),
+                    Err(e) => copy_status2.set(format!("Copy failed: {}", e)),
+                }
+            });
         })
     };
+
+    // Build line-aligned diff view
+    let left_lines = safe_lines(&setup);
+    let right_lines = safe_lines(&punch);
+    let max_lines = left_lines.len().max(right_lines.len()).max(1);
+
+    let diff_rows = (0..max_lines).map(|i| {
+        let ln = (i + 1).to_string();
+        let ltxt = left_lines.get(i).cloned().unwrap_or_default();
+        let rtxt = right_lines.get(i).cloned().unwrap_or_default();
+
+        let l_is_empty = ltxt.trim().is_empty();
+        let r_is_empty = rtxt.trim().is_empty();
+
+        html! {
+            <div class="diffrow">
+                <div class="cell minus">
+                    <div class="line">
+                        <div class="ln">{ ln.clone() }</div>
+                        <div class="gutter">{ "-" }</div>
+                        <div class={classes!(if l_is_empty { "empty" } else { "" })}>
+                            { if left_lines.is_empty() { "(empty)".to_string() } else if ltxt.is_empty() { " ".to_string() } else { ltxt } }
+                        </div>
+                    </div>
+                </div>
+                <div class="cell plus">
+                    <div class="line">
+                        <div class="ln">{ ln }</div>
+                        <div class="gutter">{ "+" }</div>
+                        <div class={classes!(if r_is_empty { "empty" } else { "" })}>
+                            { if right_lines.is_empty() { "(empty)".to_string() } else if rtxt.is_empty() { " ".to_string() } else { rtxt } }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    });
 
     html! {
         <div class="wrap">
@@ -157,8 +269,17 @@ fn app() -> Html {
                         <div class="metric">
                             <div>{"Kid Safe"}<div class="n">{result.kid_safe}</div></div>
                         </div>
+
                         <div class="log">
                             { for result.messages.iter().map(|m| html!{ <div>{m}</div> }) }
+                        </div>
+
+                        <div class="log" style="margin-top:10px;">
+                            { (*output).clone() }
+                        </div>
+
+                        <div class="small" style="margin-top:8px;">
+                            { (*copy_status).clone() }
                         </div>
                     </div>
                 </div>
@@ -171,22 +292,7 @@ fn app() -> Html {
                         <div>{"Setup (-)"}</div>
                         <div>{"Punchline (+)"}</div>
                     </div>
-                    <div class="diffrow">
-                        <div class="cell minus">
-                            <div class="line">
-                                <div class="ln">{"1"}</div>
-                                <div class="gutter">{"-"}</div>
-                                <div>{(*setup).clone()}</div>
-                            </div>
-                        </div>
-                        <div class="cell plus">
-                            <div class="line">
-                                <div class="ln">{"1"}</div>
-                                <div class="gutter">{"+"}</div>
-                                <div>{(*punch).clone()}</div>
-                            </div>
-                        </div>
-                    </div>
+                    { for diff_rows }
                 </div>
             </div>
         </div>
