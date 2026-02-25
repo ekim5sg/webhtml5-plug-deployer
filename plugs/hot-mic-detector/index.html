@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="description" content="Hot Mic Detector (Totally Fake) — a parody tool that scores your message for hot-mic risk and generates safer rewrites. Built with Rust + Yew." />
+  <title>Hot Mic Detector (Totally Fake)</title>
+
+  <!-- Trunk: bundle CSS -->
+  <link data-trunk rel="css" href="styles.css" />
+</head>
+
+<body>
+  <div class="bg" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="wrap topbar-inner">
+      <div class="brand">
+        <div class="logo" aria-hidden="true">🎙️</div>
+        <div>
+          <div class="title">Hot Mic Detector</div>
+          <div class="subtitle">(Totally Fake)</div>
+        </div>
+      </div>
+
+      <a class="pill" href="#how" aria-label="Jump to how it works">How it works</a>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="hero card">
+      <div class="hero-left">
+        <h1>Before you hit “Unmute”…</h1>
+        <p class="lead">
+          Paste what you’re about to say. This parody “AI” will score the <b>Hot Mic Risk</b> and suggest a
+          corporate-safe rewrite. No servers. No tracking. Just vibes.
+        </p>
+
+        <div class="chips" aria-label="Quick paste examples">
+          <button id="ex1" class="chip" type="button">“Real quick…”</button>
+          <button id="ex2" class="chip" type="button">“Off the record…”</button>
+          <button id="ex3" class="chip" type="button">“This is a disaster.”</button>
+          <button id="ex4" class="chip" type="button">“Circle back after lunch.”</button>
+        </div>
+      </div>
+
+      <div class="hero-right">
+        <div class="scoreframe">
+          <div class="scorelabel">Hot Mic Risk</div>
+          <div id="scoreBig" class="scorebig">—</div>
+          <div id="riskTag" class="risktag neutral">Paste text to analyze</div>
+          <div class="meter">
+            <div id="meterFill" class="meter-fill" style="width:0%"></div>
+          </div>
+          <div class="smallnote">Totally made up. Strangely accurate.</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="grid">
+      <section class="card">
+        <h2>Your message</h2>
+        <textarea id="input" class="textarea" rows="7" placeholder="Paste your message here…"></textarea>
+
+        <div class="row">
+          <button id="analyze" class="btn primary" type="button">Analyze 🎛️</button>
+          <button id="clear" class="btn" type="button">Clear</button>
+          <button id="copyInput" class="btn" type="button">Copy</button>
+        </div>
+
+        <div class="hint">
+          Tip: Try phrases like “I’m not saying but…”, “between us…”, “this is going nowhere”, “who hired…”
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Flags & findings</h2>
+        <div id="findings" class="findings empty">
+          <div class="empty-state">
+            <div class="emoji">🫣</div>
+            <div class="empty-title">No findings yet</div>
+            <div class="empty-sub">Run an analysis to see risk triggers and suggested fixes.</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Safer rewrite</h2>
+        <div id="rewrite" class="rewrite empty">
+          <div class="empty-state">
+            <div class="emoji">🧼</div>
+            <div class="empty-title">Awaiting corporate polish</div>
+            <div class="empty-sub">Your “rewrite” will show up here.</div>
+          </div>
+        </div>
+
+        <div class="row">
+          <button id="copyRewrite" class="btn" type="button" disabled>Copy rewrite</button>
+          <button id="corporate" class="btn" type="button" disabled>Corporate Translate</button>
+          <button id="muted" class="btn" type="button" disabled>Make it sound muted</button>
+        </div>
+      </section>
+
+      <section class="card" id="how">
+        <h2>How it works</h2>
+        <ul class="list">
+          <li>Scores risk using silly rules + “danger phrase” matches.</li>
+          <li>Highlights the triggers it found (so you can blame the tool).</li>
+          <li>Generates a safer rewrite by swapping “spicy” words for corporate-safe ones.</li>
+          <li>Runs 100% in your browser — no network calls.</li>
+        </ul>
+
+        <div class="footer-note">
+          Built for the Rust iPhone Compiler workflow: small, fast, and fun.
+        </div>
+      </section>
+    </section>
+
+    <footer class="footer">
+      <div class="foot-left">© MikeGyver Studio vibes • Hot Mic Detector (Totally Fake)</div>
+      <a class="foot-right" href="#top" aria-label="Back to top">Back to top ↑</a>
+    </footer>
+  </main>
+
+  <script type="module">
+    import init from "./pkg/hot_mic_detector.js";
+    init();
+  </script>
+
+  <noscript>This app needs JavaScript enabled.</noscript>
+</body>
+</html>
