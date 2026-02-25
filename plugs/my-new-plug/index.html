@@ -1,0 +1,65 @@
+<!-- index.html — LogLens (MikeGyver Studio • Rust + Yew • Trunk) -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="description" content="LogLens — a client-side log explorer built with Rust + Yew + WASM." />
+  <title>LogLens • Rust Yew WASM</title>
+
+  <!-- IMPORTANT: Trunk bundles CSS ONLY when declared like this -->
+  <link data-trunk rel="css" href="styles.css" />
+
+  <!-- IMPORTANT: Trunk builds your Rust/WASM from this HTML -->
+  <link data-trunk rel="rust" data-wasm-opt="z" />
+</head>
+
+<body id="top">
+  <div class="bg" aria-hidden="true"></div>
+
+  <!-- Top Nav -->
+  <header class="topbar">
+    <div class="wrap topbar-inner">
+      <div class="brand" aria-label="LogLens Home">
+        <div class="logo" aria-hidden="true">🪵</div>
+        <div class="brand-text">
+          <div class="title">LogLens</div>
+          <div class="subtitle">Paste logs • Filter • Extract fields • Export (client-side WASM)</div>
+        </div>
+      </div>
+
+      <div class="right">
+        <a class="chip" href="#top">Top</a>
+        <a class="chip" href="https://www.webhtml5.info/" target="_blank" rel="noreferrer">webhtml5.info</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <!-- Hero -->
+    <section class="hero">
+      <h1>LogLens: your pocket log explorer</h1>
+      <p>Drop in JSONL logs, mixed text, or stack traces — filter quickly, extract key fields, and export what matters.</p>
+      <div class="hero-row">
+        <span class="pill">🦀 Rust + Yew</span>
+        <span class="pill">🧠 JSONL auto-detect</span>
+        <span class="pill">🔎 Fast filters</span>
+        <span class="pill">🧾 Field extraction</span>
+        <span class="pill">✨ Regex Highlight Mode</span>
+      </div>
+    </section>
+
+    <!-- App Card -->
+    <section class="card">
+      <!-- IMPORTANT: Yew mounts here (main.rs expects #app) -->
+      <div id="app"></div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <div>© MikeGyver Studio</div>
+      <div class="muted">Hard-locked dark mode • No data leaves your device</div>
+    </footer>
+  </main>
+</body>
+</html>
