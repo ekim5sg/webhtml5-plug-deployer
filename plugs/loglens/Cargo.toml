@@ -10,7 +10,7 @@ serde_json = "1"
 regex = "1"
 
 # Timers for the live tail simulator
-gloo-timers = { version = "0.3", features = ["callback"] }
+gloo-timers = "0.3"
 
 # Clipboard + DOM + localStorage
 web-sys = { version = "0.3", features = [
@@ -21,7 +21,8 @@ web-sys = { version = "0.3", features = [
   "Clipboard",
   "Storage",
   "HtmlTextAreaElement",
-  "HtmlInputElement"
+  "HtmlInputElement",
+  "HtmlSelectElement"
 ] }
 
 # async clipboard write + spawn_local
