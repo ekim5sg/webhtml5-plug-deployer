@@ -1,4 +1,4 @@
-/* styles.css — hard-locked dark mode */
+/* styles.css — hard-locked dark mode (LogLens) */
 :root{
   --bg0:#070a12;
   --bg1:#0b1020;
@@ -282,11 +282,6 @@ pre.mono{
   line-height:1.45;
   white-space: pre;
 }
-
-.line-meta{ color: rgba(169,179,217,.75); }
-.line-warn{ color: rgba(255,220,140,.92); }
-.line-err{ color: rgba(255,170,170,.92); }
-.line-ok{ color: rgba(170,255,220,.92); }
 
 /* Regex Highlight Mode */
 .hl{
