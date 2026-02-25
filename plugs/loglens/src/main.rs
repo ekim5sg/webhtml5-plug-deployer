@@ -1,4 +1,4 @@
-// src/main.rs
+// src/main.rs — LogLens (Rust + Yew + WASM)
 use regex::Regex;
 use serde_json::Value;
 use web_sys::window;
@@ -54,11 +54,11 @@ fn parse_entries(input: &str) -> Vec<Entry> {
     for (idx, line) in input.lines().enumerate() {
         let raw = line.to_string();
         let trimmed = line.trim();
-
         if trimmed.is_empty() {
             continue;
         }
 
+        // JSON-per-line detection
         let (is_json, pretty) = match serde_json::from_str::<Value>(trimmed) {
             Ok(v) => (true, serde_json::to_string_pretty(&v).ok()),
             Err(_) => (false, None),
@@ -76,6 +76,7 @@ fn parse_entries(input: &str) -> Vec<Entry> {
 }
 
 fn extract_field(v: &Value, path: &str) -> Option<String> {
+    // dotted paths like request.id, userId, trace.parent
     let mut cur = v;
     for seg in path.split('.').map(|s| s.trim()).filter(|s| !s.is_empty()) {
         cur = cur.get(seg)?;
@@ -89,10 +90,6 @@ fn extract_field(v: &Value, path: &str) -> Option<String> {
     }
 }
 
-/// Render a line with regex matches highlighted.
-/// - Works with any UTF-8 text (uses regex match byte ranges and slices safely on boundaries
-///   because regex match indices align with UTF-8 boundaries).
-/// - Non-overlapping matches (regex crate guarantees this).
 fn highlight_line(line: &str, re: &Regex) -> Html {
     let mut out: Vec<Html> = Vec::new();
     let mut cursor = 0usize;
@@ -118,6 +115,7 @@ fn highlight_line(line: &str, re: &Regex) -> Html {
 fn app() -> Html {
     let tab = use_state(|| Tab::Explore);
 
+    // input + parsed
     let log_in = use_state(|| String::new());
     let parsed = use_state(|| Vec::<Entry>::new());
 
@@ -126,17 +124,16 @@ fn app() -> Html {
     let needle = use_state(|| String::new());
     let show_json_only = use_state(|| false);
 
-    // extracted fields
+    // extract tab
     let field_list = use_state(|| "request_id\ntraceId\nuserId\nspanId".to_string());
     let extracted_out = use_state(|| String::new());
 
-    // Regex Highlight Mode (preview)
+    // Regex Highlight Mode
     let hl_pat = use_state(|| String::new());
     let hl_enabled = use_state(|| false);
     let hl_case_insensitive = use_state(|| true);
-    let hl_msg = use_state(|| String::new());
 
-    // messages
+    // status msg
     let msg = use_state(|| String::new());
 
     let set_tab = {
@@ -197,6 +194,28 @@ fn app() -> Html {
             .collect::<Vec<_>>()
     };
 
+    // Compile regex for highlighting (derived, no state mutation during render)
+    let (hl_regex, hl_status) = {
+        if !*hl_enabled {
+            (None, String::new())
+        } else {
+            let pat = (*hl_pat).trim().to_string();
+            if pat.is_empty() {
+                (None, "Highlight ON — enter a regex pattern.".to_string())
+            } else {
+                let final_pat = if *hl_case_insensitive {
+                    format!("(?i:{pat})")
+                } else {
+                    pat
+                };
+                match Regex::new(&final_pat) {
+                    Ok(re) => (Some(re), "Highlight ON".to_string()),
+                    Err(e) => (None, format!("Regex highlight error: {e}")),
+                }
+            }
+        }
+    };
+
     let on_copy_filtered = {
         let msg = msg.clone();
         let lines = filtered_entries
@@ -253,6 +272,7 @@ fn app() -> Html {
                 return;
             }
 
+            // TSV output
             let mut out = String::new();
             out.push_str("idx\tlevel");
             for f in &fields {
@@ -288,7 +308,9 @@ fn app() -> Html {
             }
 
             extracted_out.set(out);
-            msg.set(format!("Extracted {rows} JSON entries into TSV (copy/paste into Excel/Sheets)."));
+            msg.set(format!(
+                "Extracted {rows} JSON entries into TSV (copy/paste into Excel/Sheets)."
+            ));
         })
     };
 
@@ -307,78 +329,34 @@ fn app() -> Html {
         })
     };
 
-    // Build highlight regex (optional)
-    let hl_regex: Option<Regex> = {
-        if !*hl_enabled {
-            None
-        } else {
-            let pat = (*hl_pat).trim().to_string();
-            if pat.is_empty() {
-                None
-            } else {
-                let final_pat = if *hl_case_insensitive {
-                    // Prefix inline flag; keeps Cargo.toml untouched
-                    format!("(?i:{pat})")
-                } else {
-                    pat
-                };
-                match Regex::new(&final_pat) {
-                    Ok(re) => {
-                        if !hl_msg.trim().is_empty() {
-                            // don't spam; only clear if previously errored
-                        }
-                        Some(re)
-                    }
-                    Err(e) => {
-                        hl_msg.set(format!("Regex highlight error: {e}"));
-                        None
-                    }
-                }
-            }
-        }
-    };
-
-    // Pretty preview rendered as Html (so we can highlight spans)
+    // Preview as Html (for highlight spans)
     let pretty_preview_html = {
         let mut rows: Vec<Html> = Vec::new();
         let mut shown = 0usize;
-        let mut total_matches = 0usize;
+        let mut match_count = 0usize;
 
         for e in &filtered_entries {
             if shown >= 200 {
-                rows.push(html! {
-                    <>
-                      <span>{ "\n… (preview truncated; export/copy for full output)\n" }</span>
-                    </>
-                });
+                rows.push(html! { <span>{ "\n… (preview truncated; export/copy for full output)\n" }</span> });
                 break;
             }
 
-            // choose display payload
+            let level_tag = e.level.clone().unwrap_or_else(|| "-".to_string());
+            rows.push(html! { <span>{ format!("— #{:04}  {}\n", e.idx, level_tag) }</span> });
+
             let payload = if e.is_json {
                 e.json_pretty.clone().unwrap_or_else(|| e.raw.clone())
             } else {
                 e.raw.clone()
             };
 
-            // quick line header
-            let level_tag = e.level.clone().unwrap_or_else(|| "-".to_string());
-            rows.push(html! {
-                <>
-                  <span>{ format!("— #{:04}  {}\n", e.idx, level_tag) }</span>
-                </>
-            });
-
-            // content lines (preserve formatting)
             if let Some(re) = &hl_regex {
-                // highlight line-by-line to keep it fast and preserve newlines
                 for line in payload.lines() {
-                    total_matches += re.find_iter(line).count();
+                    match_count += re.find_iter(line).count();
                     rows.push(html! { <>{ highlight_line(line, re) }<span>{ "\n" }</span></> });
                 }
                 rows.push(html! { <span>{ "\n" }</span> });
             } else {
-                // no highlighting; dump as text
                 rows.push(html! { <span>{ payload }</span> });
                 rows.push(html! { <span>{ "\n\n" }</span> });
             }
@@ -386,17 +364,16 @@ fn app() -> Html {
             shown += 1;
         }
 
-        // if highlight is enabled and valid, show a small status line (non-blocking)
-        if *hl_enabled && hl_regex.is_some() {
-            hl_msg.set(format!("Highlight ON • matches in preview: {total_matches}"));
-        } else if !*hl_enabled {
-            if hl_msg.starts_with("Highlight ON") {
-                hl_msg.set(String::new());
-            }
-        }
+        let status = if *hl_enabled && hl_regex.is_some() {
+            format!("Highlight ON • matches in preview: {match_count}")
+        } else {
+            hl_status.clone()
+        };
 
-        html! { <>{ for rows }</> }
+        (html! { <>{ for rows }</> }, status)
     };
+
+    let (preview_html, highlight_status_line) = pretty_preview_html;
 
     let explore_view = html! {
       <div class="panel">
@@ -409,6 +386,7 @@ fn app() -> Html {
               <button class="btn" onclick={on_export_jsonl.clone()}>{ "Copy Filtered (JSONL)" }</button>
             </div>
           </div>
+
           <textarea
             value={(*log_in).clone()}
             oninput={{
@@ -420,6 +398,7 @@ fn app() -> Html {
             }}
             placeholder="Paste JSONL logs or plain text logs here…"
           />
+
           <div class="kv">
             <span class="tag">{ "Tip: JSONL = one JSON object per line" }</span>
             <span class="tag">{ "Everything stays local in the browser" }</span>
@@ -440,17 +419,7 @@ fn app() -> Html {
 
                 <button class="btn" onclick={{
                   let hl_enabled = hl_enabled.clone();
-                  let hl_msg = hl_msg.clone();
-                  let hl_pat = hl_pat.clone();
-                  Callback::from(move |_| {
-                    let next = !*hl_enabled;
-                    hl_enabled.set(next);
-                    if next && (*hl_pat).trim().is_empty() {
-                      hl_msg.set("Highlight ON — enter a regex pattern below.".to_string());
-                    } else if !next {
-                      hl_msg.set(String::new());
-                    }
-                  })
+                  Callback::from(move |_| hl_enabled.set(!*hl_enabled))
                 }}>
                   { if *hl_enabled { "Highlight: ON" } else { "Highlight: OFF" } }
                 </button>
@@ -500,14 +469,9 @@ fn app() -> Html {
                 value={(*hl_pat).clone()}
                 oninput={{
                   let hl_pat = hl_pat.clone();
-                  let hl_msg = hl_msg.clone();
                   Callback::from(move |e: InputEvent| {
                     let v = e.target_unchecked_into::<web_sys::HtmlInputElement>().value();
                     hl_pat.set(v);
-                    // clear previous regex error while typing
-                    if hl_msg.starts_with("Regex highlight error:") {
-                      hl_msg.set(String::new());
-                    }
                   })
                 }}
                 placeholder="Regex highlight pattern (e.g. traceId|request_id|ERROR)"
@@ -516,11 +480,11 @@ fn app() -> Html {
 
             <div class="kv">
               <span class="tag">{ format!("Showing: {}", filtered_entries.len()) }</span>
-              <span class="tag">{ "Try: (?i)error|warn|traceId" }</span>
+              <span class="tag">{ "Try: error|warn|traceId" }</span>
               <span class="tag">{ "Highlight wraps matches in preview" }</span>
             </div>
 
-            { msg_view(&hl_msg) }
+            { msg_view(&highlight_status_line) }
           </div>
 
           <div class="block">
@@ -531,17 +495,15 @@ fn app() -> Html {
                   let msg = msg.clone();
                   let log_in = log_in.clone();
                   let parsed = parsed.clone();
-                  let hl_msg = hl_msg.clone();
                   Callback::from(move |_| {
                     log_in.set(String::new());
                     parsed.set(Vec::new());
                     msg.set("Cleared input.".to_string());
-                    hl_msg.set(String::new());
                   })
                 }}>{ "Clear" }</button>
               </div>
             </div>
-            <pre class="mono">{ pretty_preview_html }</pre>
+            <pre class="mono">{ preview_html }</pre>
           </div>
         </div>
       </div>
@@ -558,6 +520,7 @@ fn app() -> Html {
                 <button class="btn" onclick={on_copy_extracted.clone()}>{ "Copy TSV" }</button>
               </div>
             </div>
+
             <textarea
               value={(*field_list).clone()}
               oninput={{
@@ -569,6 +532,7 @@ fn app() -> Html {
               }}
               placeholder="traceId\nrequest_id\nuser.id"
             />
+
             <div class="kv">
               <span class="tag">{ "Supports dotted paths: user.id, request.id" }</span>
               <span class="tag">{ "Only JSON entries produce rows" }</span>
@@ -623,11 +587,13 @@ fn app() -> Html {
 }
 
 fn main() {
+    // main.rs expects the mount node to exist: <div id="app"></div>
     let root = web_sys::window()
         .unwrap()
         .document()
         .unwrap()
         .get_element_by_id("app")
         .unwrap();
+
     yew::Renderer::<App>::with_root(root).render();
 }
