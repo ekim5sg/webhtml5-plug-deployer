@@ -95,6 +95,7 @@ body{
   display:flex;
   align-items:center;
   justify-content:space-between;
+  gap:10px;
   border-bottom:1px solid var(--line);
 }
 
@@ -110,6 +111,14 @@ textarea{
   padding:12px;
   font-size:14px;
   resize:vertical;
+  outline:none;
+  transition: border-color .12s ease, background .12s ease;
+  margin-bottom:10px;
+}
+
+textarea:focus{
+  border-color: rgba(122,167,255,.55);
+  background: rgba(0,0,0,.25);
 }
 
 button{
@@ -120,10 +129,17 @@ button{
   padding:10px 12px;
   border-radius:14px;
   font-size:13px;
+  transition: transform .08s ease, background .12s ease;
 }
+button:hover{ background: rgba(255,255,255,.09); }
+button:active{ transform: translateY(1px); }
+
 button.primary{
   border-color: rgba(122,167,255,.55);
   background: rgba(122,167,255,.18);
+}
+button.primary:hover{
+  background: rgba(122,167,255,.24);
 }
 
 .metric{
@@ -131,6 +147,7 @@ button.primary{
   border:1px solid var(--line);
   border-radius:16px;
   background: rgba(0,0,0,.12);
+  margin-bottom:10px;
 }
 .metric .n{
   font-size:18px;
@@ -145,6 +162,12 @@ button.primary{
   border-radius:16px;
   padding:12px;
   white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.small{
+  font-size:12px;
+  color: var(--muted2);
 }
 
 /* --- Diff View --- */
@@ -183,22 +206,31 @@ button.primary{
   font-family: ui-monospace, monospace;
   font-size:12.5px;
   white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .line{
   display:flex;
   gap:10px;
+  align-items:flex-start;
 }
 
 .ln{
   width:28px;
   text-align:right;
   color: rgba(170,179,221,.65);
+  flex: 0 0 28px;
 }
 .gutter{
   width:14px;
   text-align:center;
   font-weight:700;
+  flex: 0 0 14px;
 }
+
 .minus .gutter{ color: rgba(255,107,139,.95); }
 .plus  .gutter{ color: rgba(99,242,167,.95); }
+
+.empty{
+  color: rgba(170,179,221,.35);
+}
