@@ -472,3 +472,7 @@ fn escape_html(s: &str) -> String {
         .replace('"', "&quot;")
         .replace('\'', "&#39;")
 }
+
+// Rust still expects a `main` for bin crates, even when targeting wasm32.
+// The wasm-bindgen JS glue will call `start()` automatically.
+fn main() {}
