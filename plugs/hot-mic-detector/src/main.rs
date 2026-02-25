@@ -147,11 +147,15 @@ fn replace_word_loose(text: &str, needle: &str, repl: &str) -> String {
 }
 
 async fn copy_to_clipboard(s: String) -> Result<(), JsValue> {
+    use wasm_bindgen_futures::JsFuture;
+
     let w = window().ok_or_else(|| JsValue::from_str("no window"))?;
     let nav = w.navigator();
-    // ✅ FIX: navigator.clipboard() returns Clipboard (not Option)
     let cb = nav.clipboard();
-    cb.write_text(&s).await
+
+    // write_text returns a JS Promise in this environment; convert to Future
+    let promise = cb.write_text(&s);
+    JsFuture::from(promise).await.map(|_| ())
 }
 
 fn set_text(id: &str, value: &str) {
