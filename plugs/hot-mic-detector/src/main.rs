@@ -1,6 +1,6 @@
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use wasm_bindgen_futures::spawn_local;
+use wasm_bindgen_futures::{spawn_local, JsFuture};
 use web_sys::{window, HtmlElement, HtmlTextAreaElement};
 
 #[derive(Clone, Debug)]
@@ -46,7 +46,6 @@ fn compute_risk(text: &str) -> (i32, Vec<Hit>) {
     let mut score: i32 = 0;
     let mut found: Vec<Hit> = vec![];
 
-    // Base heuristics
     let exclam = text.matches('!').count() as i32;
     let caps = text.chars().filter(|c| c.is_ascii_uppercase()).count() as i32;
     let len = text.chars().count() as i32;
@@ -56,7 +55,6 @@ fn compute_risk(text: &str) -> (i32, Vec<Hit>) {
     if len > 220 { score += 8; }
     if len > 420 { score += 10; }
 
-    // Phrase hits
     for h in hits_catalog() {
         if t.contains(h.phrase) {
             score += h.points;
@@ -64,12 +62,32 @@ fn compute_risk(text: &str) -> (i32, Vec<Hit>) {
         }
     }
 
-    // Mild bump if it looks like a rant
     if t.contains("??") || t.contains("!!!") { score += 8; }
     if t.contains("everyone") && t.contains("always") { score += 10; }
 
-    let final_score = clamp(score, 0, 100);
-    (final_score, found)
+    (clamp(score, 0, 100), found)
+}
+
+fn capitalize_words(s: &str) -> String {
+    s.split_whitespace()
+        .map(|w| {
+            let mut ch = w.chars();
+            match ch.next() {
+                None => "".to_string(),
+                Some(f) => f.to_uppercase().collect::<String>() + ch.as_str(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn replace_word_loose(text: &str, needle: &str, repl: &str) -> String {
+    let mut out = text.to_string();
+    let targets = vec![needle.to_string(), needle.to_uppercase(), capitalize_words(needle)];
+    for t in targets {
+        out = out.replace(&t, repl);
+    }
+    out
 }
 
 fn rewrite_safer(text: &str, found: &[Hit]) -> String {
@@ -94,7 +112,6 @@ fn rewrite_safer(text: &str, found: &[Hit]) -> String {
         }
     }
 
-    // General corporate polish swaps
     let swaps = vec![
         ("disaster", "challenge"),
         ("hate", "have concerns about"),
@@ -110,53 +127,128 @@ fn rewrite_safer(text: &str, found: &[Hit]) -> String {
         out = replace_word_loose(&out, a, b);
     }
 
-    if out.chars().count() < 140 && !out.ends_with('.') {
-        out.push('.');
-    }
-    if !out.to_lowercase().contains("thanks") {
-        out.push_str(" Thanks!");
-    }
+    if out.chars().count() < 140 && !out.ends_with('.') { out.push('.'); }
+    if !out.to_lowercase().contains("thanks") { out.push_str(" Thanks!"); }
 
     out
 }
 
-fn capitalize_words(s: &str) -> String {
-    s.split_whitespace()
-        .map(|w| {
-            let mut ch = w.chars();
-            match ch.next() {
-                None => "".to_string(),
-                Some(f) => f.to_uppercase().collect::<String>() + ch.as_str(),
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-fn replace_word_loose(text: &str, needle: &str, repl: &str) -> String {
-    let mut out = text.to_string();
-    let targets = vec![
-        needle.to_string(),
-        needle.to_uppercase(),
-        capitalize_words(needle),
-    ];
-    for t in targets {
-        out = out.replace(&t, repl);
-    }
-    out
+fn escape_html(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
 }
 
 async fn copy_to_clipboard(s: String) -> Result<(), JsValue> {
-    use wasm_bindgen_futures::JsFuture;
-
     let w = window().ok_or_else(|| JsValue::from_str("no window"))?;
-    let nav = w.navigator();
-    let cb = nav.clipboard();
-
-    // write_text returns a JS Promise in this environment; convert to Future
+    let cb = w.navigator().clipboard();
     let promise = cb.write_text(&s);
     JsFuture::from(promise).await.map(|_| ())
 }
+
+/* -----------------------------
+   URL Share State (#t=...)
+----------------------------- */
+
+fn encode_uri(s: &str) -> String {
+    js_sys::encode_uri_component(s).as_string().unwrap_or_default()
+}
+
+fn decode_uri(s: &str) -> String {
+    js_sys::decode_uri_component(s).ok().and_then(|v| v.as_string()).unwrap_or_default()
+}
+
+fn set_hash_for_text(text: &str) {
+    if let Some(w) = window() {
+        if let Ok(loc) = w.location().set_hash(&format!("t={}", encode_uri(text))) {
+            let _ = loc;
+        }
+    }
+}
+
+fn read_text_from_hash() -> Option<String> {
+    let w = window()?;
+    let hash = w.location().hash().ok()?;
+    // hash is like "#t=..."
+    let h = hash.trim_start_matches('#');
+    for part in h.split('&') {
+        if let Some(rest) = part.strip_prefix("t=") {
+            return Some(decode_uri(rest));
+        }
+    }
+    None
+}
+
+/* -----------------------------
+   Tone system
+----------------------------- */
+
+#[derive(Copy, Clone)]
+enum Tone {
+    Standard,
+    Exec,
+    Polite,
+    Nasa,
+}
+
+fn tone_from_select_value(v: &str) -> Tone {
+    match v {
+        "exec" => Tone::Exec,
+        "polite" => Tone::Polite,
+        "nasa" => Tone::Nasa,
+        _ => Tone::Standard,
+    }
+}
+
+fn apply_tone(base: &str, tone: Tone) -> String {
+    let s = base.trim();
+    if s.is_empty() { return "".to_string(); }
+
+    match tone {
+        Tone::Standard => s.to_string(),
+
+        Tone::Exec => format!(
+            "Executive summary:\n• Situation: {}\n• Impact: Moderate\n• Ask: Align on next steps + owner\n• Next action: I can draft a 3-point plan.",
+            s
+        ),
+
+        Tone::Polite => format!(
+            "Respectfully sharing a quick thought: {} If I’m missing context, happy to adjust. Thanks!",
+            s
+        ),
+
+        Tone::Nasa => format!(
+            "Mission Control update:\nStatus: Stable.\nObservation: {}\nRecommendation: Confirm constraints, assign owner, proceed with next step.\nCopy: Roger that.",
+            s
+        ),
+    }
+}
+
+fn random_tone() -> Tone {
+    let n = (js_sys::Math::random() * 4.0).floor() as i32;
+    match n {
+        1 => Tone::Exec,
+        2 => Tone::Polite,
+        3 => Tone::Nasa,
+        _ => Tone::Standard,
+    }
+}
+
+fn meeting_survival(base: &str) -> String {
+    let s = base.trim();
+    if s.is_empty() { return "".to_string(); }
+
+    format!(
+        "Sorry—think I was muted for a second. Quick recap: {} If helpful, I’ll send next steps + owners right after this call.",
+        s
+    )
+}
+
+/* -----------------------------
+   DOM helpers
+----------------------------- */
 
 fn set_text(id: &str, value: &str) {
     if let Some(doc) = window().and_then(|w| w.document()) {
@@ -179,7 +271,6 @@ fn set_class(id: &str, class_name: &str) {
 }
 
 fn set_style_width(id: &str, pct: i32) {
-    // ✅ FIX: avoid HtmlElement.style() feature issues; set style attribute directly
     if let Some(doc) = window().and_then(|w| w.document()) {
         if let Some(el) = doc.get_element_by_id(id) {
             let _ = el.set_attribute("style", &format!("width:{}%", pct));
@@ -190,11 +281,8 @@ fn set_style_width(id: &str, pct: i32) {
 fn enable(id: &str, on: bool) {
     if let Some(doc) = window().and_then(|w| w.document()) {
         if let Some(el) = doc.get_element_by_id(id) {
-            if on {
-                let _ = el.remove_attribute("disabled");
-            } else {
-                let _ = el.set_attribute("disabled", "disabled");
-            }
+            if on { let _ = el.remove_attribute("disabled"); }
+            else { let _ = el.set_attribute("disabled", "disabled"); }
         }
     }
 }
@@ -209,19 +297,48 @@ fn set_html(id: &str, html: &str) {
     }
 }
 
-fn risk_label(score: i32) -> (&'static str, &'static str) {
-    if score <= 24 {
-        ("LOW RISK ✅", "risktag low")
-    } else if score <= 59 {
-        ("MEDIUM RISK 😬", "risktag med")
-    } else {
-        ("HIGH RISK 🫨", "risktag high")
+fn get_select_value(id: &str) -> String {
+    // We keep this simple: read attribute "value" from the <select> element via JS property
+    if let Some(doc) = window().and_then(|w| w.document()) {
+        if let Some(el) = doc.get_element_by_id(id) {
+            // cast to HtmlElement and read "value" via get_attribute fallback
+            // (works reliably enough for this environment)
+            if let Some(v) = el.get_attribute("value") {
+                return v;
+            }
+            // Better: use js_sys::Reflect to read property
+            let v = js_sys::Reflect::get(&el, &JsValue::from_str("value"))
+                .ok()
+                .and_then(|x| x.as_string())
+                .unwrap_or_else(|| "standard".to_string());
+            return v;
+        }
     }
+    "standard".to_string()
+}
+
+fn set_select_value(id: &str, value: &str) {
+    if let Some(doc) = window().and_then(|w| w.document()) {
+        if let Some(el) = doc.get_element_by_id(id) {
+            let _ = js_sys::Reflect::set(&el, &JsValue::from_str("value"), &JsValue::from_str(value));
+        }
+    }
+}
+
+/* -----------------------------
+   Render helpers
+----------------------------- */
+
+fn risk_label(score: i32) -> (&'static str, &'static str) {
+    if score <= 24 { ("LOW RISK ✅", "risktag low") }
+    else if score <= 59 { ("MEDIUM RISK 😬", "risktag med") }
+    else { ("HIGH RISK 🫨", "risktag high") }
 }
 
 fn render_findings(score: i32, found: &[Hit]) -> String {
     let (tag, _) = risk_label(score);
-    let risk_badge_class = if score <= 24 { "badge low" } else if score <= 59 { "badge med" } else { "badge high" };
+    let risk_badge_class =
+        if score <= 24 { "badge low" } else if score <= 59 { "badge med" } else { "badge high" };
 
     let mut badges = String::new();
     badges.push_str(&format!(
@@ -264,79 +381,181 @@ fn render_findings(score: i32, found: &[Hit]) -> String {
     format!(r#"{badges}<div class="kv">{items}</div>"#)
 }
 
-fn muted_version(s: &str) -> String {
-    let s = s.trim();
-    if s.is_empty() { return "".to_string(); }
-    format!("Sorry—think I was muted for a second. Quick recap: {}", s)
+/* -----------------------------
+   Analysis pipeline
+----------------------------- */
+
+fn compute_and_render() {
+    let w = window().expect("no window");
+    let doc = w.document().expect("no document");
+    let input_el: HtmlTextAreaElement = doc.get_element_by_id("input").unwrap().dyn_into().unwrap();
+
+    let text = input_el.value();
+    let (score, found) = compute_risk(&text);
+
+    set_text("scoreBig", &format!("{}", score));
+    let (tag, cls) = risk_label(score);
+    set_text("riskTag", tag);
+    set_class("riskTag", cls);
+    set_style_width("meterFill", score);
+
+    // Findings
+    set_html("findings", &render_findings(score, &found));
+    set_class("findings", "findings");
+
+    // Base rewrite
+    let base = rewrite_safer(&text, &found);
+
+    if base.trim().is_empty() {
+        set_html("rewrite", r#"<div class="empty-state"><div class="emoji">🧼</div><div class="empty-title">Awaiting corporate polish</div><div class="empty-sub">Paste something to rewrite.</div></div>"#);
+        set_class("rewrite", "rewrite empty");
+
+        enable("copyRewrite", false);
+        enable("randomTone", false);
+        enable("survival", false);
+        enable("shareLink", false);
+        return;
+    }
+
+    // Apply selected tone
+    let tone_val = get_select_value("tone");
+    let toned = apply_tone(&base, tone_from_select_value(&tone_val));
+
+    set_html(
+        "rewrite",
+        &format!(
+            r#"<div class="kv">
+                 <div class="item">
+                   <div class="k">Suggested rewrite</div>
+                   <div class="v">{}</div>
+                 </div>
+               </div>"#,
+            escape_html(&toned)
+        ),
+    );
+    set_class("rewrite", "rewrite");
+
+    // Enable buttons
+    enable("copyRewrite", true);
+    enable("randomTone", true);
+    enable("survival", true);
+    enable("shareLink", true);
+
+    // Update share hash (stores the original message)
+    set_hash_for_text(&text);
 }
 
-fn corporate_translate(s: &str) -> String {
-    let s = s.trim();
-    if s.is_empty() { return "".to_string(); }
-    format!("Quick alignment note: {} If helpful, I can draft next steps and owners.", s)
+fn set_empty_panels() {
+    set_text("scoreBig", "—");
+    set_text("riskTag", "Paste text to analyze");
+    set_class("riskTag", "risktag neutral");
+    set_style_width("meterFill", 0);
+
+    set_html("findings", r#"<div class="empty-state"><div class="emoji">🫣</div><div class="empty-title">No findings yet</div><div class="empty-sub">Run an analysis to see risk triggers and suggested fixes.</div></div>"#);
+    set_class("findings", "findings empty");
+
+    set_html("rewrite", r#"<div class="empty-state"><div class="emoji">🧼</div><div class="empty-title">Awaiting corporate polish</div><div class="empty-sub">Your “rewrite” will show up here.</div></div>"#);
+    set_class("rewrite", "rewrite empty");
+
+    enable("copyRewrite", false);
+    enable("randomTone", false);
+    enable("survival", false);
+    enable("shareLink", false);
 }
+
+/* -----------------------------
+   Entrypoints
+----------------------------- */
 
 #[wasm_bindgen(start)]
 pub fn start() {
     let w = window().expect("no window");
     let doc = w.document().expect("no document");
 
-    let input_el: HtmlTextAreaElement = doc
-        .get_element_by_id("input").unwrap()
-        .dyn_into().unwrap();
+    set_empty_panels();
 
-    // Example chips helper
-    let set_example = |text: &'static str, input_el: HtmlTextAreaElement| {
-        Closure::<dyn FnMut()>::new(move || {
-            input_el.set_value(text);
-            run_analysis();
-        })
+    let input_el: HtmlTextAreaElement = doc.get_element_by_id("input").unwrap().dyn_into().unwrap();
+
+    // Load from URL hash if present
+    if let Some(t) = read_text_from_hash() {
+        if !t.trim().is_empty() {
+            input_el.set_value(&t);
+            compute_and_render();
+        }
+    }
+
+    // Example chips
+    let bind_example = |btn_id: &str, text: &'static str| {
+        if let Some(b) = doc.get_element_by_id(btn_id) {
+            let input = input_el.clone();
+            let c = Closure::<dyn FnMut()>::new(move || {
+                input.set_value(text);
+                compute_and_render();
+            });
+            b.add_event_listener_with_callback("click", c.as_ref().unchecked_ref()).unwrap();
+            c.forget();
+        }
     };
+    bind_example("ex1", "Real quick… I’m not saying but this is going nowhere.");
+    bind_example("ex2", "Off the record… who hired this vendor? No offense, but wow.");
+    bind_example("ex3", "This is a disaster. Obviously. Per my last email!!!");
+    bind_example("ex4", "Let’s circle back after lunch. Between us, I hate this plan.");
 
-    if let Some(b) = doc.get_element_by_id("ex1") {
-        let c = set_example("Real quick… I’m not saying but this is going nowhere.", input_el.clone());
-        b.add_event_listener_with_callback("click", c.as_ref().unchecked_ref()).unwrap();
-        c.forget();
-    }
-    if let Some(b) = doc.get_element_by_id("ex2") {
-        let c = set_example("Off the record… who hired this vendor? No offense, but wow.", input_el.clone());
-        b.add_event_listener_with_callback("click", c.as_ref().unchecked_ref()).unwrap();
-        c.forget();
-    }
-    if let Some(b) = doc.get_element_by_id("ex3") {
-        let c = set_example("This is a disaster. Obviously. Per my last email!!!", input_el.clone());
-        b.add_event_listener_with_callback("click", c.as_ref().unchecked_ref()).unwrap();
-        c.forget();
-    }
-    if let Some(b) = doc.get_element_by_id("ex4") {
-        let c = set_example("Let’s circle back after lunch. Between us, I hate this plan.", input_el.clone());
-        b.add_event_listener_with_callback("click", c.as_ref().unchecked_ref()).unwrap();
-        c.forget();
-    }
-
-    // Analyze button
+    // Analyze
     if let Some(btn) = doc.get_element_by_id("analyze") {
-        let c = Closure::<dyn FnMut()>::new(move || run_analysis());
+        let c = Closure::<dyn FnMut()>::new(move || compute_and_render());
         btn.add_event_listener_with_callback("click", c.as_ref().unchecked_ref()).unwrap();
         c.forget();
     }
 
-    // Clear button
+    // Clear
     if let Some(btn) = doc.get_element_by_id("clear") {
-        let input_for_clear = input_el.clone();
+        let input = input_el.clone();
         let c = Closure::<dyn FnMut()>::new(move || {
-            input_for_clear.set_value("");
-            set_text("scoreBig", "—");
-            set_text("riskTag", "Paste text to analyze");
-            set_class("riskTag", "risktag neutral");
-            set_style_width("meterFill", 0);
-            set_html("findings", r#"<div class="empty-state"><div class="emoji">🫣</div><div class="empty-title">No findings yet</div><div class="empty-sub">Run an analysis to see risk triggers and suggested fixes.</div></div>"#);
-            set_class("findings", "findings empty");
-            set_html("rewrite", r#"<div class="empty-state"><div class="emoji">🧼</div><div class="empty-title">Awaiting corporate polish</div><div class="empty-sub">Your “rewrite” will show up here.</div></div>"#);
-            set_class("rewrite", "rewrite empty");
-            enable("copyRewrite", false);
-            enable("corporate", false);
-            enable("muted", false);
+            input.set_value("");
+            set_hash_for_text("");
+            set_empty_panels();
+        });
+        btn.add_event_listener_with_callback("click", c.as_ref().unchecked_ref()).unwrap();
+        c.forget();
+    }
+
+    // Auto analyze on input
+    {
+        let input_for_listener = input_el.clone();
+        let c = Closure::<dyn FnMut()>::new(move || {
+            if !input_for_listener.value().trim().is_empty() {
+                compute_and_render();
+            } else {
+                set_hash_for_text("");
+                set_empty_panels();
+            }
+        });
+        input_el
+            .add_event_listener_with_callback("input", c.as_ref().unchecked_ref())
+            .unwrap();
+        c.forget();
+    }
+
+    // Tone change -> recompute to apply tone to current rewrite
+    if let Some(tone_el) = doc.get_element_by_id("tone") {
+        let c = Closure::<dyn FnMut()>::new(move || compute_and_render());
+        tone_el.add_event_listener_with_callback("change", c.as_ref().unchecked_ref()).unwrap();
+        c.forget();
+    }
+
+    // Random tone
+    if let Some(btn) = doc.get_element_by_id("randomTone") {
+        let c = Closure::<dyn FnMut()>::new(move || {
+            let t = random_tone();
+            let v = match t {
+                Tone::Exec => "exec",
+                Tone::Polite => "polite",
+                Tone::Nasa => "nasa",
+                Tone::Standard => "standard",
+            };
+            set_select_value("tone", v);
+            compute_and_render();
         });
         btn.add_event_listener_with_callback("click", c.as_ref().unchecked_ref()).unwrap();
         c.forget();
@@ -344,9 +563,9 @@ pub fn start() {
 
     // Copy input
     if let Some(btn) = doc.get_element_by_id("copyInput") {
-        let input_for_copy = input_el.clone();
+        let input = input_el.clone();
         let c = Closure::<dyn FnMut()>::new(move || {
-            let s = input_for_copy.value();
+            let s = input.value();
             spawn_local(async move { let _ = copy_to_clipboard(s).await; });
         });
         btn.add_event_listener_with_callback("click", c.as_ref().unchecked_ref()).unwrap();
@@ -367,15 +586,12 @@ pub fn start() {
         c.forget();
     }
 
-    // Corporate translate
-    if let Some(btn) = doc.get_element_by_id("corporate") {
+    // Copy share link
+    if let Some(btn) = doc.get_element_by_id("shareLink") {
         let c = Closure::<dyn FnMut()>::new(move || {
-            if let Some(doc) = window().and_then(|w| w.document()) {
-                if let Some(el) = doc.get_element_by_id("rewrite") {
-                    let txt = el.text_content().unwrap_or_default();
-                    let new_txt = corporate_translate(&txt);
-                    set_html("rewrite", &format!(r#"<div class="kv"><div class="item"><div class="k">Corporate Translate</div><div class="v">{}</div></div></div>"#, escape_html(&new_txt)));
-                    set_class("rewrite", "rewrite");
+            if let Some(w) = window() {
+                if let Ok(href) = w.location().href() {
+                    spawn_local(async move { let _ = copy_to_clipboard(href).await; });
                 }
             }
         });
@@ -383,96 +599,40 @@ pub fn start() {
         c.forget();
     }
 
-    // Muted version
-    if let Some(btn) = doc.get_element_by_id("muted") {
+    // Meeting survival
+    if let Some(btn) = doc.get_element_by_id("survival") {
         let c = Closure::<dyn FnMut()>::new(move || {
             if let Some(doc) = window().and_then(|w| w.document()) {
-                if let Some(el) = doc.get_element_by_id("rewrite") {
-                    let txt = el.text_content().unwrap_or_default();
-                    let new_txt = muted_version(&txt);
-                    set_html("rewrite", &format!(r#"<div class="kv"><div class="item"><div class="k">Muted Version</div><div class="v">{}</div></div></div>"#, escape_html(&new_txt)));
-                    set_class("rewrite", "rewrite");
+                let input: HtmlTextAreaElement = doc.get_element_by_id("input").unwrap().dyn_into().unwrap();
+                let (score, found) = compute_risk(&input.value());
+                let base = rewrite_safer(&input.value(), &found);
+                if base.trim().is_empty() {
+                    return;
                 }
+                let survival = meeting_survival(&apply_tone(&base, tone_from_select_value(&get_select_value("tone"))));
+                set_html(
+                    "rewrite",
+                    &format!(
+                        r#"<div class="kv">
+                             <div class="item">
+                               <div class="k">Meeting survival script</div>
+                               <div class="v">{}</div>
+                             </div>
+                           </div>"#,
+                        escape_html(&survival)
+                    ),
+                );
+                set_class("rewrite", "rewrite");
+                enable("copyRewrite", true);
+
+                // keep score UI updated (so the page doesn't feel like it "lost state")
+                set_text("scoreBig", &format!("{}", score));
             }
         });
         btn.add_event_listener_with_callback("click", c.as_ref().unchecked_ref()).unwrap();
         c.forget();
     }
-
-    // ✅ FIX: don't move `input_el` into the closure used for the listener
-    {
-        let input_for_listener = input_el.clone();
-        let c = Closure::<dyn FnMut()>::new(move || {
-            if !input_for_listener.value().trim().is_empty() {
-                run_analysis();
-            }
-        });
-        input_el
-            .add_event_listener_with_callback("input", c.as_ref().unchecked_ref())
-            .unwrap();
-        c.forget();
-    }
-
-    // Initial state
-    set_html("findings", r#"<div class="empty-state"><div class="emoji">🫣</div><div class="empty-title">No findings yet</div><div class="empty-sub">Run an analysis to see risk triggers and suggested fixes.</div></div>"#);
-    set_html("rewrite", r#"<div class="empty-state"><div class="emoji">🧼</div><div class="empty-title">Awaiting corporate polish</div><div class="empty-sub">Your “rewrite” will show up here.</div></div>"#);
 }
 
-fn run_analysis() {
-    let w = window().expect("no window");
-    let doc = w.document().expect("no document");
-    let input_el: HtmlTextAreaElement = doc
-        .get_element_by_id("input").unwrap()
-        .dyn_into().unwrap();
-
-    let text = input_el.value();
-    let (score, found) = compute_risk(&text);
-
-    set_text("scoreBig", &format!("{}", score));
-    let (tag, cls) = risk_label(score);
-    set_text("riskTag", tag);
-    set_class("riskTag", cls);
-    set_style_width("meterFill", score);
-
-    let findings_html = render_findings(score, &found);
-    set_html("findings", &findings_html);
-    set_class("findings", "findings");
-
-    let rewrite = rewrite_safer(&text, &found);
-    if rewrite.trim().is_empty() {
-        set_html("rewrite", r#"<div class="empty-state"><div class="emoji">🧼</div><div class="empty-title">Awaiting corporate polish</div><div class="empty-sub">Paste something to rewrite.</div></div>"#);
-        set_class("rewrite", "rewrite empty");
-        enable("copyRewrite", false);
-        enable("corporate", false);
-        enable("muted", false);
-    } else {
-        set_html(
-            "rewrite",
-            &format!(
-                r#"<div class="kv">
-                     <div class="item">
-                       <div class="k">Suggested rewrite</div>
-                       <div class="v">{}</div>
-                     </div>
-                   </div>"#,
-                escape_html(&rewrite)
-            ),
-        );
-        set_class("rewrite", "rewrite");
-        enable("copyRewrite", true);
-        enable("corporate", true);
-        enable("muted", true);
-    }
-}
-
-fn escape_html(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&#39;")
-}
-
-// Rust still expects a `main` for bin crates, even when targeting wasm32.
-// The wasm-bindgen JS glue will call `start()` automatically.
+// ✅ Bin crates still want a Rust main. wasm-bindgen will call `start()` for the WASM init.
 fn main() {}
