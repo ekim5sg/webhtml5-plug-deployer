@@ -1,7 +1,7 @@
 use wasm_bindgen::prelude::*;
+use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::spawn_local;
 use web_sys::{window, HtmlElement, HtmlTextAreaElement};
-use yew::prelude::*;
 
 #[derive(Clone, Debug)]
 struct Hit {
@@ -76,13 +76,10 @@ fn rewrite_safer(text: &str, found: &[Hit]) -> String {
     let mut out = text.trim().to_string();
     if out.is_empty() { return out; }
 
-    // Replace found phrases with their suggestions (case-insensitive-ish by normalizing)
-    // We'll do a simple approach: for each phrase, replace occurrences in several common casings.
     for h in found {
         let p = h.phrase;
         let s = h.suggestion;
 
-        // Try multiple variants; keep it simple and predictable.
         let variants = vec![
             p.to_string(),
             p.to_uppercase(),
@@ -113,7 +110,6 @@ fn rewrite_safer(text: &str, found: &[Hit]) -> String {
         out = replace_word_loose(&out, a, b);
     }
 
-    // Add a friendly close if it's short
     if out.chars().count() < 140 && !out.ends_with('.') {
         out.push('.');
     }
@@ -138,7 +134,6 @@ fn capitalize_words(s: &str) -> String {
 }
 
 fn replace_word_loose(text: &str, needle: &str, repl: &str) -> String {
-    // Very simple "word-ish" replacement that covers common punctuation.
     let mut out = text.to_string();
     let targets = vec![
         needle.to_string(),
@@ -154,7 +149,8 @@ fn replace_word_loose(text: &str, needle: &str, repl: &str) -> String {
 async fn copy_to_clipboard(s: String) -> Result<(), JsValue> {
     let w = window().ok_or_else(|| JsValue::from_str("no window"))?;
     let nav = w.navigator();
-    let cb = nav.clipboard().ok_or_else(|| JsValue::from_str("no clipboard"))?;
+    // ✅ FIX: navigator.clipboard() returns Clipboard (not Option)
+    let cb = nav.clipboard();
     cb.write_text(&s).await
 }
 
@@ -179,11 +175,10 @@ fn set_class(id: &str, class_name: &str) {
 }
 
 fn set_style_width(id: &str, pct: i32) {
+    // ✅ FIX: avoid HtmlElement.style() feature issues; set style attribute directly
     if let Some(doc) = window().and_then(|w| w.document()) {
         if let Some(el) = doc.get_element_by_id(id) {
-            let _ = el
-                .dyn_ref::<HtmlElement>()
-                .map(|h| h.style().set_property("width", &format!("{}%", pct)));
+            let _ = el.set_attribute("style", &format!("width:{}%", pct));
         }
     }
 }
@@ -191,8 +186,6 @@ fn set_style_width(id: &str, pct: i32) {
 fn enable(id: &str, on: bool) {
     if let Some(doc) = window().and_then(|w| w.document()) {
         if let Some(el) = doc.get_element_by_id(id) {
-            let _ = el.set_attribute("disabled", if on { "false" } else { "true" });
-            // Better: remove disabled attr when enabled
             if on {
                 let _ = el.remove_attribute("disabled");
             } else {
@@ -223,10 +216,10 @@ fn risk_label(score: i32) -> (&'static str, &'static str) {
 }
 
 fn render_findings(score: i32, found: &[Hit]) -> String {
-    let mut badges = String::new();
     let (tag, _) = risk_label(score);
-
     let risk_badge_class = if score <= 24 { "badge low" } else if score <= 59 { "badge med" } else { "badge high" };
+
+    let mut badges = String::new();
     badges.push_str(&format!(
         r#"<div class="badges">
             <div class="{cls}">Risk: <b>{tag}</b> ({score}/100)</div>
@@ -270,25 +263,17 @@ fn render_findings(score: i32, found: &[Hit]) -> String {
 fn muted_version(s: &str) -> String {
     let s = s.trim();
     if s.is_empty() { return "".to_string(); }
-    format!(
-        "Sorry—think I was muted for a second. Quick recap: {}",
-        s
-    )
+    format!("Sorry—think I was muted for a second. Quick recap: {}", s)
 }
 
 fn corporate_translate(s: &str) -> String {
     let s = s.trim();
     if s.is_empty() { return "".to_string(); }
-    format!(
-        "Quick alignment note: {} If helpful, I can draft next steps and owners.",
-        s
-    )
+    format!("Quick alignment note: {} If helpful, I can draft next steps and owners.", s)
 }
 
 #[wasm_bindgen(start)]
 pub fn main() {
-    // Hook up UI events without needing to render Yew components.
-    // Keeps the app extremely simple for iPhone Compiler: just wasm-bindgen + DOM.
     let w = window().expect("no window");
     let doc = w.document().expect("no document");
 
@@ -296,9 +281,8 @@ pub fn main() {
         .get_element_by_id("input").unwrap()
         .dyn_into().unwrap();
 
-    // Example chips
-    let set_example = |text: &'static str| {
-        let input_el = input_el.clone();
+    // Example chips helper
+    let set_example = |text: &'static str, input_el: HtmlTextAreaElement| {
         Closure::<dyn FnMut()>::new(move || {
             input_el.set_value(text);
             run_analysis();
@@ -306,22 +290,22 @@ pub fn main() {
     };
 
     if let Some(b) = doc.get_element_by_id("ex1") {
-        let c = set_example("Real quick… I’m not saying but this is going nowhere.");
+        let c = set_example("Real quick… I’m not saying but this is going nowhere.", input_el.clone());
         b.add_event_listener_with_callback("click", c.as_ref().unchecked_ref()).unwrap();
         c.forget();
     }
     if let Some(b) = doc.get_element_by_id("ex2") {
-        let c = set_example("Off the record… who hired this vendor? No offense, but wow.");
+        let c = set_example("Off the record… who hired this vendor? No offense, but wow.", input_el.clone());
         b.add_event_listener_with_callback("click", c.as_ref().unchecked_ref()).unwrap();
         c.forget();
     }
     if let Some(b) = doc.get_element_by_id("ex3") {
-        let c = set_example("This is a disaster. Obviously. Per my last email!!!");
+        let c = set_example("This is a disaster. Obviously. Per my last email!!!", input_el.clone());
         b.add_event_listener_with_callback("click", c.as_ref().unchecked_ref()).unwrap();
         c.forget();
     }
     if let Some(b) = doc.get_element_by_id("ex4") {
-        let c = set_example("Let’s circle back after lunch. Between us, I hate this plan.");
+        let c = set_example("Let’s circle back after lunch. Between us, I hate this plan.", input_el.clone());
         b.add_event_listener_with_callback("click", c.as_ref().unchecked_ref()).unwrap();
         c.forget();
     }
@@ -335,9 +319,9 @@ pub fn main() {
 
     // Clear button
     if let Some(btn) = doc.get_element_by_id("clear") {
-        let input_el = input_el.clone();
+        let input_for_clear = input_el.clone();
         let c = Closure::<dyn FnMut()>::new(move || {
-            input_el.set_value("");
+            input_for_clear.set_value("");
             set_text("scoreBig", "—");
             set_text("riskTag", "Paste text to analyze");
             set_class("riskTag", "risktag neutral");
@@ -356,12 +340,10 @@ pub fn main() {
 
     // Copy input
     if let Some(btn) = doc.get_element_by_id("copyInput") {
-        let input_el = input_el.clone();
+        let input_for_copy = input_el.clone();
         let c = Closure::<dyn FnMut()>::new(move || {
-            let s = input_el.value();
-            spawn_local(async move {
-                let _ = copy_to_clipboard(s).await;
-            });
+            let s = input_for_copy.value();
+            spawn_local(async move { let _ = copy_to_clipboard(s).await; });
         });
         btn.add_event_listener_with_callback("click", c.as_ref().unchecked_ref()).unwrap();
         c.forget();
@@ -373,9 +355,7 @@ pub fn main() {
             if let Some(doc) = window().and_then(|w| w.document()) {
                 if let Some(el) = doc.get_element_by_id("rewrite") {
                     let txt = el.text_content().unwrap_or_default();
-                    spawn_local(async move {
-                        let _ = copy_to_clipboard(txt).await;
-                    });
+                    spawn_local(async move { let _ = copy_to_clipboard(txt).await; });
                 }
             }
         });
@@ -383,7 +363,7 @@ pub fn main() {
         c.forget();
     }
 
-    // Corporate translate + muted
+    // Corporate translate
     if let Some(btn) = doc.get_element_by_id("corporate") {
         let c = Closure::<dyn FnMut()>::new(move || {
             if let Some(doc) = window().and_then(|w| w.document()) {
@@ -399,6 +379,7 @@ pub fn main() {
         c.forget();
     }
 
+    // Muted version
     if let Some(btn) = doc.get_element_by_id("muted") {
         let c = Closure::<dyn FnMut()>::new(move || {
             if let Some(doc) = window().and_then(|w| w.document()) {
@@ -414,12 +395,11 @@ pub fn main() {
         c.forget();
     }
 
-    // Auto-analyze on input (soft)
+    // ✅ FIX: don't move `input_el` into the closure used for the listener
     {
-        let input_el = input_el.clone();
+        let input_for_listener = input_el.clone();
         let c = Closure::<dyn FnMut()>::new(move || {
-            // only analyze when non-empty to avoid jitter
-            if !input_el.value().trim().is_empty() {
+            if !input_for_listener.value().trim().is_empty() {
                 run_analysis();
             }
         });
@@ -450,12 +430,10 @@ fn run_analysis() {
     set_class("riskTag", cls);
     set_style_width("meterFill", score);
 
-    // Findings panel
     let findings_html = render_findings(score, &found);
     set_html("findings", &findings_html);
     set_class("findings", "findings");
 
-    // Rewrite panel
     let rewrite = rewrite_safer(&text, &found);
     if rewrite.trim().is_empty() {
         set_html("rewrite", r#"<div class="empty-state"><div class="emoji">🧼</div><div class="empty-title">Awaiting corporate polish</div><div class="empty-sub">Paste something to rewrite.</div></div>"#);
