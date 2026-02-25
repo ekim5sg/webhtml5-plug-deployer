@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <meta name="description" content="Hot Mic Detector (Totally Fake) — a parody tool that scores your message for hot-mic risk and generates safer rewrites. Built with Rust + Yew." />
+  <meta name="description" content="Hot Mic Detector (Totally Fake) — parody tool that scores your message for hot-mic risk and generates safer rewrites. Built with Rust + WASM." />
   <title>Hot Mic Detector (Totally Fake)</title>
 
   <!-- Trunk: bundle CSS -->
   <link data-trunk rel="css" href="styles.css" />
 </head>
 
-<body>
+<body id="top">
   <div class="bg" aria-hidden="true"></div>
 
   <header class="topbar">
@@ -66,6 +66,7 @@
           <button id="analyze" class="btn primary" type="button">Analyze 🎛️</button>
           <button id="clear" class="btn" type="button">Clear</button>
           <button id="copyInput" class="btn" type="button">Copy</button>
+          <button id="shareLink" class="btn" type="button" disabled>Copy share link 🔗</button>
         </div>
 
         <div class="hint">
@@ -86,6 +87,22 @@
 
       <section class="card">
         <h2>Safer rewrite</h2>
+
+        <div class="row" style="padding-top: 12px;">
+          <label class="pill" style="display:inline-flex; gap:10px; align-items:center;">
+            Tone
+            <select id="tone" style="background:transparent;color:inherit;border:none;outline:none;">
+              <option value="standard">Standard</option>
+              <option value="exec">Executive Summary</option>
+              <option value="polite">Passive-Polite</option>
+              <option value="nasa">NASA Mission Control Calm</option>
+            </select>
+          </label>
+
+          <button id="randomTone" class="btn" type="button" disabled>Random tone 🎲</button>
+          <button id="survival" class="btn" type="button" disabled>Meeting survival 🧯</button>
+        </div>
+
         <div id="rewrite" class="rewrite empty">
           <div class="empty-state">
             <div class="emoji">🧼</div>
@@ -96,8 +113,6 @@
 
         <div class="row">
           <button id="copyRewrite" class="btn" type="button" disabled>Copy rewrite</button>
-          <button id="corporate" class="btn" type="button" disabled>Corporate Translate</button>
-          <button id="muted" class="btn" type="button" disabled>Make it sound muted</button>
         </div>
       </section>
 
@@ -107,6 +122,7 @@
           <li>Scores risk using silly rules + “danger phrase” matches.</li>
           <li>Highlights the triggers it found (so you can blame the tool).</li>
           <li>Generates a safer rewrite by swapping “spicy” words for corporate-safe ones.</li>
+          <li>Shareable link stores your message in the URL hash (client-side).</li>
           <li>Runs 100% in your browser — no network calls.</li>
         </ul>
 
