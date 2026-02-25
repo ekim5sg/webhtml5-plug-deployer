@@ -24,7 +24,7 @@ body{
   font-family: var(--sans);
   background: var(--bg0);
   color: var(--text);
-  position: relative; /* helps ensure correct stacking contexts */
+  position: relative;
 }
 
 /* Background layer — must NEVER cover content */
@@ -32,7 +32,7 @@ body{
   position:fixed;
   inset:0;
   pointer-events:none;
-  z-index:-1; /* critical: keep behind everything */
+  z-index:-1;
   background:
     radial-gradient(1200px 800px at 20% 0%, rgba(120,140,255,.18), transparent 60%),
     radial-gradient(900px 700px at 90% 20%, rgba(110,255,210,.10), transparent 60%),
@@ -41,7 +41,7 @@ body{
   filter:saturate(1.05);
 }
 
-/* Ensure UI sits above bg even if the browser creates odd stacking contexts */
+/* Ensure UI always sits above bg */
 .topbar, main, .card, #app{
   position: relative;
   z-index: 1;
@@ -52,7 +52,7 @@ body{
 .topbar{
   position:sticky;
   top:0;
-  z-index:10; /* stays above content */
+  z-index:10;
   backdrop-filter: blur(14px);
   background: rgba(7,10,18,.55);
   border-bottom:1px solid var(--line);
@@ -270,7 +270,7 @@ textarea{
   border-top: 1px solid var(--line);
   background: rgba(255,255,255,.02);
 }
-.textline input{
+.textline input, .textline select{
   width:100%;
   padding: 10px 12px;
   border-radius: 12px;
@@ -280,6 +280,15 @@ textarea{
   outline:none;
   font-family: var(--mono);
   font-size: 12.5px;
+}
+
+.row{
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+}
+.row > *{
+  flex: 1 1 180px;
 }
 
 pre.mono{
@@ -300,4 +309,16 @@ pre.mono{
   border: 1px solid rgba(255,255,255,.18);
   border-radius: 6px;
   padding: 0 2px;
+}
+.hl.current{
+  background: rgba(110,255,210,.18);
+  border-color: rgba(110,255,210,.34);
+  box-shadow: 0 0 0 2px rgba(110,255,210,.14);
+}
+
+/* Small compact buttons (for match nav + presets row) */
+.btn.small{
+  padding: 6px 9px;
+  border-radius: 10px;
+  font-size: 12px;
 }
