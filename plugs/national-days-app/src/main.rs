@@ -19,11 +19,14 @@ fn window() -> web_sys::Window {
 }
 
 async fn copy_to_clipboard(text: String) -> Result<(), String> {
+    // With your current web-sys features, clipboard() is not Option<Clipboard>.
+    // (On some browsers, the operation can still fail; we'll surface that error.)
     let nav = window().navigator();
-    let clip = nav.clipboard().ok_or("Clipboard not available")?;
+    let clip = nav.clipboard();
+
     wasm_bindgen_futures::JsFuture::from(clip.write_text(&text))
         .await
-        .map_err(|_| "Clipboard write failed".to_string())?;
+        .map_err(|_| "Clipboard write failed (browser permission/availability)".to_string())?;
     Ok(())
 }
 
@@ -47,7 +50,7 @@ fn app() -> Html {
         let err = err.clone();
         let loading = loading.clone();
 
-        Callback::from(move |_| {
+        Callback::from(move |_e: MouseEvent| {
             let worker_base = (*worker_base).clone();
             let data = data.clone();
             let err = err.clone();
@@ -92,7 +95,7 @@ fn app() -> Html {
         let loading = loading.clone();
         let selected_date = selected_date.clone();
 
-        Callback::from(move |_| {
+        Callback::from(move |_e: MouseEvent| {
             let worker_base = (*worker_base).clone();
             let data = data.clone();
             let err = err.clone();
@@ -136,11 +139,44 @@ fn app() -> Html {
         })
     };
 
-    // Auto-load today on first render
+    // Auto-load today on first render (no event available here, so call logic directly)
     {
-        let fetch_today = fetch_today.clone();
+        let worker_base = worker_base.clone();
+        let data = data.clone();
+        let err = err.clone();
+        let loading = loading.clone();
+
         use_effect_with((), move |_| {
-            fetch_today.emit(());
+            loading.set(true);
+            err.set(None);
+
+            spawn_local(async move {
+                let url = format!("{}/api/today", (*worker_base).trim_end_matches('/'));
+                match gloo_net::http::Request::get(&url).send().await {
+                    Ok(resp) => {
+                        if !resp.ok() {
+                            loading.set(false);
+                            err.set(Some(format!("Worker error: HTTP {}", resp.status())));
+                            return;
+                        }
+                        match resp.json::<ApiResp>().await {
+                            Ok(j) => {
+                                data.set(Some(j));
+                                loading.set(false);
+                            }
+                            Err(_) => {
+                                loading.set(false);
+                                err.set(Some("Failed to parse JSON from worker.".into()));
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        loading.set(false);
+                        err.set(Some("Network error calling worker.".into()));
+                    }
+                }
+            });
+
             || ()
         });
     }
@@ -161,10 +197,10 @@ fn app() -> Html {
     let copy_list = {
         let data = data.clone();
         let err = err.clone();
-        Callback::from(move |_| {
+
+        Callback::from(move |_e: MouseEvent| {
             let err = err.clone();
             if let Some(d) = (*data).clone() {
-                // Friendly, shareable format (great for posts)
                 let lines = d.items.join("\n");
                 let text = format!(
                     "Top National Days (max 5) — {} ({}):\n{}\n\nSource: {}\nGenerated: {}",
