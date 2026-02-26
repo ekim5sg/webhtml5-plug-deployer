@@ -298,13 +298,15 @@ fn app() -> Html {
         })
     };
 
+    // FIXED: keep onclick closure as Fn by cloning state handles per click
     let on_fetch_from_url = {
         let facts_url = facts_url.clone();
+        let url_status = url_status.clone();
+
         let facts = facts.clone();
         let facts_json_editor = facts_json_editor.clone();
         let fact_text = fact_text.clone();
         let fact_err = fact_err.clone();
-        let url_status = url_status.clone();
 
         Callback::from(move |_e: MouseEvent| {
             let url = (*facts_url).trim().to_string();
@@ -315,6 +317,13 @@ fn app() -> Html {
 
             url_status.set("Fetching…".to_string());
 
+            // Clone handles for this click so outer closure remains Fn
+            let url_status2 = url_status.clone();
+            let facts2 = facts.clone();
+            let facts_json_editor2 = facts_json_editor.clone();
+            let fact_text2 = fact_text.clone();
+            let fact_err2 = fact_err.clone();
+
             spawn_local(async move {
                 let resp = Request::get(&url).send().await;
                 match resp {
@@ -322,27 +331,30 @@ fn app() -> Html {
                         let text = r.text().await.unwrap_or_default();
                         match serde_json::from_str::<FactsFile>(&text) {
                             Ok(parsed) => {
-                                facts_json_editor.set(text.clone());
+                                facts_json_editor2.set(text.clone());
                                 if let Some(ls) = local_storage() {
                                     let _ = ls.set_item(LS_FACTS_KEY, &text);
                                 }
+
                                 let season = current_season();
-                                let picked = pick_random_fact(&parsed, season)
-                                    .unwrap_or_else(|| "No facts found for this season in the JSON.".to_string());
-                                facts.set(Some(parsed));
-                                fact_text.set(picked);
-                                fact_err.set(String::new());
-                                url_status.set("Fetched + saved to localStorage override ✅".to_string());
+                                let picked = pick_random_fact(&parsed, season).unwrap_or_else(|| {
+                                    "No facts found for this season in the JSON.".to_string()
+                                });
+
+                                facts2.set(Some(parsed));
+                                fact_text2.set(picked);
+                                fact_err2.set(String::new());
+                                url_status2.set("Fetched + saved to localStorage override ✅".to_string());
                             }
                             Err(e) => {
-                                url_status.set(String::new());
-                                fact_err.set(format!("URL JSON parse error: {e}"));
+                                url_status2.set(String::new());
+                                fact_err2.set(format!("URL JSON parse error: {e}"));
                             }
                         }
                     }
                     Err(e) => {
-                        url_status.set(String::new());
-                        fact_err.set(format!("Fetch error: {e:?}"));
+                        url_status2.set(String::new());
+                        fact_err2.set(format!("Fetch error: {e:?}"));
                     }
                 }
             });
