@@ -64,7 +64,7 @@ fn read_embedded_json(script_id: &str) -> Option<String> {
 fn today_local_ymd() -> (i32, u32, u32) {
     let now = Date::new_0();
     let y = now.get_full_year() as i32;
-    let m = (now.get_month() + 1.0) as u32; // JS months are 0-11
+    let m = (now.get_month() as i32 + 1) as u32; // JS months are 0-11
     let d = now.get_date() as u32;
     (y, m, d)
 }
@@ -73,26 +73,28 @@ fn today_local_ymd() -> (i32, u32, u32) {
 // Returns (target_year, days_until)
 fn days_until_month_day(target_month: u32, target_day: u32) -> (i32, i32) {
     let now = Date::new_0();
-    let year = now.get_full_year() as i32;
+    let year_i32 = now.get_full_year() as i32;
+    let year_u32 = year_i32 as u32;
 
-    let t0 = Date::new_with_year_month_day(year as f64, (target_month - 1) as i32, target_day as i32);
+    let t0 = Date::new_with_year_month_day(year_u32, (target_month - 1) as i32, target_day as i32);
     let ms_per_day = 86_400_000.0;
 
     let diff = t0.get_time() - now.get_time();
     if diff > 0.0 {
         let days = (diff / ms_per_day).ceil() as i32;
-        (year, days)
+        (year_i32, days)
     } else {
-        let next_year = year + 1;
-        let t1 = Date::new_with_year_month_day(next_year as f64, (target_month - 1) as i32, target_day as i32);
+        let next_year_i32 = year_i32 + 1;
+        let next_year_u32 = next_year_i32 as u32;
+        let t1 =
+            Date::new_with_year_month_day(next_year_u32, (target_month - 1) as i32, target_day as i32);
         let diff2 = t1.get_time() - now.get_time();
         let days = (diff2 / ms_per_day).ceil() as i32;
-        (next_year, days)
+        (next_year_i32, days)
     }
 }
 
-// Determine "current season" based on meteorological ranges:
-// Spring: Mar-May, Summer: Jun-Aug, Fall: Sep-Nov, Winter: Dec-Feb
+// Meteorological "current season" by month
 fn current_season() -> Season {
     let (_y, m, _d) = today_local_ymd();
     match m {
@@ -105,7 +107,6 @@ fn current_season() -> Season {
 
 fn format_start_date(season: Season, year: i32) -> String {
     let (m, d) = season.start_md();
-    // Keep it simple and unambiguous
     format!("{:04}-{:02}-{:02}", year, m, d)
 }
 
@@ -143,16 +144,19 @@ fn app() -> Html {
     let facts_url = use_state(|| String::new());
     let url_status = use_state(|| String::new());
 
-    // Helper: recompute countdown cards + pill
+    // recompute countdowns + now pill
     let recompute = {
         let cards = cards.clone();
         let now_pill = now_pill.clone();
         Callback::from(move |_| {
             let now = Date::new_0();
             let (y, m, d) = today_local_ymd();
-            let h = now.get_hours() as i32;
-            let min = now.get_minutes() as i32;
-            now_pill.set(format!("Local time: {:04}-{:02}-{:02} {:02}:{:02}", y, m, d, h, min));
+            let h = now.get_hours();
+            let min = now.get_minutes();
+            now_pill.set(format!(
+                "Local time: {:04}-{:02}-{:02} {:02}:{:02}",
+                y, m, d, h, min
+            ));
 
             let cur = current_season();
             let mut out = Vec::new();
@@ -170,6 +174,14 @@ fn app() -> Html {
         })
     };
 
+    // onclick wants Callback<MouseEvent>, so wrap recompute
+    let recompute_onclick = {
+        let recompute = recompute.clone();
+        Callback::from(move |_e: MouseEvent| {
+            recompute.emit(());
+        })
+    };
+
     // On mount: recompute immediately, then refresh every 60 seconds
     {
         let recompute = recompute.clone();
@@ -178,7 +190,7 @@ fn app() -> Html {
             let handle = Interval::new(60_000, move || {
                 recompute.emit(());
             });
-            || drop(handle)
+            move || drop(handle)
         });
     }
 
@@ -204,27 +216,25 @@ fn app() -> Html {
                 chosen_json = read_embedded_json(DEFAULT_SCRIPT_ID);
             }
 
-            let Some(json) = chosen_json else {
+            if let Some(json) = chosen_json {
+                facts_json_editor.set(json.clone());
+                match serde_json::from_str::<FactsFile>(&json) {
+                    Ok(parsed) => {
+                        let season = current_season();
+                        let picked = pick_random_fact(&parsed, season)
+                            .unwrap_or_else(|| "No facts found for this season in the JSON.".to_string());
+                        facts.set(Some(parsed));
+                        fact_text.set(picked);
+                        fact_err.set(String::new());
+                    }
+                    Err(e) => {
+                        facts.set(None);
+                        fact_text.set(String::new());
+                        fact_err.set(format!("Facts JSON parse error: {e}"));
+                    }
+                }
+            } else {
                 fact_err.set("Could not find any facts JSON (embedded or localStorage override).".to_string());
-                return || {};
-            };
-
-            facts_json_editor.set(json.clone());
-
-            match serde_json::from_str::<FactsFile>(&json) {
-                Ok(parsed) => {
-                    let season = current_season();
-                    let picked = pick_random_fact(&parsed, season)
-                        .unwrap_or_else(|| "No facts found for this season in the JSON.".to_string());
-                    facts.set(Some(parsed));
-                    fact_text.set(picked);
-                    fact_err.set(String::new());
-                }
-                Err(e) => {
-                    facts.set(None);
-                    fact_text.set(String::new());
-                    fact_err.set(format!("Facts JSON parse error: {e}"));
-                }
             }
 
             || {}
@@ -235,7 +245,7 @@ fn app() -> Html {
         let facts = facts.clone();
         let fact_text = fact_text.clone();
         let fact_err = fact_err.clone();
-        Callback::from(move |_| {
+        Callback::from(move |_e: MouseEvent| {
             if let Some(f) = (*facts).clone() {
                 let season = current_season();
                 let picked = pick_random_fact(&f, season)
@@ -255,7 +265,7 @@ fn app() -> Html {
         let fact_err = fact_err.clone();
         let editor_status = editor_status.clone();
 
-        Callback::from(move |_| {
+        Callback::from(move |_e: MouseEvent| {
             let json = (*facts_json_editor).clone();
             match serde_json::from_str::<FactsFile>(&json) {
                 Ok(parsed) => {
@@ -280,7 +290,7 @@ fn app() -> Html {
 
     let on_clear_override = {
         let editor_status = editor_status.clone();
-        Callback::from(move |_| {
+        Callback::from(move |_e: MouseEvent| {
             if let Some(ls) = local_storage() {
                 let _ = ls.remove_item(LS_FACTS_KEY);
             }
@@ -296,7 +306,7 @@ fn app() -> Html {
         let fact_err = fact_err.clone();
         let url_status = url_status.clone();
 
-        Callback::from(move |_| {
+        Callback::from(move |_e: MouseEvent| {
             let url = (*facts_url).trim().to_string();
             if url.is_empty() {
                 url_status.set("Enter a URL first.".to_string());
@@ -312,7 +322,6 @@ fn app() -> Html {
                         let text = r.text().await.unwrap_or_default();
                         match serde_json::from_str::<FactsFile>(&text) {
                             Ok(parsed) => {
-                                // Also place into editor + localStorage override for persistence
                                 facts_json_editor.set(text.clone());
                                 if let Some(ls) = local_storage() {
                                     let _ = ls.set_item(LS_FACTS_KEY, &text);
@@ -341,15 +350,22 @@ fn app() -> Html {
     };
 
     let next_season_label = {
-        // find smallest positive days among the season starts
         let mut best: Option<(Season, i32, i32)> = None; // (season, year, days)
         for c in (*cards).iter() {
             if best.is_none() || c.days < best.unwrap().2 {
                 best = Some((c.season, c.target_year, c.days));
             }
         }
-        best.map(|(s, y, d)| format!("Next up: {} ({}) in {} day{}", s.name(), format_start_date(s, y), d, if d == 1 { "" } else { "s" }))
-            .unwrap_or_else(|| "Next up: —".to_string())
+        best.map(|(s, y, d)| {
+            format!(
+                "Next up: {} ({}) in {} day{}",
+                s.name(),
+                format_start_date(s, y),
+                d,
+                if d == 1 { "" } else { "s" }
+            )
+        })
+        .unwrap_or_else(|| "Next up: —".to_string())
     };
 
     let cur = current_season();
@@ -405,7 +421,7 @@ fn app() -> Html {
 
             <div class="btns">
               <button onclick={on_new_fact}>{ "New fact" }</button>
-              <button onclick={recompute.clone()}>{ "Refresh countdown" }</button>
+              <button onclick={recompute_onclick}>{ "Refresh countdown" }</button>
             </div>
 
             {
