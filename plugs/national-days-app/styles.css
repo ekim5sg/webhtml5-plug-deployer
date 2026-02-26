@@ -64,9 +64,7 @@ button{
   cursor:pointer;
 }
 button:hover{filter:brightness(1.05)}
-button.secondary{
-  background:rgba(255,255,255,.04);
-}
+button.secondary{background:rgba(255,255,255,.04)}
 .small{font-size:12px; color:var(--muted)}
 .err{
   margin-top:10px;
@@ -77,6 +75,7 @@ button.secondary{
   border-radius:14px;
 }
 
+/* Grid + cards */
 .grid{
   margin-top:14px;
   display:grid;
@@ -98,11 +97,47 @@ button.secondary{
   color:var(--muted);
   margin-bottom:6px;
 }
+
+/* Title (both link + non-link) */
 .card .title{
   font-size:16px;
   font-weight:800;
   letter-spacing:.2px;
 }
+
+/* Clickable title that matches .title styling */
+.titlelink{
+  display:block;
+  font-size:16px;
+  font-weight:800;
+  letter-spacing:.2px;
+  color:var(--text);
+  text-decoration:none;
+}
+.titlelink:hover{text-decoration:underline}
+
+/* Rich fields inside the card */
+.meta{
+  margin-top:10px;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+.label{
+  font-size:11px;
+  letter-spacing:.10em;
+  text-transform:uppercase;
+  color:rgba(170,179,221,.85);
+}
+.text{
+  margin-top:4px;
+  color:var(--text);
+  opacity:.94;
+  font-size:13px;
+  line-height:1.38;
+}
+
+/* Footer */
 .footer{
   margin-top:14px;
   color:var(--muted);
@@ -110,5 +145,7 @@ button.secondary{
   text-align:center;
   opacity:.95;
 }
+
+/* Global links */
 a{color:var(--accent); text-decoration:none}
 a:hover{text-decoration:underline}
