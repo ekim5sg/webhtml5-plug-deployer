@@ -4,11 +4,21 @@ use web_sys::HtmlInputElement;
 use yew::prelude::*;
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
+struct DayItem {
+    title: String,
+    #[serde(default)]
+    url: Option<String>,
+    summary: String,
+    fun_fact: String,
+    try_this: String,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
 struct ApiResp {
     date: String,         // YYYY-MM-DD
     timezone: String,     // America/Chicago
     source: String,       // upstream page
-    items: Vec<String>,   // max 5
+    items: Vec<DayItem>,  // max 5
     generatedAt: String,  // ISO
     #[serde(default)]
     note: Option<String>,
@@ -18,25 +28,23 @@ fn window() -> web_sys::Window {
     web_sys::window().expect("no window")
 }
 
+// web_sys::Navigator::clipboard() returns Clipboard (not Option), so no ok_or needed.
 async fn copy_to_clipboard(text: String) -> Result<(), String> {
-    // With your current web-sys features, clipboard() is not Option<Clipboard>.
-    // (On some browsers, the operation can still fail; we'll surface that error.)
     let nav = window().navigator();
     let clip = nav.clipboard();
-
     wasm_bindgen_futures::JsFuture::from(clip.write_text(&text))
         .await
-        .map_err(|_| "Clipboard write failed (browser permission/availability)".to_string())?;
+        .map_err(|_| "Clipboard write failed".to_string())?;
     Ok(())
 }
 
 #[function_component(App)]
 fn app() -> Html {
     let worker_base = use_state(|| {
-        // LIVE worker:
+        // Put your worker URL here after deploy, e.g.:
+        // https://national-days-worker.mikegyver.workers.dev
+        // For local dev with wrangler: http://127.0.0.1:8787
         String::from("https://national-days-worker.mikegyver.workers.dev")
-        // Local dev (wrangler):
-        // String::from("http://127.0.0.1:8787")
     });
 
     let data = use_state(|| None::<ApiResp>);
@@ -139,44 +147,11 @@ fn app() -> Html {
         })
     };
 
-    // Auto-load today on first render (no event available here, so call logic directly)
+    // Auto-load today on first render
     {
-        let worker_base = worker_base.clone();
-        let data = data.clone();
-        let err = err.clone();
-        let loading = loading.clone();
-
+        let fetch_today = fetch_today.clone();
         use_effect_with((), move |_| {
-            loading.set(true);
-            err.set(None);
-
-            spawn_local(async move {
-                let url = format!("{}/api/today", (*worker_base).trim_end_matches('/'));
-                match gloo_net::http::Request::get(&url).send().await {
-                    Ok(resp) => {
-                        if !resp.ok() {
-                            loading.set(false);
-                            err.set(Some(format!("Worker error: HTTP {}", resp.status())));
-                            return;
-                        }
-                        match resp.json::<ApiResp>().await {
-                            Ok(j) => {
-                                data.set(Some(j));
-                                loading.set(false);
-                            }
-                            Err(_) => {
-                                loading.set(false);
-                                err.set(Some("Failed to parse JSON from worker.".into()));
-                            }
-                        }
-                    }
-                    Err(_) => {
-                        loading.set(false);
-                        err.set(Some("Network error calling worker.".into()));
-                    }
-                }
-            });
-
+            fetch_today.emit(MouseEvent::new("click").unwrap());
             || ()
         });
     }
@@ -197,14 +172,29 @@ fn app() -> Html {
     let copy_list = {
         let data = data.clone();
         let err = err.clone();
-
         Callback::from(move |_e: MouseEvent| {
             let err = err.clone();
             if let Some(d) = (*data).clone() {
-                let lines = d.items.join("\n");
+                let mut lines: Vec<String> = Vec::new();
+                for (i, it) in d.items.iter().enumerate() {
+                    let mut block = String::new();
+                    block.push_str(&format!("{}. {}\n", i + 1, it.title));
+                    if let Some(u) = &it.url {
+                        block.push_str(&format!("   Link: {}\n", u));
+                    }
+                    block.push_str(&format!("   Summary: {}\n", it.summary));
+                    block.push_str(&format!("   Fun fact: {}\n", it.fun_fact));
+                    block.push_str(&format!("   Try this: {}\n", it.try_this));
+                    lines.push(block);
+                }
+
                 let text = format!(
-                    "Top National Days (max 5) — {} ({}):\n{}\n\nSource: {}\nGenerated: {}",
-                    d.date, d.timezone, lines, d.source, d.generatedAt
+                    "Top National Days for {} ({}):\n\n{}\nSource: {}\nGenerated: {}",
+                    d.date,
+                    d.timezone,
+                    lines.join("\n"),
+                    d.source,
+                    d.generatedAt
                 );
 
                 spawn_local(async move {
@@ -236,18 +226,40 @@ fn app() -> Html {
 
             <div class="grid">
               { for d.items.iter().enumerate().map(|(i, item)| {
+                  let title_node = if let Some(u) = &item.url {
+                    html!{
+                      <a class="titlelink" href={u.clone()} target="_blank" rel="noopener noreferrer">
+                        { item.title.clone() }
+                      </a>
+                    }
+                  } else {
+                    html!{ <div class="title">{ item.title.clone() }</div> }
+                  };
+
                   html!{
                     <div class="card">
                       <div class="kicker">{ format!("#{}", i+1) }</div>
-                      <div class="title">{ item }</div>
+
+                      { title_node }
+
+                      <div class="meta">
+                        <div class="label">{ "Summary" }</div>
+                        <div class="text">{ item.summary.clone() }</div>
+
+                        <div class="label">{ "Fun fact" }</div>
+                        <div class="text">{ item.fun_fact.clone() }</div>
+
+                        <div class="label">{ "Try this" }</div>
+                        <div class="text">{ item.try_this.clone() }</div>
+                      </div>
                     </div>
                   }
-              })}
+              }) }
             </div>
 
             <div class="footer">
               {"Source: "}
-              <a href={d.source.clone()} target="_blank" rel="noopener noreferrer">{ "Today’s source page" }</a>
+              <a href={d.source.clone()} target="_blank" rel="noopener noreferrer">{ d.source.clone() }</a>
               {" · Generated: "}
               { d.generatedAt }
             </div>
