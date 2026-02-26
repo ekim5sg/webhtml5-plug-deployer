@@ -1,0 +1,31 @@
+[package]
+name = "seasons_countdown"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+yew = { version = "0.21", features = ["csr"] }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Timers for periodic refresh
+gloo-timers = "0.3"
+
+# Fetch (optional URL-based facts) + convenience
+gloo-net = "0.5"
+
+# Spawn futures (fetch) on wasm
+wasm-bindgen-futures = "0.4"
+
+# Browser APIs
+web-sys = { version = "0.3", features = [
+  "Window",
+  "Document",
+  "Element",
+  "HtmlElement",
+  "Storage",
+  "console"
+] }
+
+js-sys = "0.3"
