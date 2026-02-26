@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>Seasons Countdown | Carpool Lane</title>
+
+  <link data-trunk rel="rust" href="Cargo.toml" data-wasm-opt="z" />
+  <link data-trunk rel="css" href="styles.css" />
+</head>
+<body>
+  <!-- Runtime-editable JSON facts (edit this after deploy without recompiling) -->
+  <script id="season-facts" type="application/json">
+{
+  "Spring": [
+    "Meteorological spring runs March 1 to May 31 in many climate datasets.",
+    "Spring leaf-out timing can shift noticeably year to year based on temperature patterns.",
+    "Many regions see increased pollen in spring as plants begin their growth cycle."
+  ],
+  "Summer": [
+    "Meteorological summer runs June 1 to August 31 in many climate datasets.",
+    "The longest day of the year happens near the June solstice in the Northern Hemisphere.",
+    "Warm air can hold more water vapor, which can influence summer humidity."
+  ],
+  "Fall": [
+    "Meteorological fall runs September 1 to November 30 in many climate datasets.",
+    "Leaf color changes are influenced by daylight length and temperature swings.",
+    "Many migratory species use fall conditions as cues for seasonal movement."
+  ],
+  "Winter": [
+    "Meteorological winter runs December 1 to February 28/29 in many climate datasets.",
+    "Colder air typically holds less water vapor, which can affect winter precipitation type.",
+    "Some plants and animals enter dormancy strategies to conserve energy in winter."
+  ]
+}
+  </script>
+
+  <noscript>This app requires JavaScript to run.</noscript>
+</body>
+</html>
