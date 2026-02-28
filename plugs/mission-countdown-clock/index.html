@@ -1,3 +1,4 @@
+<!-- index.html -->
 <!doctype html>
 <html lang="en">
 <head>
@@ -9,7 +10,7 @@
 <body>
   <div id="app"></div>
 
-  <!-- JS helpers for timezone formatting -->
+  <!-- JS helpers used by main.rs for DST-aware timezone rendering -->
   <script>
     // Format epoch ms in a target IANA timezone (DST-aware)
     window.mccFormatInTz = function (epochMs, tz) {
@@ -38,7 +39,6 @@
     };
   </script>
 
-  <!-- Rust iPhone Compiler / Trunk build hook -->
   <link data-trunk rel="rust" data-wasm-opt="z" />
 </body>
 </html>
