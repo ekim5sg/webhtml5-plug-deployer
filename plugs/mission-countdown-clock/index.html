@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Mission Countdown Clock</title>
+  <link data-trunk rel="css" href="styles.css" />
+</head>
+<body>
+  <div id="app"></div>
+
+  <!-- JS helpers for timezone formatting -->
+  <script>
+    // Format epoch ms in a target IANA timezone (DST-aware)
+    window.mccFormatInTz = function (epochMs, tz) {
+      try {
+        const d = new Date(epochMs);
+        const fmt = new Intl.DateTimeFormat("en-US", {
+          timeZone: tz,
+          weekday: "short",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: false,
+          timeZoneName: "short"
+        });
+        return fmt.format(d);
+      } catch (e) {
+        return new Date(epochMs).toString();
+      }
+    };
+
+    window.mccIsoUtc = function (epochMs) {
+      return new Date(epochMs).toISOString();
+    };
+  </script>
+
+  <!-- Rust iPhone Compiler / Trunk build hook -->
+  <link data-trunk rel="rust" data-wasm-opt="z" />
+</body>
+</html>
