@@ -1,8 +1,13 @@
 # Cargo.toml
 [package]
-name = "mission_countdown_clock"
+name = "mission-countdown-clock"
 version = "0.1.0"
 edition = "2021"
+
+# Make the target explicit so Cargo metadata can't complain
+[[bin]]
+name = "mission-countdown-clock"
+path = "src/main.rs"
 
 [dependencies]
 yew = { version = "0.21", features = ["csr"] }
