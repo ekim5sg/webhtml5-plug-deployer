@@ -9,7 +9,7 @@ use gloo_timers::callback::Interval;
 
 #[wasm_bindgen]
 extern "C" {
-    // Must match functions defined in index.html
+    // Must match index.html helpers
     #[wasm_bindgen(js_namespace = window, js_name = mccFormatInTz)]
     fn format_in_tz(epoch_ms: f64, tz: &str) -> String;
 
@@ -18,9 +18,9 @@ extern "C" {
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
-struct LaunchTimeConfig {
+struct LaunchTimerConfig {
     mission_name: Option<String>,
-    launch_utc: String, // ISO-8601 UTC like "2026-03-15T13:45:00Z"
+    launch_utc: String, // ISO-8601 UTC like "2026-04-06T13:45:00Z"
     notes: Option<String>,
 }
 
@@ -30,13 +30,12 @@ struct TzOpt {
     iana: &'static str,
 }
 
-// Use IANA zones so DST is automatically correct.
 const TZ_OPTIONS: &[TzOpt] = &[
     TzOpt { label: "UTC", iana: "UTC" },
-    TzOpt { label: "PST/PT", iana: "America/Los_Angeles" },
-    TzOpt { label: "MST/MT", iana: "America/Denver" },
-    TzOpt { label: "CST/CT", iana: "America/Chicago" },
-    TzOpt { label: "EST/ET", iana: "America/New_York" },
+    TzOpt { label: "PT (PST/PDT)", iana: "America/Los_Angeles" },
+    TzOpt { label: "MT (MST/MDT)", iana: "America/Denver" },
+    TzOpt { label: "CT (CST/CDT)", iana: "America/Chicago" },
+    TzOpt { label: "ET (EST/EDT)", iana: "America/New_York" },
     TzOpt { label: "Philippines (PHT)", iana: "Asia/Manila" },
 ];
 
@@ -47,11 +46,10 @@ fn now_ms() -> f64 {
 }
 
 fn parse_iso_utc_to_ms(iso: &str) -> Result<f64, String> {
-    // JS Date parses ISO with trailing 'Z' reliably (UTC).
     let d = js_sys::Date::new(&JsValue::from_str(iso));
     let t = d.get_time();
     if t.is_nan() {
-        Err("Could not parse launch_utc. Use ISO-8601 UTC like 2026-03-15T13:45:00Z".into())
+        Err("Could not parse launch_utc. Use ISO-8601 UTC like 2026-04-06T13:45:00Z".into())
     } else {
         Ok(t)
     }
@@ -74,7 +72,7 @@ fn clamp_tz_idx(i: usize) -> usize {
 }
 
 fn load_saved_tz_idx() -> usize {
-    let Some(ls) = get_local_storage() else { return 3 }; // default CST/CT
+    let Some(ls) = get_local_storage() else { return 3 }; // default CT
     let Ok(Some(v)) = ls.get_item(LS_TZ_IDX) else { return 3 };
     clamp_tz_idx(v.parse::<usize>().unwrap_or(3))
 }
@@ -86,29 +84,26 @@ fn save_tz_idx(i: usize) {
 }
 
 fn copy_to_clipboard(text: &str) {
-    if let Some(w) = web_sys::window() {
-        let nav = w.navigator();
-        if let Some(clip) = nav.clipboard() {
-            let _ = wasm_bindgen_futures::JsFuture::from(clip.write_text(text));
-        }
-    }
+    let Some(w) = web_sys::window() else { return; };
+    let clip = w.navigator().clipboard();
+    let _ = wasm_bindgen_futures::JsFuture::from(clip.write_text(text));
 }
 
 #[function_component(App)]
 fn app() -> Html {
-    // Config + parsed launch epoch-ms
-    let cfg = use_state(|| None::<LaunchTimeConfig>);
+    // Loaded config + parsed launch epoch-ms
+    let cfg = use_state(|| None::<LaunchTimerConfig>);
     let launch_ms = use_state(|| None::<f64>);
     let err = use_state(|| None::<String>);
 
-    // “Flight loop” ticker
+    // Ticking loop
     let running = use_state(|| true);
     let tick = use_state(|| 0u64);
 
-    // Display preferences
+    // Display timezone (persisted)
     let tz_idx = use_state(load_saved_tz_idx);
 
-    // Load launch-time.json once
+    // Load ./launch-timer.json once (SAME folder as index.html on Hostek)
     {
         let cfg = cfg.clone();
         let launch_ms = launch_ms.clone();
@@ -116,12 +111,11 @@ fn app() -> Html {
 
         use_effect_with((), move |_| {
             spawn_local(async move {
-                // Relative path so it resolves to:
-                // https://www.webhtml5.info/mission-countdown-clock/launch-time.json
-                let resp = Request::get("./launch-time.json").send().await;
-
+                // Important: SAME DIRECTORY as index.html
+                // https://www.webhtml5.info/mission-countdown-clock/launch-timer.json
+                let resp = Request::get("./launch-timer.json").send().await;
                 match resp {
-                    Ok(r) => match r.json::<LaunchTimeConfig>().await {
+                    Ok(r) => match r.json::<LaunchTimerConfig>().await {
                         Ok(c) => match parse_iso_utc_to_ms(&c.launch_utc) {
                             Ok(ms) => {
                                 launch_ms.set(Some(ms));
@@ -130,54 +124,54 @@ fn app() -> Html {
                             }
                             Err(e) => err.set(Some(e)),
                         },
-                        Err(e) => err.set(Some(format!("Failed parsing launch-time.json: {}", e))),
+                        Err(e) => err.set(Some(format!("Failed parsing launch-timer.json: {}", e))),
                     },
-                    Err(e) => err.set(Some(format!("Failed fetching ./launch-time.json: {}", e))),
+                    Err(e) => err.set(Some(format!("Failed fetching ./launch-timer.json: {}", e))),
                 }
             });
             || ()
         });
     }
 
-    // Tick loop while running
+    // Tick every second while running (single cleanup closure type)
     {
         let tick = tick.clone();
-        let running = running.clone();
         use_effect_with(running.clone(), move |r| {
+            let mut handle: Option<Interval> = None;
             if **r {
-                let handle = Interval::new(1000, move || tick.set(*tick + 1));
-                || drop(handle)
-            } else {
-                || ()
+                handle = Some(Interval::new(1000, move || {
+                    tick.set(*tick + 1);
+                }));
             }
+            move || drop(handle)
         });
     }
 
-    // Derived labels
+    let tz = TZ_OPTIONS.get(clamp_tz_idx(*tz_idx)).unwrap_or(&TZ_OPTIONS[0]);
+
+    // Force recompute on each tick (outside html!)
+    let _ = *tick;
+    let now = now_ms();
+
     let mission_name = cfg
         .as_ref()
         .and_then(|c| c.mission_name.clone())
         .unwrap_or_else(|| "Mission Countdown Clock".to_string());
 
-    let tz = TZ_OPTIONS.get(*tz_idx).unwrap_or(&TZ_OPTIONS[0]);
-
-    // Computations
-    let computed = if let Some(lm) = *launch_ms {
-        let _ = *tick;
-        let now = now_ms();
-        let delta_s = ((lm - now) / 1000.0).round() as i64; // positive = future
-
+    let (t_display, launch_sel, launch_utc, now_sel, now_utc, launch_iso) = if let Some(lm) = *launch_ms {
+        let delta_s = ((lm - now) / 1000.0).round() as i64;
         let prefix = if delta_s >= 0 { "T-" } else { "T+" };
         let t_display = format!("{}{}", prefix, fmt_hhmmss(delta_s));
 
-        let launch_in_sel = format_in_tz(lm, tz.iana);
-        let launch_in_utc = format_in_tz(lm, "UTC");
-        let now_in_sel = format_in_tz(now, tz.iana);
-        let now_in_utc = format_in_tz(now, "UTC");
+        let launch_sel = format_in_tz(lm, tz.iana);
+        let launch_utc = format_in_tz(lm, "UTC");
+        let now_sel = format_in_tz(now, tz.iana);
+        let now_utc = format_in_tz(now, "UTC");
+        let launch_iso = iso_utc(lm);
 
-        Some((t_display, launch_in_sel, launch_in_utc, now_in_sel, now_in_utc, lm))
+        (t_display, launch_sel, launch_utc, now_sel, now_utc, launch_iso)
     } else {
-        None
+        ("—:—:—".into(), "—".into(), "—".into(), "—".into(), "—".into(), "—".into())
     };
 
     // Handlers
@@ -195,9 +189,9 @@ fn app() -> Html {
             let launch_ms = launch_ms.clone();
             let err = err.clone();
             spawn_local(async move {
-                let resp = Request::get("./launch-time.json").send().await;
+                let resp = Request::get("./launch-timer.json").send().await;
                 match resp {
-                    Ok(r) => match r.json::<LaunchTimeConfig>().await {
+                    Ok(r) => match r.json::<LaunchTimerConfig>().await {
                         Ok(c) => match parse_iso_utc_to_ms(&c.launch_utc) {
                             Ok(ms) => {
                                 launch_ms.set(Some(ms));
@@ -206,9 +200,9 @@ fn app() -> Html {
                             }
                             Err(e) => err.set(Some(e)),
                         },
-                        Err(e) => err.set(Some(format!("Failed parsing launch-time.json: {}", e))),
+                        Err(e) => err.set(Some(format!("Failed parsing launch-timer.json: {}", e))),
                     },
-                    Err(e) => err.set(Some(format!("Failed fetching ./launch-time.json: {}", e))),
+                    Err(e) => err.set(Some(format!("Failed fetching ./launch-timer.json: {}", e))),
                 }
             });
         })
@@ -227,21 +221,13 @@ fn app() -> Html {
     };
 
     let on_copy_t = {
-        let computed = computed.clone();
-        Callback::from(move |_| {
-            if let Some((t_display, ..)) = computed.clone() {
-                copy_to_clipboard(&t_display);
-            }
-        })
+        let t_display = t_display.clone();
+        Callback::from(move |_| copy_to_clipboard(&t_display))
     };
 
     let on_copy_launch_iso = {
-        let launch_ms = *launch_ms;
-        Callback::from(move |_| {
-            if let Some(ms) = launch_ms {
-                copy_to_clipboard(&iso_utc(ms));
-            }
-        })
+        let launch_iso = launch_iso.clone();
+        Callback::from(move |_| copy_to_clipboard(&launch_iso))
     };
 
     html! {
@@ -250,8 +236,8 @@ fn app() -> Html {
           <div class="brand">
             <div class="h1">{ format!("{} — Launch Console", mission_name) }</div>
             <div class="sub">
-              { "Source: " } <span class="code">{ "/mission-countdown-clock/launch-time.json" }</span>
-              { " (stored as UTC; displayed in selected timezone)." }
+              { "Reading static " } <span class="code">{ "launch-timer.json" }</span>
+              { " from the same directory as index.html (UTC source, timezone display selectable)." }
             </div>
           </div>
         </div>
@@ -286,21 +272,12 @@ fn app() -> Html {
                 <span class="small">{ if *running { "Live" } else { "Paused" } }</span>
               </div>
 
-              {
-                if let Some((t_display, launch_in_sel, launch_in_utc, _, _, _)) = computed.clone() {
-                  html!{
-                    <>
-                      <div class="big">{ t_display }</div>
-                      <div class="bigSmall">
-                        <div>{ format!("Launch ({}) — {}", tz.label, launch_in_sel) }</div>
-                        <div>{ format!("Launch (UTC) — {}", launch_in_utc) }</div>
-                      </div>
-                    </>
-                  }
-                } else {
-                  html!{ <div class="big">{ "—:—:—" }</div> }
-                }
-              }
+              <div class="big">{ t_display }</div>
+
+              <div class="bigSmall">
+                <div>{ format!("Launch ({}) — {}", tz.label, launch_sel) }</div>
+                <div>{ format!("Launch (UTC) — {}", launch_utc) }</div>
+              </div>
 
               <div class="btnRow">
                 <button onclick={on_toggle_run}>{ if *running { "Pause (HOLD)" } else { "Resume (GO)" } }</button>
@@ -314,10 +291,16 @@ fn app() -> Html {
                 <button class="ghost" onclick={on_copy_launch_iso}>{ "Copy Launch ISO (UTC)" }</button>
               </div>
 
-              if let Some(e) = (*err).clone() {
-                <div class="small" style="margin-top:10px;">
-                  <span class="code">{ format!("ERROR: {}", e) }</span>
-                </div>
+              {
+                if let Some(e) = (*err).clone() {
+                  html!{
+                    <div class="small" style="margin-top:10px;">
+                      <span class="code">{ format!("ERROR: {}", e) }</span>
+                    </div>
+                  }
+                } else {
+                  html!{}
+                }
               }
             </div>
 
@@ -327,22 +310,14 @@ fn app() -> Html {
                 <span class="small">{ "Now" }</span>
               </div>
 
-              {
-                let _ = *tick;
-                let now = now_ms();
-                let now_in_sel = format_in_tz(now, tz.iana);
-                let now_in_utc = format_in_tz(now, "UTC");
-                html!{
-                  <>
-                    <div class="bigSmall">{ format!("Now ({}) — {}", tz.label, now_in_sel) }</div>
-                    <div class="bigSmall">{ format!("Now (UTC) — {}", now_in_utc) }</div>
-                    <hr />
-                    <div class="small">
-                      { "PT/MT/CT/ET are DST-aware via IANA zones. Philippines uses Asia/Manila. JSON stays UTC." }
-                    </div>
-                  </>
-                }
-              }
+              <div class="bigSmall">{ format!("Now ({}) — {}", tz.label, now_sel) }</div>
+              <div class="bigSmall">{ format!("Now (UTC) — {}", now_utc) }</div>
+
+              <hr />
+
+              <div class="small">
+                { "PT/MT/CT/ET are DST-aware via IANA zones. Philippines uses Asia/Manila. JSON stays UTC." }
+              </div>
             </div>
           </div>
         </div>
