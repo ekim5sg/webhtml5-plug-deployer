@@ -32,7 +32,6 @@ impl IconSet {
 }
 
 fn clean_text(s: &str) -> String {
-    // Minimal XML escaping for text nodes
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
@@ -51,7 +50,6 @@ fn svg_for_patch(ring_text: &str, crew_raw: &str, motto: &str, icon: &IconSet) -
         .map(clean_text)
         .collect();
 
-    // Colors (feel free to tweak)
     let bg = "#0b1020";
     let ring = "#1a2b5e";
     let ring_hi = "#7aa8ff";
@@ -60,91 +58,78 @@ fn svg_for_patch(ring_text: &str, crew_raw: &str, motto: &str, icon: &IconSet) -
     let gold = "#f4d06f";
 
     let icon_markup = match icon {
-        IconSet::Moon => {
-            // Crescent + small crater dots
-            format!(
-                r#"
-                <g transform="translate(0,2)">
-                  <circle cx="0" cy="0" r="92" fill="{bg}" />
-                  <path d="M 40 -70
-                           A 80 80 0 1 0 40 70
-                           A 62 62 0 1 1 40 -70 Z"
-                        fill="{ring_hi}" opacity="0.9"/>
-                  <circle cx="-18" cy="-18" r="6" fill="{muted}" opacity="0.55"/>
-                  <circle cx="-36" cy="20" r="4" fill="{muted}" opacity="0.45"/>
-                  <circle cx="12" cy="34" r="5" fill="{muted}" opacity="0.35"/>
-                </g>
-            "#
-            )
-        }
-        IconSet::Orion => {
-            // Orion-ish constellation + subtle belt
-            format!(
-                r#"
-                <g>
-                  <circle cx="0" cy="0" r="92" fill="{bg}" />
-                  <g opacity="0.95" stroke="{ring_hi}" stroke-width="2" fill="none">
-                    <path d="M -35 -40 L 10 -55 L 40 -20 L 25 35 L -20 55 L -45 10 Z" opacity="0.65"/>
-                    <path d="M -18 -8 L 0 2 L 18 12" opacity="0.85"/>
-                  </g>
-                  <g fill="{gold}">
-                    <circle cx="-35" cy="-40" r="4"/>
-                    <circle cx="10" cy="-55" r="4"/>
-                    <circle cx="40" cy="-20" r="4"/>
-                    <circle cx="25" cy="35" r="4"/>
-                    <circle cx="-20" cy="55" r="4"/>
-                    <circle cx="-45" cy="10" r="4"/>
-                    <circle cx="-18" cy="-8" r="3"/>
-                    <circle cx="0" cy="2" r="3"/>
-                    <circle cx="18" cy="12" r="3"/>
-                  </g>
-                </g>
-            "#
-            )
-        }
-        IconSet::Starfield => {
-            // Starfield dots + big star
-            format!(
-                r#"
-                <g>
-                  <circle cx="0" cy="0" r="92" fill="{bg}" />
-                  <g fill="{muted}" opacity="0.8">
-                    <circle cx="-44" cy="-44" r="2"/><circle cx="-10" cy="-58" r="1.6"/>
-                    <circle cx="26" cy="-46" r="1.8"/><circle cx="52" cy="-18" r="1.7"/>
-                    <circle cx="44" cy="26" r="1.9"/><circle cx="-52" cy="10" r="1.7"/>
-                    <circle cx="-28" cy="46" r="1.8"/><circle cx="6" cy="56" r="1.6"/>
-                    <circle cx="22" cy="18" r="1.6"/><circle cx="-6" cy="24" r="1.4"/>
-                  </g>
-                  <path d="M0-44 L10-10 L44 0 L10 10 L0 44 L-10 10 L-44 0 L-10-10 Z"
-                        fill="{gold}" opacity="0.95"/>
-                </g>
-            "#
-            )
-        }
-        IconSet::RocketPlume => {
-            // Simple rocket + plume
-            format!(
-                r#"
-                <g>
-                  <circle cx="0" cy="0" r="92" fill="{bg}" />
-                  <g transform="translate(0,-6)">
-                    <path d="M0 -62 C 18 -42 22 -18 0 20 C -22 -18 -18 -42 0 -62 Z"
-                          fill="{ring_hi}" opacity="0.95"/>
-                    <circle cx="0" cy="-24" r="10" fill="{bg}" opacity="0.95"/>
-                    <path d="M -16 8 L -44 22 L -22 -4 Z" fill="{muted}" opacity="0.75"/>
-                    <path d="M 16 8 L 44 22 L 22 -4 Z" fill="{muted}" opacity="0.75"/>
-                    <path d="M0 20 C 10 30 14 40 0 58 C -14 40 -10 30 0 20 Z"
-                          fill="{gold}" opacity="0.95"/>
-                    <path d="M0 26 C 6 34 8 40 0 52 C -8 40 -6 34 0 26 Z"
-                          fill="{ring_hi}" opacity="0.75"/>
-                  </g>
-                </g>
-            "#
-            )
-        }
+        IconSet::Moon => format!(
+            r##"
+            <g transform="translate(0,2)">
+              <circle cx="0" cy="0" r="92" fill="{bg}" />
+              <path d="M 40 -70
+                       A 80 80 0 1 0 40 70
+                       A 62 62 0 1 1 40 -70 Z"
+                    fill="{ring_hi}" opacity="0.9"/>
+              <circle cx="-18" cy="-18" r="6" fill="{muted}" opacity="0.55"/>
+              <circle cx="-36" cy="20" r="4" fill="{muted}" opacity="0.45"/>
+              <circle cx="12" cy="34" r="5" fill="{muted}" opacity="0.35"/>
+            </g>
+        "##,
+        ),
+        IconSet::Orion => format!(
+            r##"
+            <g>
+              <circle cx="0" cy="0" r="92" fill="{bg}" />
+              <g opacity="0.95" stroke="{ring_hi}" stroke-width="2" fill="none">
+                <path d="M -35 -40 L 10 -55 L 40 -20 L 25 35 L -20 55 L -45 10 Z" opacity="0.65"/>
+                <path d="M -18 -8 L 0 2 L 18 12" opacity="0.85"/>
+              </g>
+              <g fill="{gold}">
+                <circle cx="-35" cy="-40" r="4"/>
+                <circle cx="10" cy="-55" r="4"/>
+                <circle cx="40" cy="-20" r="4"/>
+                <circle cx="25" cy="35" r="4"/>
+                <circle cx="-20" cy="55" r="4"/>
+                <circle cx="-45" cy="10" r="4"/>
+                <circle cx="-18" cy="-8" r="3"/>
+                <circle cx="0" cy="2" r="3"/>
+                <circle cx="18" cy="12" r="3"/>
+              </g>
+            </g>
+        "##,
+        ),
+        IconSet::Starfield => format!(
+            r##"
+            <g>
+              <circle cx="0" cy="0" r="92" fill="{bg}" />
+              <g fill="{muted}" opacity="0.8">
+                <circle cx="-44" cy="-44" r="2"/><circle cx="-10" cy="-58" r="1.6"/>
+                <circle cx="26" cy="-46" r="1.8"/><circle cx="52" cy="-18" r="1.7"/>
+                <circle cx="44" cy="26" r="1.9"/><circle cx="-52" cy="10" r="1.7"/>
+                <circle cx="-28" cy="46" r="1.8"/><circle cx="6" cy="56" r="1.6"/>
+                <circle cx="22" cy="18" r="1.6"/><circle cx="-6" cy="24" r="1.4"/>
+              </g>
+              <path d="M0-44 L10-10 L44 0 L10 10 L0 44 L-10 10 L-44 0 L-10-10 Z"
+                    fill="{gold}" opacity="0.95"/>
+            </g>
+        "##,
+        ),
+        IconSet::RocketPlume => format!(
+            r##"
+            <g>
+              <circle cx="0" cy="0" r="92" fill="{bg}" />
+              <g transform="translate(0,-6)">
+                <path d="M0 -62 C 18 -42 22 -18 0 20 C -22 -18 -18 -42 0 -62 Z"
+                      fill="{ring_hi}" opacity="0.95"/>
+                <circle cx="0" cy="-24" r="10" fill="{bg}" opacity="0.95"/>
+                <path d="M -16 8 L -44 22 L -22 -4 Z" fill="{muted}" opacity="0.75"/>
+                <path d="M 16 8 L 44 22 L 22 -4 Z" fill="{muted}" opacity="0.75"/>
+                <path d="M0 20 C 10 30 14 40 0 58 C -14 40 -10 30 0 20 Z"
+                      fill="{gold}" opacity="0.95"/>
+                <path d="M0 26 C 6 34 8 40 0 52 C -8 40 -6 34 0 26 Z"
+                      fill="{ring_hi}" opacity="0.75"/>
+              </g>
+            </g>
+        "##,
+        ),
     };
 
-    // Crew text block
     let crew_block = if crew_lines.is_empty() {
         format!(
             r#"<text x="0" y="34" text-anchor="middle" font-size="12" fill="{muted}" opacity="0.9">Add crew names</text>"#
@@ -161,7 +146,6 @@ fn svg_for_patch(ring_text: &str, crew_raw: &str, motto: &str, icon: &IconSet) -
         t
     };
 
-    // Motto (bottom inside)
     let motto_block = if motto.is_empty() {
         String::new()
     } else {
@@ -170,10 +154,9 @@ fn svg_for_patch(ring_text: &str, crew_raw: &str, motto: &str, icon: &IconSet) -
         )
     };
 
-    // Ring text path (top arc)
-    // Path is a circle arc: start left -> right around top
-    let svg = format!(
-        r#"<?xml version="1.0" encoding="UTF-8"?>
+    // IMPORTANT: r##" .. "## so href="#..." does not terminate the raw string
+    format!(
+        r##"<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="-256 -256 512 512">
   <defs>
     <path id="ringTopArc" d="M -180 0 A 180 180 0 0 1 180 0" />
@@ -187,15 +170,12 @@ fn svg_for_patch(ring_text: &str, crew_raw: &str, motto: &str, icon: &IconSet) -
     </filter>
   </defs>
 
-  <!-- Outer ring -->
   <circle cx="0" cy="0" r="230" fill="{bg}" />
   <circle cx="0" cy="0" r="220" fill="none" stroke="{ring}" stroke-width="18" />
   <circle cx="0" cy="0" r="220" fill="none" stroke="{ring_hi}" stroke-width="2" opacity="0.6" />
 
-  <!-- Inner disc -->
   <circle cx="0" cy="0" r="178" fill="{bg}" stroke="{ring}" stroke-width="6" opacity="0.9" />
 
-  <!-- Ring text -->
   <g filter="url(#softGlow)">
     <text font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial"
           font-size="20" fill="{text}" letter-spacing="2.2">
@@ -207,24 +187,21 @@ fn svg_for_patch(ring_text: &str, crew_raw: &str, motto: &str, icon: &IconSet) -
     </text>
   </g>
 
-  <!-- Icon layer -->
   <g transform="translate(0,-18)">
     {icon_markup}
   </g>
 
-  <!-- Crew + motto -->
   <g transform="translate(0,34)">
     {crew_block}
     {motto_block}
   </g>
 
-  <!-- Small separators -->
   <g opacity="0.75">
     <circle cx="-206" cy="0" r="5" fill="{gold}"/>
     <circle cx="206" cy="0" r="5" fill="{gold}"/>
   </g>
 </svg>
-"#,
+"##,
         ring_text = ring_text,
         icon_markup = icon_markup,
         crew_block = crew_block,
@@ -235,17 +212,12 @@ fn svg_for_patch(ring_text: &str, crew_raw: &str, motto: &str, icon: &IconSet) -
         text = text,
         muted = muted,
         gold = gold,
-    );
-
-    svg
+    )
 }
 
 fn download_text_file(filename: &str, contents: &str, mime: &str) -> Result<(), JsValue> {
-    let win = window();
-    let url = web_sys::Url::new()?;
-
     let mut bag = web_sys::BlobPropertyBag::new();
-    bag.type_(mime);
+    bag.set_type(mime);
 
     let parts = js_sys::Array::new();
     parts.push(&JsValue::from_str(contents));
@@ -259,14 +231,12 @@ fn download_text_file(filename: &str, contents: &str, mime: &str) -> Result<(), 
 
     a.set_href(&object_url);
     a.set_download(filename);
-    a.style().set_property("display", "none")?;
 
     document().body().unwrap().append_child(&a)?;
     a.click();
     a.remove();
 
     web_sys::Url::revoke_object_url(&object_url)?;
-    drop(url);
     Ok(())
 }
 
@@ -284,25 +254,27 @@ fn download_png_from_svg(svg: String, filename: &str, size: u32) -> Result<(), J
         .unwrap()
         .dyn_into::<web_sys::CanvasRenderingContext2d>()?;
 
-    // Encode SVG into a data URL
     let encoded = js_sys::encode_uri_component(&svg);
     let data_url = format!("data:image/svg+xml;charset=utf-8,{}", encoded);
 
     let img = web_sys::HtmlImageElement::new()?;
     let filename = filename.to_string();
 
-    // Onload: draw, then canvas -> PNG data url -> download
     let onload = Closure::<dyn FnMut()>::new(move || {
-        // Draw full canvas
         let _ = ctx.clear_rect(0.0, 0.0, size as f64, size as f64);
-        let _ = ctx.draw_image_with_html_image_element_and_dw_and_dh(&img, 0.0, 0.0, size as f64, size as f64);
+        let _ = ctx.draw_image_with_html_image_element_and_dw_and_dh(
+            &img,
+            0.0,
+            0.0,
+            size as f64,
+            size as f64,
+        );
 
         if let Ok(png_url) = canvas.to_data_url_with_type("image/png") {
             if let Ok(a) = doc.create_element("a") {
                 if let Ok(a) = a.dyn_into::<web_sys::HtmlAnchorElement>() {
                     a.set_href(&png_url);
                     a.set_download(&filename);
-                    let _ = a.style().set_property("display", "none");
                     if let Some(body) = doc.body() {
                         let _ = body.append_child(&a);
                         a.click();
@@ -417,18 +389,17 @@ fn app() -> Html {
                     <div class="form">
                         <div class="row">
                             <label>{ "Ring text" }</label>
-                            <input value={(*ring_text).clone()} oninput={on_ring} placeholder="e.g., ARTEMIS • LUNAR • 2026" />
+                            <input value={(*ring_text).clone()} oninput={on_ring} />
                         </div>
 
                         <div class="row">
                             <label>{ "Crew names" }</label>
-                            <textarea value={(*crew).clone()} oninput={on_crew} placeholder="One per line"></textarea>
+                            <textarea value={(*crew).clone()} oninput={on_crew}></textarea>
                         </div>
-                        <div class="hint">{ "Tip: Keep it short. PatchForge shows up to 6 lines." }</div>
 
                         <div class="row">
                             <label>{ "Mission motto" }</label>
-                            <input value={(*motto).clone()} oninput={on_motto} placeholder="e.g., To the South Pole" />
+                            <input value={(*motto).clone()} oninput={on_motto} />
                         </div>
 
                         <div class="row">
@@ -442,10 +413,6 @@ fn app() -> Html {
                             <button class="primary" onclick={download_svg}>{ "Download SVG" }</button>
                             <button onclick={download_png}>{ "Download PNG" }</button>
                         </div>
-
-                        <div class="smallnote">
-                            { "PNG export: renders your SVG into a 1024×1024 canvas, then downloads." }
-                        </div>
                     </div>
                 </div>
 
@@ -456,14 +423,11 @@ fn app() -> Html {
                     </div>
 
                     <div class="patchbox">
-                        <div
-                            // Render SVG directly
-                            dangerously_set_inner_html={AttrValue::from((*svg).clone())}
-                        />
+                        <div dangerously_set_inner_html={AttrValue::from((*svg).clone())} />
                     </div>
 
                     <div class="hint">
-                        { "Want more knobs next? Colors, ring thickness, icon placement, or a second inner text arc." }
+                        { "Next upgrades: color pickers, ring thickness, inner arc text, or icon position sliders." }
                     </div>
                 </div>
             </div>
