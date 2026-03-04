@@ -1,4 +1,4 @@
-use gloo::utils::{document, window};
+use gloo::utils::document;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use yew::prelude::*;
@@ -154,7 +154,6 @@ fn svg_for_patch(ring_text: &str, crew_raw: &str, motto: &str, icon: &IconSet) -
         )
     };
 
-    // IMPORTANT: r##" .. "## so href="#..." does not terminate the raw string
     format!(
         r##"<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="-256 -256 512 512">
@@ -216,8 +215,11 @@ fn svg_for_patch(ring_text: &str, crew_raw: &str, motto: &str, icon: &IconSet) -
 }
 
 fn download_text_file(filename: &str, contents: &str, mime: &str) -> Result<(), JsValue> {
-    let mut bag = web_sys::BlobPropertyBag::new();
-    bag.set_type(mime);
+    let bag = {
+        let mut b = web_sys::BlobPropertyBag::new();
+        b.set_type(mime);
+        b
+    };
 
     let parts = js_sys::Array::new();
     parts.push(&JsValue::from_str(contents));
@@ -258,24 +260,29 @@ fn download_png_from_svg(svg: String, filename: &str, size: u32) -> Result<(), J
     let data_url = format!("data:image/svg+xml;charset=utf-8,{}", encoded);
 
     let img = web_sys::HtmlImageElement::new()?;
+    let img_for_closure = img.clone();
+
     let filename = filename.to_string();
+    let doc_for_closure = doc.clone();
+    let canvas_for_closure = canvas.clone();
+    let ctx_for_closure = ctx.clone();
 
     let onload = Closure::<dyn FnMut()>::new(move || {
-        let _ = ctx.clear_rect(0.0, 0.0, size as f64, size as f64);
-        let _ = ctx.draw_image_with_html_image_element_and_dw_and_dh(
-            &img,
+        let _ = ctx_for_closure.clear_rect(0.0, 0.0, size as f64, size as f64);
+        let _ = ctx_for_closure.draw_image_with_html_image_element_and_dw_and_dh(
+            &img_for_closure,
             0.0,
             0.0,
             size as f64,
             size as f64,
         );
 
-        if let Ok(png_url) = canvas.to_data_url_with_type("image/png") {
-            if let Ok(a) = doc.create_element("a") {
+        if let Ok(png_url) = canvas_for_closure.to_data_url_with_type("image/png") {
+            if let Ok(a) = doc_for_closure.create_element("a") {
                 if let Ok(a) = a.dyn_into::<web_sys::HtmlAnchorElement>() {
                     a.set_href(&png_url);
                     a.set_download(&filename);
-                    if let Some(body) = doc.body() {
+                    if let Some(body) = doc_for_closure.body() {
                         let _ = body.append_child(&a);
                         a.click();
                         a.remove();
@@ -336,7 +343,9 @@ fn app() -> Html {
     let on_icon = {
         let icon_set = icon_set.clone();
         Callback::from(move |e: Event| {
-            let v = e.target_unchecked_into::<web_sys::HtmlSelectElement>().value();
+            let v = e
+                .target_unchecked_into::<web_sys::HtmlSelectElement>()
+                .value();
             let picked = match v.as_str() {
                 "Moon" => IconSet::Moon,
                 "Orion" => IconSet::Orion,
