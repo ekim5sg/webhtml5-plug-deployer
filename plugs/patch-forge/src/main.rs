@@ -31,6 +31,29 @@ impl IconSet {
     }
 }
 
+#[derive(Clone, PartialEq)]
+struct Palette {
+    bg: String,
+    ring: String,
+    ring_hi: String,
+    text: String,
+    muted: String,
+    gold: String,
+}
+
+impl Palette {
+    fn default_dark() -> Self {
+        Self {
+            bg: "#0b1020".to_string(),
+            ring: "#1a2b5e".to_string(),
+            ring_hi: "#7aa8ff".to_string(),
+            text: "#e9eefc".to_string(),
+            muted: "#9fb0d9".to_string(),
+            gold: "#f4d06f".to_string(),
+        }
+    }
+}
+
 fn clean_text(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
@@ -39,8 +62,21 @@ fn clean_text(s: &str) -> String {
         .replace('\'', "&apos;")
 }
 
-fn svg_for_patch(ring_text: &str, crew_raw: &str, motto: &str, icon: &IconSet) -> String {
+// Build SVG (IMPORTANT: no XML header; return only the <svg> element)
+fn svg_for_patch(
+    ring_text: &str,
+    bottom_arc_text: &str,
+    crew_raw: &str,
+    motto: &str,
+    icon: &IconSet,
+    palette: &Palette,
+    ring_thickness: f32,
+    icon_x: f32,
+    icon_y: f32,
+    icon_scale: f32,
+) -> String {
     let ring_text = clean_text(ring_text.trim());
+    let bottom_arc_text = clean_text(bottom_arc_text.trim());
     let motto = clean_text(motto.trim());
 
     let crew_lines: Vec<String> = crew_raw
@@ -50,12 +86,12 @@ fn svg_for_patch(ring_text: &str, crew_raw: &str, motto: &str, icon: &IconSet) -
         .map(clean_text)
         .collect();
 
-    let bg = "#0b1020";
-    let ring = "#1a2b5e";
-    let ring_hi = "#7aa8ff";
-    let text = "#e9eefc";
-    let muted = "#9fb0d9";
-    let gold = "#f4d06f";
+    let bg = palette.bg.as_str();
+    let ring = palette.ring.as_str();
+    let ring_hi = palette.ring_hi.as_str();
+    let text = palette.text.as_str();
+    let muted = palette.muted.as_str();
+    let gold = palette.gold.as_str();
 
     let icon_markup = match icon {
         IconSet::Moon => format!(
@@ -154,7 +190,14 @@ fn svg_for_patch(ring_text: &str, crew_raw: &str, motto: &str, icon: &IconSet) -
         )
     };
 
-    // IMPORTANT: no XML header. Just the <svg> element so HTML parsing keeps it.
+    // ring thickness is the stroke width for the outer main ring
+    let ring_thickness = ring_thickness.clamp(6.0, 30.0);
+
+    // icon transform knobs
+    let icon_scale = icon_scale.clamp(0.6, 1.6);
+    let icon_x = icon_x.clamp(-60.0, 60.0);
+    let icon_y = icon_y.clamp(-80.0, 80.0);
+
     format!(
         r##"<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="-256 -256 512 512">
   <defs>
@@ -169,12 +212,15 @@ fn svg_for_patch(ring_text: &str, crew_raw: &str, motto: &str, icon: &IconSet) -
     </filter>
   </defs>
 
+  <!-- Outer ring -->
   <circle cx="0" cy="0" r="230" fill="{bg}" />
-  <circle cx="0" cy="0" r="220" fill="none" stroke="{ring}" stroke-width="18" />
+  <circle cx="0" cy="0" r="220" fill="none" stroke="{ring}" stroke-width="{ring_thickness}" />
   <circle cx="0" cy="0" r="220" fill="none" stroke="{ring_hi}" stroke-width="2" opacity="0.6" />
 
+  <!-- Inner disc -->
   <circle cx="0" cy="0" r="178" fill="{bg}" stroke="{ring}" stroke-width="6" opacity="0.9" />
 
+  <!-- Ring text -->
   <g filter="url(#softGlow)">
     <text font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial"
           font-size="20" fill="{text}" letter-spacing="2.2">
@@ -182,25 +228,29 @@ fn svg_for_patch(ring_text: &str, crew_raw: &str, motto: &str, icon: &IconSet) -
     </text>
     <text font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial"
           font-size="14" fill="{muted}" letter-spacing="2.0" opacity="0.95">
-      <textPath href="#ringBottomArc" startOffset="50%" text-anchor="middle">PATCHFORGE</textPath>
+      <textPath href="#ringBottomArc" startOffset="50%" text-anchor="middle">{bottom_arc_text}</textPath>
     </text>
   </g>
 
-  <g transform="translate(0,-18)">
+  <!-- Icon layer (position + scale controls) -->
+  <g transform="translate({icon_x},{icon_y}) scale({icon_scale})">
     {icon_markup}
   </g>
 
+  <!-- Crew + motto -->
   <g transform="translate(0,34)">
     {crew_block}
     {motto_block}
   </g>
 
+  <!-- Separators -->
   <g opacity="0.75">
     <circle cx="-206" cy="0" r="5" fill="{gold}"/>
     <circle cx="206" cy="0" r="5" fill="{gold}"/>
   </g>
 </svg>"##,
         ring_text = ring_text,
+        bottom_arc_text = bottom_arc_text,
         icon_markup = icon_markup,
         crew_block = crew_block,
         motto_block = motto_block,
@@ -210,10 +260,15 @@ fn svg_for_patch(ring_text: &str, crew_raw: &str, motto: &str, icon: &IconSet) -
         text = text,
         muted = muted,
         gold = gold,
+        ring_thickness = ring_thickness,
+        icon_x = icon_x,
+        icon_y = icon_y,
+        icon_scale = icon_scale,
     )
 }
 
 fn download_text_file(filename: &str, contents: &str, mime: &str) -> Result<(), JsValue> {
+    // ✅ no "mut" warning for the binding; we mutate only the temp var
     let bag = {
         let b = web_sys::BlobPropertyBag::new();
         b.set_type(mime);
@@ -300,26 +355,70 @@ fn download_png_from_svg(svg: String, filename: &str, size: u32) -> Result<(), J
 
 #[function_component(App)]
 fn app() -> Html {
+    // Text
     let ring_text = use_state(|| "MISSION • ARTEMIS • LUNAR".to_string());
+    let bottom_arc_text = use_state(|| "PATCHFORGE".to_string());
     let crew = use_state(|| "Colin\nLuan\nClark\nSoham".to_string());
     let motto = use_state(|| "From Bow to Booster".to_string());
-    let icon_set = use_state(|| IconSet::Moon);
 
+    // Icon controls
+    let icon_set = use_state(|| IconSet::Moon);
+    let icon_x = use_state(|| 0.0_f32);
+    let icon_y = use_state(|| -18.0_f32);
+    let icon_scale = use_state(|| 1.0_f32);
+
+    // Ring thickness
+    let ring_thickness = use_state(|| 18.0_f32);
+
+    // Colors
+    let palette = use_state(Palette::default_dark);
+
+    // Build SVG
     let svg = {
         let ring_text = (*ring_text).clone();
+        let bottom_arc_text = (*bottom_arc_text).clone();
         let crew = (*crew).clone();
         let motto = (*motto).clone();
         let icon_set = (*icon_set).clone();
-        use_memo((ring_text, crew, motto, icon_set), |(rt, cr, mo, ic)| {
-            svg_for_patch(rt, cr, mo, ic)
-        })
+        let palette = (*palette).clone();
+        let ring_thickness = *ring_thickness;
+        let icon_x = *icon_x;
+        let icon_y = *icon_y;
+        let icon_scale = *icon_scale;
+
+        use_memo(
+            (
+                ring_text,
+                bottom_arc_text,
+                crew,
+                motto,
+                icon_set,
+                palette,
+                ring_thickness,
+                icon_x,
+                icon_y,
+                icon_scale,
+            ),
+            |(rt, bt, cr, mo, ic, pal, th, ix, iy, sc)| {
+                svg_for_patch(rt, bt, cr, mo, ic, pal, *th, *ix, *iy, *sc)
+            },
+        )
     };
 
+    // Text handlers
     let on_ring = {
         let ring_text = ring_text.clone();
         Callback::from(move |e: InputEvent| {
             let v = e.target_unchecked_into::<web_sys::HtmlInputElement>().value();
             ring_text.set(v);
+        })
+    };
+
+    let on_bottom_arc = {
+        let bottom_arc_text = bottom_arc_text.clone();
+        Callback::from(move |e: InputEvent| {
+            let v = e.target_unchecked_into::<web_sys::HtmlInputElement>().value();
+            bottom_arc_text.set(v);
         })
     };
 
@@ -339,12 +438,11 @@ fn app() -> Html {
         })
     };
 
+    // Icon selector
     let on_icon = {
         let icon_set = icon_set.clone();
         Callback::from(move |e: Event| {
-            let v = e
-                .target_unchecked_into::<web_sys::HtmlSelectElement>()
-                .value();
+            let v = e.target_unchecked_into::<web_sys::HtmlSelectElement>().value();
             let picked = match v.as_str() {
                 "Moon" => IconSet::Moon,
                 "Orion" => IconSet::Orion,
@@ -356,6 +454,78 @@ fn app() -> Html {
         })
     };
 
+    // Sliders
+    let on_ring_thickness = {
+        let ring_thickness = ring_thickness.clone();
+        Callback::from(move |e: InputEvent| {
+            let v = e.target_unchecked_into::<web_sys::HtmlInputElement>().value();
+            if let Ok(f) = v.parse::<f32>() {
+                ring_thickness.set(f);
+            }
+        })
+    };
+
+    let on_icon_x = {
+        let icon_x = icon_x.clone();
+        Callback::from(move |e: InputEvent| {
+            let v = e.target_unchecked_into::<web_sys::HtmlInputElement>().value();
+            if let Ok(f) = v.parse::<f32>() {
+                icon_x.set(f);
+            }
+        })
+    };
+
+    let on_icon_y = {
+        let icon_y = icon_y.clone();
+        Callback::from(move |e: InputEvent| {
+            let v = e.target_unchecked_into::<web_sys::HtmlInputElement>().value();
+            if let Ok(f) = v.parse::<f32>() {
+                icon_y.set(f);
+            }
+        })
+    };
+
+    let on_icon_scale = {
+        let icon_scale = icon_scale.clone();
+        Callback::from(move |e: InputEvent| {
+            let v = e.target_unchecked_into::<web_sys::HtmlInputElement>().value();
+            if let Ok(f) = v.parse::<f32>() {
+                icon_scale.set(f);
+            }
+        })
+    };
+
+    // Color pickers (input[type=color] gives hex)
+    let on_color = |field: &'static str,
+                    palette: UseStateHandle<Palette>|
+     -> Callback<InputEvent> {
+        Callback::from(move |e: InputEvent| {
+            let v = e.target_unchecked_into::<web_sys::HtmlInputElement>().value();
+            let mut p = (*palette).clone();
+            match field {
+                "bg" => p.bg = v,
+                "ring" => p.ring = v,
+                "ring_hi" => p.ring_hi = v,
+                "text" => p.text = v,
+                "muted" => p.muted = v,
+                "gold" => p.gold = v,
+                _ => {}
+            }
+            palette.set(p);
+        })
+    };
+
+    let icon_options = IconSet::all()
+        .into_iter()
+        .map(|ic| {
+            let label = ic.label().to_string();
+            html! { <option value={label.clone()} selected={*icon_set == ic}>{label}</option> }
+        })
+        .collect::<Html>();
+
+    let svg_node = Html::from_html_unchecked(AttrValue::from((*svg).clone()));
+
+    // Downloads
     let download_svg = {
         let svg = (*svg).clone();
         Callback::from(move |_| {
@@ -370,15 +540,7 @@ fn app() -> Html {
         })
     };
 
-    let icon_options = IconSet::all()
-        .into_iter()
-        .map(|ic| {
-            let label = ic.label().to_string();
-            html! { <option value={label.clone()} selected={*icon_set == ic}>{label}</option> }
-        })
-        .collect::<Html>();
-
-    let svg_node = Html::from_html_unchecked(AttrValue::from((*svg).clone()));
+    let p = (*palette).clone();
 
     html! {
         <div class="wrap">
@@ -403,6 +565,11 @@ fn app() -> Html {
                         </div>
 
                         <div class="row">
+                            <label>{ "Bottom arc text" }</label>
+                            <input value={(*bottom_arc_text).clone()} oninput={on_bottom_arc} />
+                        </div>
+
+                        <div class="row">
                             <label>{ "Crew names" }</label>
                             <textarea value={(*crew).clone()} oninput={on_crew}></textarea>
                         </div>
@@ -419,9 +586,66 @@ fn app() -> Html {
                             </select>
                         </div>
 
+                        <div class="row">
+                            <label>{ "Ring thickness" }</label>
+                            <input type="range" min="6" max="30" step="1"
+                                   value={ring_thickness.to_string()}
+                                   oninput={on_ring_thickness} />
+                        </div>
+
+                        <div class="row">
+                            <label>{ "Icon X" }</label>
+                            <input type="range" min="-60" max="60" step="1"
+                                   value={icon_x.to_string()}
+                                   oninput={on_icon_x} />
+                        </div>
+
+                        <div class="row">
+                            <label>{ "Icon Y" }</label>
+                            <input type="range" min="-80" max="80" step="1"
+                                   value={icon_y.to_string()}
+                                   oninput={on_icon_y} />
+                        </div>
+
+                        <div class="row">
+                            <label>{ "Icon scale" }</label>
+                            <input type="range" min="0.6" max="1.6" step="0.05"
+                                   value={icon_scale.to_string()}
+                                   oninput={on_icon_scale} />
+                        </div>
+
+                        <div class="row">
+                            <label>{ "BG" }</label>
+                            <input type="color" value={p.bg.clone()} oninput={on_color("bg", palette.clone())} />
+                        </div>
+                        <div class="row">
+                            <label>{ "Ring" }</label>
+                            <input type="color" value={p.ring.clone()} oninput={on_color("ring", palette.clone())} />
+                        </div>
+                        <div class="row">
+                            <label>{ "Highlight" }</label>
+                            <input type="color" value={p.ring_hi.clone()} oninput={on_color("ring_hi", palette.clone())} />
+                        </div>
+                        <div class="row">
+                            <label>{ "Text" }</label>
+                            <input type="color" value={p.text.clone()} oninput={on_color("text", palette.clone())} />
+                        </div>
+                        <div class="row">
+                            <label>{ "Muted" }</label>
+                            <input type="color" value={p.muted.clone()} oninput={on_color("muted", palette.clone())} />
+                        </div>
+                        <div class="row">
+                            <label>{ "Gold" }</label>
+                            <input type="color" value={p.gold.clone()} oninput={on_color("gold", palette.clone())} />
+                        </div>
+
                         <div class="btnbar">
                             <button class="primary" onclick={download_svg}>{ "Download SVG" }</button>
                             <button onclick={download_png}>{ "Download PNG" }</button>
+                        </div>
+
+                        <div class="smallnote">
+                            { "Tip: Use icon sliders to center the emblem; ring thickness changes the outer band weight." }
                         </div>
                     </div>
                 </div>
@@ -437,7 +661,7 @@ fn app() -> Html {
                     </div>
 
                     <div class="hint">
-                        { "Next upgrades: color pickers, ring thickness, inner arc text, or icon position sliders." }
+                        { "Upgrades installed: colors, ring thickness, inner arc text, and icon position/scale." }
                     </div>
                 </div>
             </div>
