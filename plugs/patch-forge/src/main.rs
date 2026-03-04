@@ -39,8 +39,6 @@ fn clean_text(s: &str) -> String {
         .replace('\'', "&apos;")
 }
 
-/// NOTE: iOS WebKit can drop injected SVG if it begins with an XML prolog.
-/// So this SVG intentionally starts directly with `<svg ...>` (no `<?xml ...?>`).
 fn svg_for_patch(ring_text: &str, crew_raw: &str, motto: &str, icon: &IconSet) -> String {
     let ring_text = clean_text(ring_text.trim());
     let motto = clean_text(motto.trim());
@@ -156,14 +154,9 @@ fn svg_for_patch(ring_text: &str, crew_raw: &str, motto: &str, icon: &IconSet) -
         )
     };
 
-    // iOS/Safari compatibility:
-    // - No XML prolog
-    // - Provide xlink namespace + duplicate xlink:href on textPath
-    //   (some WebKit versions are finicky about href-only)
+    // IMPORTANT: no XML header. Just the <svg> element so HTML parsing keeps it.
     format!(
-        r##"<svg xmlns="http://www.w3.org/2000/svg"
-     xmlns:xlink="http://www.w3.org/1999/xlink"
-     width="1024" height="1024" viewBox="-256 -256 512 512">
+        r##"<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="-256 -256 512 512">
   <defs>
     <path id="ringTopArc" d="M -180 0 A 180 180 0 0 1 180 0" />
     <path id="ringBottomArc" d="M 180 0 A 180 180 0 0 1 -180 0" />
@@ -185,11 +178,11 @@ fn svg_for_patch(ring_text: &str, crew_raw: &str, motto: &str, icon: &IconSet) -
   <g filter="url(#softGlow)">
     <text font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial"
           font-size="20" fill="{text}" letter-spacing="2.2">
-      <textPath href="#ringTopArc" xlink:href="#ringTopArc" startOffset="50%" text-anchor="middle">{ring_text}</textPath>
+      <textPath href="#ringTopArc" startOffset="50%" text-anchor="middle">{ring_text}</textPath>
     </text>
     <text font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial"
           font-size="14" fill="{muted}" letter-spacing="2.0" opacity="0.95">
-      <textPath href="#ringBottomArc" xlink:href="#ringBottomArc" startOffset="50%" text-anchor="middle">PATCHFORGE</textPath>
+      <textPath href="#ringBottomArc" startOffset="50%" text-anchor="middle">PATCHFORGE</textPath>
     </text>
   </g>
 
@@ -222,7 +215,7 @@ fn svg_for_patch(ring_text: &str, crew_raw: &str, motto: &str, icon: &IconSet) -
 
 fn download_text_file(filename: &str, contents: &str, mime: &str) -> Result<(), JsValue> {
     let bag = {
-        let b = web_sys::BlobPropertyBag::new();
+        let mut b = web_sys::BlobPropertyBag::new();
         b.set_type(mime);
         b
     };
@@ -385,6 +378,8 @@ fn app() -> Html {
         })
         .collect::<Html>();
 
+    let svg_node = Html::from_html_unchecked(AttrValue::from((*svg).clone()));
+
     html! {
         <div class="wrap">
             <div class="header">
@@ -438,7 +433,7 @@ fn app() -> Html {
                     </div>
 
                     <div class="patchbox">
-                        <div dangerously_set_inner_html={AttrValue::from((*svg).clone())} />
+                        { svg_node }
                     </div>
 
                     <div class="hint">
