@@ -5,6 +5,7 @@ edition = "2021"
 
 [lib]
 crate-type = ["cdylib"]
+path = "main.rs"
 
 [dependencies]
 yew = { version = "0.21", features = ["csr"] }
