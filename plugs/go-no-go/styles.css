@@ -1,0 +1,79 @@
+:root{
+  --bg:#070a14;
+  --card:#0f1730;
+  --line:rgba(255,255,255,.12);
+  --text:#e8ecff;
+  --mut:#aab3dd;
+  --good:#6cf2a7;
+  --bad:#ff7b96;
+  --warn:#ffd36a;
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0;
+  color:var(--text);
+  font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;
+  background:
+    radial-gradient(900px 600px at 20% 10%, rgba(120,170,255,.14), transparent 60%),
+    linear-gradient(180deg,#060914,#0b1020);
+}
+
+.wrap{max-width:1120px;margin:0 auto;padding:16px}
+.top{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.h1{font-weight:900;font-size:22px}
+.sub{color:var(--mut);font-size:13px;line-height:1.35}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:980px){.grid{grid-template-columns:1fr}}
+
+.panel{
+  background:rgba(0,0,0,.18);
+  border:1px solid var(--line);
+  border-radius:16px;
+  padding:12px;
+}
+.label{color:var(--mut);font-size:12px;margin-bottom:8px}
+textarea{
+  width:100%;
+  border-radius:12px;
+  border:1px solid var(--line);
+  background:rgba(0,0,0,.20);
+  color:var(--text);
+  padding:10px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:12px;
+  outline:none;
+}
+.badgeRow{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.badge{
+  border:1px solid var(--line);
+  background:rgba(0,0,0,.18);
+  color:var(--mut);
+  padding:7px 10px;
+  border-radius:999px;
+  font-size:12px;
+  font-weight:800;
+}
+.badge.go{color:var(--good); background:rgba(108,242,167,.10)}
+.badge.nogo{color:var(--bad); background:rgba(255,123,150,.10)}
+.badge.warn{color:var(--warn); background:rgba(255,211,106,.08)}
+
+.results{
+  margin-top:14px;
+  background:rgba(0,0,0,.12);
+  border:1px solid var(--line);
+  border-radius:16px;
+  padding:12px;
+}
+.h2{font-size:16px;font-weight:900}
+.muted{color:var(--mut);font-size:13px;line-height:1.35}
+.tbl{width:100%;border-collapse:collapse;margin-top:10px}
+.tbl th,.tbl td{border-bottom:1px solid var(--line);padding:8px 6px;font-size:12px;vertical-align:top}
+.tbl th{color:var(--mut);text-align:left;font-weight:800}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+
+tr.pass td:first-child{color:var(--good);font-weight:900}
+tr.fail td:first-child{color:var(--bad);font-weight:900}
+tr.err td:first-child{color:var(--warn);font-weight:900}
+
+.foot{margin-top:12px}
