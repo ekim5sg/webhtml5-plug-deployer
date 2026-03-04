@@ -9,7 +9,6 @@ struct ThresholdRule {
     min: Option<f64>,
     max: Option<f64>,
 }
-
 type ThresholdMap = BTreeMap<String, ThresholdRule>;
 
 #[derive(Debug, Clone)]
@@ -23,7 +22,6 @@ struct SchemaRow {
     path: String,
     ty: String,
     sample: String,
-    count: usize,
     n_min: Option<f64>,
     n_max: Option<f64>,
     n_mean: Option<f64>,
@@ -110,7 +108,6 @@ fn schema_summary(flat: &[FlatEntry]) -> Vec<SchemaRow> {
     struct Acc {
         ty_set: BTreeSet<String>,
         sample: Option<String>,
-        count: usize,
         n_sum: f64,
         n_count: usize,
         n_min: Option<f64>,
@@ -121,7 +118,6 @@ fn schema_summary(flat: &[FlatEntry]) -> Vec<SchemaRow> {
 
     for e in flat {
         let a = acc.entry(e.path.clone()).or_default();
-        a.count += 1;
         a.ty_set.insert(json_type(&e.value).to_string());
         if a.sample.is_none() {
             a.sample = Some(compact_value(&e.value));
@@ -147,7 +143,6 @@ fn schema_summary(flat: &[FlatEntry]) -> Vec<SchemaRow> {
                 path,
                 ty,
                 sample: a.sample.unwrap_or_else(|| "—".into()),
-                count: a.count,
                 n_min: a.n_min,
                 n_max: a.n_max,
                 n_mean: mean,
@@ -204,18 +199,8 @@ fn diff_flat(a: &BTreeMap<String, Value>, b: &BTreeMap<String, Value>) -> Vec<Di
     let mut out = vec![];
     for p in paths {
         match (a.get(&p), b.get(&p)) {
-            (None, Some(vb)) => out.push(DiffRow {
-                path: p,
-                status: "ADDED".into(),
-                a: "—".into(),
-                b: compact_value(vb),
-            }),
-            (Some(va), None) => out.push(DiffRow {
-                path: p,
-                status: "REMOVED".into(),
-                a: compact_value(va),
-                b: "—".into(),
-            }),
+            (None, Some(vb)) => out.push(DiffRow { path: p, status: "ADDED".into(), a: "—".into(), b: compact_value(vb) }),
+            (Some(va), None) => out.push(DiffRow { path: p, status: "REMOVED".into(), a: compact_value(va), b: "—".into() }),
             (Some(va), Some(vb)) => out.push(DiffRow {
                 path: p,
                 status: if va == vb { "SAME" } else { "CHANGED" }.into(),
@@ -234,12 +219,12 @@ fn app() -> Html {
     let telemetry_b = use_state(|| "{\n  \"power\": {\"bus_voltage_v\": 26.4},\n  \"propulsion\": {\"chamber_pressure_psi\": 318.9},\n  \"thermal\": {\"avionics_temp_c\": 41.3}\n}\n".to_string());
     let thresholds = use_state(|| "{\n  \"power.bus_voltage_v\": {\"min\": 27.0, \"max\": 29.5},\n  \"propulsion.chamber_pressure_psi\": {\"min\": 250.0, \"max\": 310.0},\n  \"thermal.avionics_temp_c\": {\"min\": -10.0, \"max\": 55.0}\n}\n".to_string());
 
-    let active_tab = use_state(|| "analyze".to_string()); // analyze | diff
+    let active_tab = use_state(|| "analyze".to_string());
 
-    // Parse + compute derived
     let a_parsed = parse_json(&telemetry_a);
     let b_parsed = parse_json(&telemetry_b);
     let rules_parsed = parse_thresholds(&thresholds);
+    let rules: ThresholdMap = rules_parsed.clone().unwrap_or_default();
 
     let (a_map, a_schema) = match &a_parsed {
         Ok(v) => {
@@ -257,8 +242,6 @@ fn app() -> Html {
         Err(_) => None,
     };
 
-    let rules: ThresholdMap = rules_parsed.clone().unwrap_or_default();
-
     let anomalies: Vec<(String, String, String)> = if let (Some(map), Ok(_)) = (&a_map, &rules_parsed) {
         map.iter()
             .filter_map(|(p, v)| out_of_family(p, v, &rules).map(|flag| (p.clone(), compact_value(v), flag)))
@@ -272,32 +255,21 @@ fn app() -> Html {
         _ => vec![],
     };
 
-    // UI handlers
-    let set_tab_analyze = {
-        let active_tab = active_tab.clone();
-        Callback::from(move |_| active_tab.set("analyze".into()))
-    };
-    let set_tab_diff = {
-        let active_tab = active_tab.clone();
-        Callback::from(move |_| active_tab.set("diff".into()))
-    };
-
-    // IMPORTANT: oninput expects InputEvent
-    let on_change_a: Callback<InputEvent> = {
+    let on_a: Callback<InputEvent> = {
         let telemetry_a = telemetry_a.clone();
         Callback::from(move |e: InputEvent| {
             let Some(t) = e.target_dyn_into::<web_sys::HtmlTextAreaElement>() else { return; };
             telemetry_a.set(t.value());
         })
     };
-    let on_change_b: Callback<InputEvent> = {
+    let on_b: Callback<InputEvent> = {
         let telemetry_b = telemetry_b.clone();
         Callback::from(move |e: InputEvent| {
             let Some(t) = e.target_dyn_into::<web_sys::HtmlTextAreaElement>() else { return; };
             telemetry_b.set(t.value());
         })
     };
-    let on_change_thr: Callback<InputEvent> = {
+    let on_thr: Callback<InputEvent> = {
         let thresholds = thresholds.clone();
         Callback::from(move |e: InputEvent| {
             let Some(t) = e.target_dyn_into::<web_sys::HtmlTextAreaElement>() else { return; };
@@ -305,7 +277,16 @@ fn app() -> Html {
         })
     };
 
-    let on_copy_anomalies = {
+    let set_analyze = {
+        let active_tab = active_tab.clone();
+        Callback::from(move |_| active_tab.set("analyze".into()))
+    };
+    let set_diff = {
+        let active_tab = active_tab.clone();
+        Callback::from(move |_| active_tab.set("diff".into()))
+    };
+
+    let copy_anom = {
         let anomalies = anomalies.clone();
         Callback::from(move |_| {
             let mut lines = vec!["path,value,flag".to_string()];
@@ -316,7 +297,7 @@ fn app() -> Html {
         })
     };
 
-    let on_copy_diff = {
+    let copy_diff = {
         let diffs = diffs.clone();
         Callback::from(move |_| {
             let mut lines = vec!["status,path,a,b".to_string()];
@@ -327,6 +308,124 @@ fn app() -> Html {
         })
     };
 
+    // Render blocks as expressions returning Html (no raw if/else tags)
+    let analyze_view: Html = {
+        let anom_table: Html = if anomalies.is_empty() {
+            html! { <div class="muted">{ "No out-of-family values (or no matching numeric paths / thresholds)." }</div> }
+        } else {
+            html! {
+              <table class="tbl">
+                <thead>
+                  <tr><th>{ "Path" }</th><th>{ "Value" }</th><th>{ "Flag" }</th></tr>
+                </thead>
+                <tbody>
+                  { for anomalies.iter().map(|(p,v,f)| html!{
+                    <tr class="warnrow">
+                      <td class="mono">{ p }</td>
+                      <td class="mono">{ v }</td>
+                      <td>{ f }</td>
+                    </tr>
+                  })}
+                </tbody>
+              </table>
+            }
+        };
+
+        let schema_table: Html = if let Some(rows) = a_schema.clone() {
+            html! {
+              <table class="tbl">
+                <thead>
+                  <tr>
+                    <th>{ "Path" }</th>
+                    <th>{ "Type" }</th>
+                    <th>{ "Sample" }</th>
+                    <th>{ "Min" }</th>
+                    <th>{ "Max" }</th>
+                    <th>{ "Mean" }</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  { for rows.iter().map(|r| {
+                      let min = r.n_min.map(|x| format!("{:.4}", x)).unwrap_or_else(|| "—".into());
+                      let max = r.n_max.map(|x| format!("{:.4}", x)).unwrap_or_else(|| "—".into());
+                      let mean = r.n_mean.map(|x| format!("{:.4}", x)).unwrap_or_else(|| "—".into());
+                      html!{
+                        <tr>
+                          <td class="mono">{ &r.path }</td>
+                          <td>{ &r.ty }</td>
+                          <td class="mono">{ &r.sample }</td>
+                          <td class="mono">{ min }</td>
+                          <td class="mono">{ max }</td>
+                          <td class="mono">{ mean }</td>
+                        </tr>
+                      }
+                  })}
+                </tbody>
+              </table>
+            }
+        } else {
+            html! { <div class="muted">{ "Provide valid Telemetry A JSON to see schema and stats." }</div> }
+        };
+
+        html! {
+          <section class="results">
+            <div class="rowhead">
+              <div class="h2">{ "Out-of-family highlights (A)" }</div>
+              <button class="ghost" onclick={copy_anom}>{ "Copy CSV" }</button>
+            </div>
+            { anom_table }
+
+            <div class="rowhead" style="margin-top:16px;">
+              <div class="h2">{ "Schema summary + key stats (A)" }</div>
+              <div class="muted">{ "Numeric stats shown when value parses as number." }</div>
+            </div>
+            { schema_table }
+          </section>
+        }
+    };
+
+    let diff_view: Html = {
+        let body: Html = if diffs.is_empty() {
+            html! { <div class="muted">{ "Provide valid JSON in both A and B to see a diff." }</div> }
+        } else {
+            html! {
+              <table class="tbl">
+                <thead>
+                  <tr><th>{ "Status" }</th><th>{ "Path" }</th><th>{ "A" }</th><th>{ "B" }</th></tr>
+                </thead>
+                <tbody>
+                  { for diffs.iter().map(|d| {
+                      let cls = match d.status.as_str() {
+                          "CHANGED" => "chg",
+                          "ADDED" => "add",
+                          "REMOVED" => "rem",
+                          _ => "",
+                      };
+                      html!{
+                        <tr class={cls}>
+                          <td>{ &d.status }</td>
+                          <td class="mono">{ &d.path }</td>
+                          <td class="mono">{ &d.a }</td>
+                          <td class="mono">{ &d.b }</td>
+                        </tr>
+                      }
+                  })}
+                </tbody>
+              </table>
+            }
+        };
+
+        html! {
+          <section class="results">
+            <div class="rowhead">
+              <div class="h2">{ "Diff: Telemetry A vs B" }</div>
+              <button class="ghost" onclick={copy_diff}>{ "Copy CSV" }</button>
+            </div>
+            { body }
+          </section>
+        }
+    };
+
     html! {
       <div class="wrap">
         <header class="top">
@@ -335,15 +434,15 @@ fn app() -> Html {
             <div class="sub">{ "Paste JSON telemetry → schema + stats, threshold checks, and snapshot diff." }</div>
           </div>
           <div class="tabs">
-            <button class={classes!("tab", if *active_tab == "analyze" { "on" } else { "" })} onclick={set_tab_analyze}>{ "Analyze" }</button>
-            <button class={classes!("tab", if *active_tab == "diff" { "on" } else { "" })} onclick={set_tab_diff}>{ "Diff A vs B" }</button>
+            <button class={classes!("tab", if *active_tab == "analyze" { "on" } else { "" })} onclick={set_analyze}>{ "Analyze" }</button>
+            <button class={classes!("tab", if *active_tab == "diff" { "on" } else { "" })} onclick={set_diff}>{ "Diff A vs B" }</button>
           </div>
         </header>
 
         <section class="grid">
           <div class="panel">
             <div class="label">{ "Telemetry A (JSON)" }</div>
-            <textarea value={(*telemetry_a).clone()} oninput={on_change_a} rows="14" spellcheck="false" />
+            <textarea value={(*telemetry_a).clone()} oninput={on_a} rows="14" spellcheck="false" />
             {
               match &a_parsed {
                 Ok(_) => html!{ <div class="ok">{ "A: OK" }</div> },
@@ -354,7 +453,7 @@ fn app() -> Html {
 
           <div class="panel">
             <div class="label">{ "Telemetry B (JSON) — for diff" }</div>
-            <textarea value={(*telemetry_b).clone()} oninput={on_change_b} rows="14" spellcheck="false" />
+            <textarea value={(*telemetry_b).clone()} oninput={on_b} rows="14" spellcheck="false" />
             {
               match &b_parsed {
                 Ok(_) => html!{ <div class="ok">{ "B: OK" }</div> },
@@ -365,7 +464,7 @@ fn app() -> Html {
 
           <div class="panel">
             <div class="label">{ "Threshold rules (path → {min,max})" }</div>
-            <textarea value={(*thresholds).clone()} oninput={on_change_thr} rows="14" spellcheck="false" />
+            <textarea value={(*thresholds).clone()} oninput={on_thr} rows="14" spellcheck="false" />
             {
               match &rules_parsed {
                 Ok(_) => html!{ <div class="ok">{ "Thresholds: OK" }</div> },
@@ -375,124 +474,7 @@ fn app() -> Html {
           </div>
         </section>
 
-        {
-          if *active_tab == "analyze" {
-            html!{
-              <section class="results">
-                <div class="rowhead">
-                  <div class="h2">{ "Out-of-family highlights (A)" }</div>
-                  <button class="ghost" onclick={on_copy_anomalies}>{ "Copy CSV" }</button>
-                </div>
-
-                if anomalies.is_empty() {
-                  <div class="muted">{ "No out-of-family values (or no matching numeric paths / thresholds)." }</div>
-                } else {
-                  <table class={classes!("tbl")}>
-                    <thead>
-                      <tr>
-                        <th>{ "Path" }</th>
-                        <th>{ "Value" }</th>
-                        <th>{ "Flag" }</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      { for anomalies.iter().map(|(p,v,f)| html!{
-                        <tr class={classes!("warnrow")}>
-                          <td class={classes!("mono")}>{ p }</td>
-                          <td class={classes!("mono")}>{ v }</td>
-                          <td>{ f }</td>
-                        </tr>
-                      })}
-                    </tbody>
-                  </table>
-                }
-
-                <div class="rowhead" style="margin-top:16px;">
-                  <div class="h2">{ "Schema summary + key stats (A)" }</div>
-                  <div class="muted">{ "Numeric stats shown when value parses as number." }</div>
-                </div>
-
-                {
-                  if let Some(rows) = a_schema {
-                    <table class={classes!("tbl")}>
-                      <thead>
-                        <tr>
-                          <th>{ "Path" }</th>
-                          <th>{ "Type" }</th>
-                          <th>{ "Sample" }</th>
-                          <th>{ "Min" }</th>
-                          <th>{ "Max" }</th>
-                          <th>{ "Mean" }</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        { for rows.iter().map(|r| {
-                          let min = r.n_min.map(|x| format!("{:.4}", x)).unwrap_or_else(|| "—".into());
-                          let max = r.n_max.map(|x| format!("{:.4}", x)).unwrap_or_else(|| "—".into());
-                          let mean = r.n_mean.map(|x| format!("{:.4}", x)).unwrap_or_else(|| "—".into());
-                          html!{
-                            <tr>
-                              <td class={classes!("mono")}>{ &r.path }</td>
-                              <td>{ &r.ty }</td>
-                              <td class={classes!("mono")}>{ &r.sample }</td>
-                              <td class={classes!("mono")}>{ min }</td>
-                              <td class={classes!("mono")}>{ max }</td>
-                              <td class={classes!("mono")}>{ mean }</td>
-                            </tr>
-                          }
-                        })}
-                      </tbody>
-                    </table>
-                  } else {
-                    <div class="muted">{ "Provide valid Telemetry A JSON to see schema and stats." }</div>
-                  }
-                }
-              </section>
-            }
-          } else {
-            html!{
-              <section class="results">
-                <div class="rowhead">
-                  <div class="h2">{ "Diff: Telemetry A vs B" }</div>
-                  <button class="ghost" onclick={on_copy_diff}>{ "Copy CSV" }</button>
-                </div>
-
-                if diffs.is_empty() {
-                  <div class="muted">{ "Provide valid JSON in both A and B to see a diff." }</div>
-                } else {
-                  <table class={classes!("tbl")}>
-                    <thead>
-                      <tr>
-                        <th>{ "Status" }</th>
-                        <th>{ "Path" }</th>
-                        <th>{ "A" }</th>
-                        <th>{ "B" }</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      { for diffs.iter().map(|d| {
-                        let cls = match d.status.as_str() {
-                          "CHANGED" => "chg",
-                          "ADDED" => "add",
-                          "REMOVED" => "rem",
-                          _ => "",
-                        };
-                        html!{
-                          <tr class={classes!(cls)}>
-                            <td>{ &d.status }</td>
-                            <td class={classes!("mono")}>{ &d.path }</td>
-                            <td class={classes!("mono")}>{ &d.a }</td>
-                            <td class={classes!("mono")}>{ &d.b }</td>
-                          </tr>
-                        }
-                      })}
-                    </tbody>
-                  </table>
-                }
-              </section>
-            }
-          }
-        }
+        { if *active_tab == "analyze" { analyze_view } else { diff_view } }
 
         <footer class="foot">
           <div class="muted">
