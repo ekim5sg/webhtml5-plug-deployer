@@ -1,5 +1,6 @@
+// src/main.rs
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use yew::prelude::*;
 
@@ -9,11 +10,6 @@ struct ThresholdRule {
     max: Option<f64>,
 }
 
-// JSON format expected in the Thresholds box:
-// {
-//   "propulsion.chamber_pressure_psi": {"min": 250.0, "max": 310.0},
-//   "power.bus_voltage_v": {"min": 27.0, "max": 29.5}
-// }
 type ThresholdMap = BTreeMap<String, ThresholdRule>;
 
 #[derive(Debug, Clone)]
@@ -28,7 +24,6 @@ struct SchemaRow {
     ty: String,
     sample: String,
     count: usize,
-    // numeric stats
     n_min: Option<f64>,
     n_max: Option<f64>,
     n_mean: Option<f64>,
@@ -80,7 +75,7 @@ fn compact_value(v: &Value) -> String {
 fn value_as_f64(v: &Value) -> Option<f64> {
     match v {
         Value::Number(n) => n.as_f64(),
-        Value::String(s) => s.parse::<f64>().ok(), // handy for telemetry that strings numbers
+        Value::String(s) => s.parse::<f64>().ok(),
         _ => None,
     }
 }
@@ -95,16 +90,13 @@ fn flatten_json(root: &Value) -> Vec<FlatEntry> {
                 }
             }
             Value::Array(arr) => {
-                // arrays: record the array itself, plus indexed leaves
                 out.push(FlatEntry { path: path.to_string(), value: v.clone() });
                 for (i, vv) in arr.iter().enumerate() {
                     let p = format!("{}[{}]", path, i);
                     rec(&p, vv, out);
                 }
             }
-            _ => {
-                out.push(FlatEntry { path: path.to_string(), value: v.clone() });
-            }
+            _ => out.push(FlatEntry { path: path.to_string(), value: v.clone() }),
         }
     }
 
@@ -114,7 +106,6 @@ fn flatten_json(root: &Value) -> Vec<FlatEntry> {
 }
 
 fn schema_summary(flat: &[FlatEntry]) -> Vec<SchemaRow> {
-    // group by path "shape" (we keep exact path; arrays include [i])
     #[derive(Default)]
     struct Acc {
         ty_set: BTreeSet<String>,
@@ -181,41 +172,6 @@ fn parse_thresholds(text: &str) -> Result<ThresholdMap, String> {
     serde_json::from_str::<ThresholdMap>(t).map_err(|e| format!("{}", e))
 }
 
-fn diff_flat(a: &BTreeMap<String, Value>, b: &BTreeMap<String, Value>) -> Vec<DiffRow> {
-    let mut paths: BTreeSet<String> = BTreeSet::new();
-    for k in a.keys() { paths.insert(k.clone()); }
-    for k in b.keys() { paths.insert(k.clone()); }
-
-    let mut out = vec![];
-    for p in paths {
-        match (a.get(&p), b.get(&p)) {
-            (None, Some(vb)) => out.push(DiffRow {
-                path: p,
-                status: "ADDED".into(),
-                a: "—".into(),
-                b: compact_value(vb),
-            }),
-            (Some(va), None) => out.push(DiffRow {
-                path: p,
-                status: "REMOVED".into(),
-                a: compact_value(va),
-                b: "—".into(),
-            }),
-            (Some(va), Some(vb)) => {
-                let same = va == vb;
-                out.push(DiffRow {
-                    path: p,
-                    status: if same { "SAME" } else { "CHANGED" }.into(),
-                    a: compact_value(va),
-                    b: compact_value(vb),
-                })
-            }
-            (None, None) => {}
-        }
-    }
-    out
-}
-
 fn make_map(flat: Vec<FlatEntry>) -> BTreeMap<String, Value> {
     let mut m = BTreeMap::new();
     for e in flat {
@@ -240,6 +196,38 @@ fn out_of_family(path: &str, v: &Value, rules: &ThresholdMap) -> Option<String> 
     None
 }
 
+fn diff_flat(a: &BTreeMap<String, Value>, b: &BTreeMap<String, Value>) -> Vec<DiffRow> {
+    let mut paths: BTreeSet<String> = BTreeSet::new();
+    for k in a.keys() { paths.insert(k.clone()); }
+    for k in b.keys() { paths.insert(k.clone()); }
+
+    let mut out = vec![];
+    for p in paths {
+        match (a.get(&p), b.get(&p)) {
+            (None, Some(vb)) => out.push(DiffRow {
+                path: p,
+                status: "ADDED".into(),
+                a: "—".into(),
+                b: compact_value(vb),
+            }),
+            (Some(va), None) => out.push(DiffRow {
+                path: p,
+                status: "REMOVED".into(),
+                a: compact_value(va),
+                b: "—".into(),
+            }),
+            (Some(va), Some(vb)) => out.push(DiffRow {
+                path: p,
+                status: if va == vb { "SAME" } else { "CHANGED" }.into(),
+                a: compact_value(va),
+                b: compact_value(vb),
+            }),
+            (None, None) => {}
+        }
+    }
+    out
+}
+
 #[function_component(App)]
 fn app() -> Html {
     let telemetry_a = use_state(|| "{\n  \"power\": {\"bus_voltage_v\": 28.2},\n  \"propulsion\": {\"chamber_pressure_psi\": 295.0},\n  \"thermal\": {\"avionics_temp_c\": 41.3}\n}\n".to_string());
@@ -253,26 +241,23 @@ fn app() -> Html {
     let b_parsed = parse_json(&telemetry_b);
     let rules_parsed = parse_thresholds(&thresholds);
 
-    let (a_flat, a_map, a_schema) = match &a_parsed {
+    let (a_map, a_schema) = match &a_parsed {
         Ok(v) => {
             let flat = flatten_json(v);
-            let map = make_map(flat.clone());
-            let schema = schema_summary(&flat);
-            (Some(flat), Some(map), Some(schema))
+            (Some(make_map(flat.clone())), Some(schema_summary(&flat)))
         }
-        Err(_) => (None, None, None),
+        Err(_) => (None, None),
     };
 
-    let (b_flat, b_map, _b_schema) = match &b_parsed {
+    let b_map = match &b_parsed {
         Ok(v) => {
             let flat = flatten_json(v);
-            let map = make_map(flat.clone());
-            (Some(flat), Some(map), None::<Vec<SchemaRow>>)
+            Some(make_map(flat))
         }
-        Err(_) => (None, None, None),
+        Err(_) => None,
     };
 
-    let rules = rules_parsed.clone().unwrap_or_default();
+    let rules: ThresholdMap = rules_parsed.clone().unwrap_or_default();
 
     let anomalies: Vec<(String, String, String)> = if let (Some(map), Ok(_)) = (&a_map, &rules_parsed) {
         map.iter()
@@ -297,23 +282,24 @@ fn app() -> Html {
         Callback::from(move |_| active_tab.set("diff".into()))
     };
 
-    let on_change_a = {
+    // IMPORTANT: oninput expects InputEvent
+    let on_change_a: Callback<InputEvent> = {
         let telemetry_a = telemetry_a.clone();
-        Callback::from(move |e: Event| {
+        Callback::from(move |e: InputEvent| {
             let Some(t) = e.target_dyn_into::<web_sys::HtmlTextAreaElement>() else { return; };
             telemetry_a.set(t.value());
         })
     };
-    let on_change_b = {
+    let on_change_b: Callback<InputEvent> = {
         let telemetry_b = telemetry_b.clone();
-        Callback::from(move |e: Event| {
+        Callback::from(move |e: InputEvent| {
             let Some(t) = e.target_dyn_into::<web_sys::HtmlTextAreaElement>() else { return; };
             telemetry_b.set(t.value());
         })
     };
-    let on_change_thr = {
+    let on_change_thr: Callback<InputEvent> = {
         let thresholds = thresholds.clone();
-        Callback::from(move |e: Event| {
+        Callback::from(move |e: InputEvent| {
             let Some(t) = e.target_dyn_into::<web_sys::HtmlTextAreaElement>() else { return; };
             thresholds.set(t.value());
         })
@@ -349,8 +335,8 @@ fn app() -> Html {
             <div class="sub">{ "Paste JSON telemetry → schema + stats, threshold checks, and snapshot diff." }</div>
           </div>
           <div class="tabs">
-            <button class={classes!("tab", (*active_tab == "analyze").then_some("on"))} onclick={set_tab_analyze}>{ "Analyze" }</button>
-            <button class={classes!("tab", (*active_tab == "diff").then_some("on"))} onclick={set_tab_diff}>{ "Diff A vs B" }</button>
+            <button class={classes!("tab", if *active_tab == "analyze" { "on" } else { "" })} onclick={set_tab_analyze}>{ "Analyze" }</button>
+            <button class={classes!("tab", if *active_tab == "diff" { "on" } else { "" })} onclick={set_tab_diff}>{ "Diff A vs B" }</button>
           </div>
         </header>
 
@@ -378,7 +364,7 @@ fn app() -> Html {
           </div>
 
           <div class="panel">
-            <div class="label">{ "Threshold rules (JSON path → {min,max})" }</div>
+            <div class="label">{ "Threshold rules (path → {min,max})" }</div>
             <textarea value={(*thresholds).clone()} oninput={on_change_thr} rows="14" spellcheck="false" />
             {
               match &rules_parsed {
@@ -401,7 +387,7 @@ fn app() -> Html {
                 if anomalies.is_empty() {
                   <div class="muted">{ "No out-of-family values (or no matching numeric paths / thresholds)." }</div>
                 } else {
-                  <table class="tbl">
+                  <table class={classes!("tbl")}>
                     <thead>
                       <tr>
                         <th>{ "Path" }</th>
@@ -411,9 +397,9 @@ fn app() -> Html {
                     </thead>
                     <tbody>
                       { for anomalies.iter().map(|(p,v,f)| html!{
-                        <tr class="warnrow">
-                          <td class="mono">{ p }</td>
-                          <td class="mono">{ v }</td>
+                        <tr class={classes!("warnrow")}>
+                          <td class={classes!("mono")}>{ p }</td>
+                          <td class={classes!("mono")}>{ v }</td>
                           <td>{ f }</td>
                         </tr>
                       })}
@@ -428,7 +414,7 @@ fn app() -> Html {
 
                 {
                   if let Some(rows) = a_schema {
-                    <table class="tbl">
+                    <table class={classes!("tbl")}>
                       <thead>
                         <tr>
                           <th>{ "Path" }</th>
@@ -446,12 +432,12 @@ fn app() -> Html {
                           let mean = r.n_mean.map(|x| format!("{:.4}", x)).unwrap_or_else(|| "—".into());
                           html!{
                             <tr>
-                              <td class="mono">{ &r.path }</td>
+                              <td class={classes!("mono")}>{ &r.path }</td>
                               <td>{ &r.ty }</td>
-                              <td class="mono">{ &r.sample }</td>
-                              <td class="mono">{ min }</td>
-                              <td class="mono">{ max }</td>
-                              <td class="mono">{ mean }</td>
+                              <td class={classes!("mono")}>{ &r.sample }</td>
+                              <td class={classes!("mono")}>{ min }</td>
+                              <td class={classes!("mono")}>{ max }</td>
+                              <td class={classes!("mono")}>{ mean }</td>
                             </tr>
                           }
                         })}
@@ -474,7 +460,7 @@ fn app() -> Html {
                 if diffs.is_empty() {
                   <div class="muted">{ "Provide valid JSON in both A and B to see a diff." }</div>
                 } else {
-                  <table class="tbl">
+                  <table class={classes!("tbl")}>
                     <thead>
                       <tr>
                         <th>{ "Status" }</th>
@@ -494,9 +480,9 @@ fn app() -> Html {
                         html!{
                           <tr class={classes!(cls)}>
                             <td>{ &d.status }</td>
-                            <td class="mono">{ &d.path }</td>
-                            <td class="mono">{ &d.a }</td>
-                            <td class="mono">{ &d.b }</td>
+                            <td class={classes!("mono")}>{ &d.path }</td>
+                            <td class={classes!("mono")}>{ &d.a }</td>
+                            <td class={classes!("mono")}>{ &d.b }</td>
                           </tr>
                         }
                       })}
