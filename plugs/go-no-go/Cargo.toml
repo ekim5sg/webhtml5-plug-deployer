@@ -1,0 +1,13 @@
+[package]
+name = "go-no-go"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "go-no-go"
+path = "src/main.rs"
+
+[dependencies]
+yew = { version = "0.21", features = ["csr"] }
+serde_json = "1"
+web-sys = { version = "0.3", features = ["HtmlTextAreaElement"] }
