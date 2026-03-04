@@ -216,7 +216,7 @@ fn svg_for_patch(ring_text: &str, crew_raw: &str, motto: &str, icon: &IconSet) -
 
 fn download_text_file(filename: &str, contents: &str, mime: &str) -> Result<(), JsValue> {
     let bag = {
-        let mut b = web_sys::BlobPropertyBag::new();
+        let b = web_sys::BlobPropertyBag::new(); // <- removed mut to silence unused_mut warning
         b.set_type(mime);
         b
     };
