@@ -366,14 +366,6 @@ fn app() -> Html {
                         </div>
                     </div>
                 </section>
-
-                <section class="footer-card">
-                    <strong>{ "Asset paths:" }</strong>
-                    { " use " }<code>{ "assets/audio/friday13.mp3" }</code>
-                    { ", " }<code>{ "assets/images/jason.png" }</code>
-                    { ", and " }<code>{ "assets/images/duck.png" }</code>
-                    { "." }
-                </section>
             </main>
         </div>
     }
