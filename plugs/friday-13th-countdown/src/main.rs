@@ -1,6 +1,5 @@
 use gloo::timers::callback::Interval;
 use js_sys::Date;
-use wasm_bindgen::JsCast;
 use web_sys::HtmlAudioElement;
 use yew::prelude::*;
 
@@ -83,10 +82,9 @@ fn next_friday_13th_after(now: &Date) -> Date {
 
         let candidate = local_midnight_date(year, month, 13);
 
-        let candidate_is_future =
-            year > current_year
-                || (year == current_year && month > current_month)
-                || (year == current_year && month == current_month && 13 > current_day);
+        let candidate_is_future = year > current_year
+            || (year == current_year && month > current_month)
+            || (year == current_year && month == current_month && 13 > current_day);
 
         if candidate.get_day() == 5 && candidate_is_future {
             return candidate;
@@ -187,7 +185,8 @@ fn app() -> Html {
                         Err(err) => {
                             web_sys::console::log_1(&err);
                             audio_error.set(Some(
-                                "Audio could not start automatically. Tap Sound On again.".to_string(),
+                                "Audio could not start automatically. Tap Sound On again."
+                                    .to_string(),
                             ));
                         }
                     }
