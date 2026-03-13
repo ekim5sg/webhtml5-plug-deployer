@@ -15,10 +15,9 @@ struct CountdownParts {
 #[derive(Clone, PartialEq)]
 struct AppState {
     is_friday_13th: bool,
-    next_target: Date,
+    next_label: String,
     countdown: CountdownParts,
     now_label: String,
-    next_label: String,
 }
 
 fn pad2(value: i32) -> String {
@@ -79,7 +78,7 @@ fn next_friday_13th_after(now: &Date) -> Date {
 
     for offset in 0..240 {
         let total_month = current_month + offset;
-        let year = current_year + (total_month.div_euclid(12));
+        let year = current_year + total_month.div_euclid(12);
         let month = total_month.rem_euclid(12);
 
         let candidate = local_midnight_date(year, month, 13);
@@ -94,7 +93,6 @@ fn next_friday_13th_after(now: &Date) -> Date {
         }
     }
 
-    // Practical fallback far in the future; the loop above should always succeed.
     local_midnight_date(current_year + 20, 0, 13)
 }
 
@@ -148,7 +146,6 @@ fn build_state() -> AppState {
     AppState {
         is_friday_13th: friday_13th_today,
         next_label: format_event_label(&next_target),
-        next_target,
         countdown: breakdown_ms(diff_ms),
         now_label: format_now_label(&now),
     }
@@ -157,8 +154,9 @@ fn build_state() -> AppState {
 #[function_component(App)]
 fn app() -> Html {
     let state = use_state(build_state);
-    let sound_on = use_state(|| true);
+    let sound_on = use_state(|| false);
     let audio_ref = use_node_ref();
+    let audio_error = use_state(|| None::<String>);
 
     {
         let state = state.clone();
@@ -173,18 +171,30 @@ fn app() -> Html {
 
     {
         let audio_ref = audio_ref.clone();
-        let state_dep = (*state).clone();
-        let sound_on_dep = *sound_on;
+        let is_friday = state.is_friday_13th;
+        let sound_enabled = *sound_on;
+        let audio_error = audio_error.clone();
 
-        use_effect_with((state_dep.clone(), sound_on_dep), move |(app_state, sound_enabled)| {
+        use_effect_with((is_friday, sound_enabled), move |_| {
             if let Some(audio) = audio_ref.cast::<HtmlAudioElement>() {
                 audio.set_loop(true);
 
-                if app_state.is_friday_13th && *sound_enabled {
-                    let _ = audio.play();
+                if is_friday && sound_enabled {
+                    match audio.play() {
+                        Ok(_promise) => {
+                            audio_error.set(None);
+                        }
+                        Err(err) => {
+                            web_sys::console::log_1(&err);
+                            audio_error.set(Some(
+                                "Audio could not start automatically. Tap Sound On again.".to_string(),
+                            ));
+                        }
+                    }
                 } else {
                     let _ = audio.pause();
                     audio.set_current_time(0.0);
+                    audio_error.set(None);
                 }
             }
 
@@ -196,18 +206,37 @@ fn app() -> Html {
         let sound_on = sound_on.clone();
         let audio_ref = audio_ref.clone();
         let state = state.clone();
+        let audio_error = audio_error.clone();
 
         Callback::from(move |_| {
-            let new_value = !*sound_on;
-            sound_on.set(new_value);
+            let enable = !*sound_on;
+            sound_on.set(enable);
 
             if let Some(audio) = audio_ref.cast::<HtmlAudioElement>() {
-                if (*state).is_friday_13th && new_value {
-                    let _ = audio.play();
+                audio.set_loop(true);
+
+                if enable && (*state).is_friday_13th {
+                    audio.set_muted(false);
+
+                    match audio.play() {
+                        Ok(_promise) => {
+                            web_sys::console::log_1(&"Play attempt OK".into());
+                            audio_error.set(None);
+                        }
+                        Err(err) => {
+                            web_sys::console::log_1(&err);
+                            audio_error.set(Some(
+                                "Playback was blocked or the MP3 was not found.".to_string(),
+                            ));
+                        }
+                    }
                 } else {
                     let _ = audio.pause();
                     audio.set_current_time(0.0);
+                    audio_error.set(None);
                 }
+            } else {
+                audio_error.set(Some("Audio element was not found.".to_string()));
             }
         })
     };
@@ -230,6 +259,7 @@ fn app() -> Html {
                 ref={audio_ref}
                 src="assets/audio/friday13.mp3"
                 preload="auto"
+                playsinline=true
             />
 
             <main class="shell">
@@ -241,7 +271,13 @@ fn app() -> Html {
 
                         <div class="content-pane">
                             <div class="kicker">
-                                { if state.is_friday_13th { "🔪 Friday the 13th is live today" } else { "🦆 The 13th has passed for now" } }
+                                {
+                                    if state.is_friday_13th {
+                                        "🔪 Friday the 13th is live today"
+                                    } else {
+                                        "🦆 The 13th has passed for now"
+                                    }
+                                }
                             </div>
 
                             <h1 class="title">
@@ -294,6 +330,7 @@ fn app() -> Html {
                                             <button
                                                 class={classes!("btn", if *sound_on { "btn-primary" } else { "btn-secondary" })}
                                                 onclick={on_toggle_sound}
+                                                type="button"
                                             >
                                                 {
                                                     if *sound_on {
@@ -313,7 +350,19 @@ fn app() -> Html {
                             <p class="note">
                                 { format!("Local time: {}", state.now_label) }
                                 <br />
-                                { "On iPhone/Safari, audio playback may require a user tap before the browser allows the MP3 to start." }
+                                { "On iPhone/Safari, audio playback usually requires a user tap." }
+                                {
+                                    if let Some(err) = &*audio_error {
+                                        html! {
+                                            <>
+                                                <br />
+                                                { err }
+                                            </>
+                                        }
+                                    } else {
+                                        html! {}
+                                    }
+                                }
                             </p>
                         </div>
                     </div>
@@ -324,7 +373,7 @@ fn app() -> Html {
                     { " use " }<code>{ "assets/audio/friday13.mp3" }</code>
                     { ", " }<code>{ "assets/images/jason.png" }</code>
                     { ", and " }<code>{ "assets/images/duck.png" }</code>
-                    { ". The next Friday the 13th is calculated dynamically forever, based on the device’s local clock." }
+                    { "." }
                 </section>
             </main>
         </div>
