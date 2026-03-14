@@ -161,12 +161,12 @@ fn finish_round(
     leaderboard_state: &UseStateHandle<Vec<usize>>,
     named_leaderboard_state: &UseStateHandle<Vec<NamedScore>>,
 ) {
-    let mut numeric_scores: Vec<usize> = (*leaderboard_state).clone();
+    let mut numeric_scores: Vec<usize> = (**leaderboard_state).clone();
     push_leaderboard(final_score, &mut numeric_scores);
     save_leaderboard(&numeric_scores);
     leaderboard_state.set(numeric_scores);
 
-    let mut named_scores: Vec<NamedScore> = (*named_leaderboard_state).clone();
+    let mut named_scores: Vec<NamedScore> = (**named_leaderboard_state).clone();
     push_named_score(player_name, final_score, &mut named_scores);
     save_named_leaderboard(&named_scores);
     named_leaderboard_state.set(named_scores);
