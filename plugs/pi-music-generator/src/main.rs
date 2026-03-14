@@ -1,14 +1,17 @@
 use js_sys::{Array, Uint8Array};
-use wasm_bindgen::JsCast;
-use web_sys::{window, Blob, HtmlAudioElement, HtmlInputElement, Url};
+use web_sys::{Blob, HtmlAudioElement, HtmlInputElement, Url};
 use yew::prelude::*;
 
 const PI_DIGITS: &str = "314159265358979323846264338327950288419716939937510\
 58209749445923078164062862089986280348253421170679\
 82148086513282306647093844609550582231725359408128\
-48111745028410270193852110555964462294895493038196";
+48111745028410270193852110555964462294895493038196\
+44288109756659334461284756482337867831652712019091\
+45648566923460348610454326648213393607260249141273\
+72458700660631558817488152092096282925409171536436";
 
 const SAMPLE_RATE: u32 = 22050;
+const PREVIEW_LIMIT: usize = 48;
 
 #[derive(Clone, PartialEq)]
 enum MusicMode {
@@ -25,83 +28,210 @@ impl MusicMode {
             MusicMode::Space => "Space",
         }
     }
+}
+
+#[derive(Clone, PartialEq)]
+enum Instrument {
+    Piano,
+    Oboe,
+    ElectricGuitar,
+    Violin,
+}
+
+impl Instrument {
+    fn label(&self) -> &'static str {
+        match self {
+            Instrument::Piano => "Piano",
+            Instrument::Oboe => "Oboe",
+            Instrument::ElectricGuitar => "Electric Guitar",
+            Instrument::Violin => "Violin",
+        }
+    }
 
     fn amplitude(&self) -> f32 {
         match self {
-            MusicMode::Calm => 0.35,
-            MusicMode::Arcade => 0.28,
-            MusicMode::Space => 0.32,
+            Instrument::Piano => 0.34,
+            Instrument::Oboe => 0.28,
+            Instrument::ElectricGuitar => 0.25,
+            Instrument::Violin => 0.30,
+        }
+    }
+
+    fn attack_ratio(&self) -> f32 {
+        match self {
+            Instrument::Piano => 0.01,
+            Instrument::Oboe => 0.06,
+            Instrument::ElectricGuitar => 0.015,
+            Instrument::Violin => 0.08,
+        }
+    }
+
+    fn release_ratio(&self) -> f32 {
+        match self {
+            Instrument::Piano => 0.45,
+            Instrument::Oboe => 0.18,
+            Instrument::ElectricGuitar => 0.28,
+            Instrument::Violin => 0.22,
         }
     }
 }
 
-fn digit_to_freq(digit: u32) -> Option<f32> {
+fn digit_to_scale_degree(digit: u32) -> usize {
     match digit {
-        0 => None,
-        1 => Some(261.63), // C4
-        2 => Some(293.66), // D4
-        3 => Some(329.63), // E4
-        4 => Some(349.23), // F4
-        5 => Some(392.00), // G4
-        6 => Some(440.00), // A4
-        7 => Some(493.88), // B4
-        8 => Some(523.25), // C5
-        9 => Some(587.33), // D5
-        _ => None,
+        0 => 0,
+        1 => 0,
+        2 => 1,
+        3 => 2,
+        4 => 3,
+        5 => 4,
+        6 => 5,
+        7 => 6,
+        8 => 4,
+        9 => 5,
+        _ => 0,
     }
 }
 
-fn digit_to_note_name(digit: u32) -> &'static str {
-    match digit {
-        0 => "Rest",
-        1 => "C4",
-        2 => "D4",
-        3 => "E4",
-        4 => "F4",
-        5 => "G4",
-        6 => "A4",
-        7 => "B4",
-        8 => "C5",
-        9 => "D5",
-        _ => "?",
+fn musical_freq_from_digit(index: usize, digit: u32, mode: &MusicMode) -> Option<f32> {
+    if digit == 0 {
+        return None;
     }
-}
 
-fn note_duration_secs(digit: u32, bpm: u32) -> f32 {
-    let quarter = 60.0 / bpm.max(1) as f32;
-    if digit % 2 == 0 {
-        quarter / 2.0
-    } else {
-        quarter
-    }
-}
+    let major_scale = [261.63_f32, 293.66, 329.63, 349.23, 392.00, 440.00, 493.88];
+    let pentatonic = [261.63_f32, 293.66, 329.63, 392.00, 440.00];
+    let space_scale = [261.63_f32, 311.13, 392.00, 466.16, 523.25, 622.25];
 
-fn preview_notes(total_digits: usize) -> String {
-    PI_DIGITS
-        .chars()
-        .cycle()
-        .take(total_digits)
-        .filter_map(|ch| ch.to_digit(10))
-        .map(digit_to_note_name)
-        .collect::<Vec<_>>()
-        .join(" • ")
-}
+    let octave_shift = match (digit + (index as u32 % 3)) % 3 {
+        0 => 1.0_f32,
+        1 => 2.0_f32,
+        _ => 0.5_f32,
+    };
 
-fn synth_sample(mode: &MusicMode, t: f32, freq: f32) -> f32 {
-    let phase = 2.0 * std::f32::consts::PI * freq * t;
     match mode {
-        MusicMode::Calm => phase.sin(),
+        MusicMode::Calm => {
+            let base = pentatonic[digit_to_scale_degree(digit) % pentatonic.len()];
+            Some(base * octave_shift.min(1.0).max(0.5))
+        }
         MusicMode::Arcade => {
-            if phase.sin() >= 0.0 { 1.0 } else { -1.0 }
+            let base = major_scale[digit_to_scale_degree(digit) % major_scale.len()];
+            Some(base * octave_shift)
         }
         MusicMode::Space => {
-            let tri = (2.0 / std::f32::consts::PI) * phase.sin().asin();
-            0.75 * tri + 0.25 * (phase * 0.5).sin()
+            let idx = (digit as usize + index) % space_scale.len();
+            Some(space_scale[idx] * octave_shift)
         }
     }
 }
 
-fn generate_wav_bytes(total_digits: usize, bpm: u32, mode: &MusicMode) -> Vec<u8> {
+fn digit_to_note_name(index: usize, digit: u32, mode: &MusicMode) -> &'static str {
+    if digit == 0 {
+        return "Rest";
+    }
+
+    match mode {
+        MusicMode::Calm => match digit_to_scale_degree(digit) % 5 {
+            0 => "C",
+            1 => "D",
+            2 => "E",
+            3 => "G",
+            _ => "A",
+        },
+        MusicMode::Arcade => match digit_to_scale_degree(digit) % 7 {
+            0 => "C",
+            1 => "D",
+            2 => "E",
+            3 => "F",
+            4 => "G",
+            5 => "A",
+            _ => "B",
+        },
+        MusicMode::Space => {
+            let names = ["C", "Eb", "G", "Bb", "C5", "Eb5"];
+            names[(digit as usize + index) % names.len()]
+        }
+    }
+}
+
+fn note_duration_secs(digit: u32, bpm: u32, index: usize) -> f32 {
+    let quarter = 60.0 / bpm.max(1) as f32;
+
+    if index % 8 == 7 {
+        quarter * 1.4
+    } else if digit == 0 {
+        quarter * 0.4
+    } else if digit % 2 == 0 {
+        quarter * 0.55
+    } else {
+        quarter * 0.9
+    }
+}
+
+fn preview_notes(total_digits: usize, mode: &MusicMode) -> String {
+    let notes = PI_DIGITS
+        .chars()
+        .cycle()
+        .take(total_digits.min(PREVIEW_LIMIT))
+        .enumerate()
+        .filter_map(|(i, ch)| ch.to_digit(10).map(|d| digit_to_note_name(i, d, mode)))
+        .collect::<Vec<_>>();
+
+    if total_digits > PREVIEW_LIMIT {
+        format!("{} • ... (showing first {} of {} notes)", notes.join(" • "), PREVIEW_LIMIT, total_digits)
+    } else {
+        notes.join(" • ")
+    }
+}
+
+fn instrument_sample(instrument: &Instrument, t: f32, freq: f32) -> f32 {
+    let p = 2.0 * std::f32::consts::PI * freq * t;
+
+    match instrument {
+        Instrument::Piano => {
+            0.90 * p.sin()
+                + 0.25 * (2.0 * p).sin()
+                + 0.12 * (3.0 * p).sin()
+        }
+        Instrument::Oboe => {
+            0.70 * p.sin()
+                + 0.45 * (2.0 * p).sin()
+                + 0.30 * (3.0 * p).sin()
+                + 0.18 * (4.0 * p).sin()
+        }
+        Instrument::ElectricGuitar => {
+            let raw = 0.85 * p.sin()
+                + 0.35 * (2.0 * p).sin()
+                + 0.22 * (3.0 * p).sin();
+            (raw * 1.8).tanh()
+        }
+        Instrument::Violin => {
+            0.75 * p.sin()
+                + 0.20 * (2.0 * p).sin()
+                + 0.15 * (3.0 * p).sin()
+                + 0.08 * (4.0 * p).sin()
+        }
+    }
+}
+
+fn apply_envelope(i: usize, sample_count: usize, instrument: &Instrument) -> f32 {
+    let attack = ((sample_count as f32) * instrument.attack_ratio()).max(1.0) as usize;
+    let release = ((sample_count as f32) * instrument.release_ratio()).max(1.0) as usize;
+
+    if i < attack {
+        i as f32 / attack as f32
+    } else if i > sample_count.saturating_sub(release) {
+        let remain = sample_count.saturating_sub(i);
+        remain as f32 / release as f32
+    } else {
+        1.0
+    }
+}
+
+fn generate_wav_bytes(
+    total_digits: usize,
+    bpm: u32,
+    mode: &MusicMode,
+    instrument: &Instrument,
+) -> Vec<u8> {
     let digits: Vec<u32> = PI_DIGITS
         .chars()
         .cycle()
@@ -111,25 +241,17 @@ fn generate_wav_bytes(total_digits: usize, bpm: u32, mode: &MusicMode) -> Vec<u8
 
     let mut samples: Vec<i16> = Vec::new();
 
-    for digit in digits {
-        let duration = note_duration_secs(digit, bpm);
+    for (index, digit) in digits.into_iter().enumerate() {
+        let duration = note_duration_secs(digit, bpm, index);
         let sample_count = (duration * SAMPLE_RATE as f32) as usize;
-        let attack = ((sample_count as f32) * 0.08).max(1.0) as usize;
-        let release = ((sample_count as f32) * 0.18).max(1.0) as usize;
 
-        if let Some(freq) = digit_to_freq(digit) {
+        if let Some(freq) = musical_freq_from_digit(index, digit, mode) {
             for i in 0..sample_count {
                 let t = i as f32 / SAMPLE_RATE as f32;
-                let mut env = 1.0_f32;
-
-                if i < attack {
-                    env = i as f32 / attack as f32;
-                } else if i > sample_count.saturating_sub(release) {
-                    let remain = sample_count.saturating_sub(i);
-                    env = remain as f32 / release as f32;
-                }
-
-                let value = synth_sample(mode, t, freq) * env * mode.amplitude();
+                let env = apply_envelope(i, sample_count, instrument);
+                let value = instrument_sample(instrument, t, freq)
+                    * env
+                    * instrument.amplitude();
                 let pcm = (value.clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
                 samples.push(pcm);
             }
@@ -148,14 +270,14 @@ fn generate_wav_bytes(total_digits: usize, bpm: u32, mode: &MusicMode) -> Vec<u8
     wav.extend_from_slice(b"WAVE");
 
     wav.extend_from_slice(b"fmt ");
-    wav.extend_from_slice(&16u32.to_le_bytes()); // PCM chunk size
-    wav.extend_from_slice(&1u16.to_le_bytes());  // PCM format
-    wav.extend_from_slice(&1u16.to_le_bytes());  // mono
+    wav.extend_from_slice(&16u32.to_le_bytes());
+    wav.extend_from_slice(&1u16.to_le_bytes());
+    wav.extend_from_slice(&1u16.to_le_bytes());
     wav.extend_from_slice(&SAMPLE_RATE.to_le_bytes());
     let byte_rate = SAMPLE_RATE * 2;
     wav.extend_from_slice(&byte_rate.to_le_bytes());
-    wav.extend_from_slice(&2u16.to_le_bytes()); // block align
-    wav.extend_from_slice(&16u16.to_le_bytes()); // bits/sample
+    wav.extend_from_slice(&2u16.to_le_bytes());
+    wav.extend_from_slice(&16u16.to_le_bytes());
 
     wav.extend_from_slice(b"data");
     wav.extend_from_slice(&data_len.to_le_bytes());
@@ -180,22 +302,23 @@ fn make_audio_url(bytes: &[u8]) -> Option<String> {
 
 #[function_component(App)]
 fn app() -> Html {
-    let digits = use_state(|| 24usize);
+    let digits = use_state(|| 64usize);
     let bpm = use_state(|| 120u32);
     let mode = use_state(|| MusicMode::Calm);
+    let instrument = use_state(|| Instrument::Piano);
     let is_playing = use_state(|| false);
     let status_text = use_state(|| "Ready".to_string());
 
     let audio_ref = use_mut_ref(|| None::<HtmlAudioElement>);
     let current_url = use_mut_ref(|| None::<String>);
 
-    let notes_preview = preview_notes(*digits);
+    let notes_preview = preview_notes(*digits, &mode);
 
     let on_digits_input = {
         let digits = digits.clone();
         Callback::from(move |e: InputEvent| {
             let input: HtmlInputElement = e.target_unchecked_into();
-            let value = input.value().parse::<usize>().unwrap_or(24).clamp(8, 96);
+            let value = input.value().parse::<usize>().unwrap_or(64).clamp(8, 1000);
             digits.set(value);
         })
     };
@@ -224,6 +347,26 @@ fn app() -> Html {
         Callback::from(move |_| mode.set(MusicMode::Space))
     };
 
+    let set_piano = {
+        let instrument = instrument.clone();
+        Callback::from(move |_| instrument.set(Instrument::Piano))
+    };
+
+    let set_oboe = {
+        let instrument = instrument.clone();
+        Callback::from(move |_| instrument.set(Instrument::Oboe))
+    };
+
+    let set_guitar = {
+        let instrument = instrument.clone();
+        Callback::from(move |_| instrument.set(Instrument::ElectricGuitar))
+    };
+
+    let set_violin = {
+        let instrument = instrument.clone();
+        Callback::from(move |_| instrument.set(Instrument::Violin))
+    };
+
     let stop_playback = {
         let is_playing = is_playing.clone();
         let status_text = status_text.clone();
@@ -243,6 +386,7 @@ fn app() -> Html {
         let digits = digits.clone();
         let bpm = bpm.clone();
         let mode = mode.clone();
+        let instrument = instrument.clone();
         let is_playing = is_playing.clone();
         let status_text = status_text.clone();
         let audio_ref = audio_ref.clone();
@@ -257,7 +401,9 @@ fn app() -> Html {
                 let _ = Url::revoke_object_url(&old_url);
             }
 
-            let bytes = generate_wav_bytes(*digits, *bpm, &mode);
+            status_text.set("Generating WAV...".to_string());
+
+            let bytes = generate_wav_bytes(*digits, *bpm, &mode, &instrument);
             let Some(url) = make_audio_url(&bytes) else {
                 status_text.set("Could not create WAV URL".to_string());
                 return;
@@ -277,9 +423,10 @@ fn app() -> Html {
                     *current_url.borrow_mut() = Some(url);
                     is_playing.set(true);
                     status_text.set(format!(
-                        "Playing {} notes in {} mode",
+                        "Playing {} notes • {} • {}",
                         *digits,
-                        mode.label()
+                        mode.label(),
+                        instrument.label()
                     ));
                 }
                 Err(_) => {
@@ -294,9 +441,9 @@ fn app() -> Html {
         <div class="app-shell">
             <section class="hero">
                 <div class="kicker">{ "MIKEGYVER STUDIO • PI DAY AUDIO BUILD" }</div>
-                <h1>{ "Pi Music Generator" }</h1>
+                <h1>{ "Pi Music Generator v2" }</h1>
                 <p>
-                    { "What if the digits of π became music? This mini-app maps π into notes, rests, rhythm, and tone so the number becomes a melody." }
+                    { "Turn the digits of π into a longer, more musical melody with instrument-style synthesis and reliable iPhone-friendly WAV playback." }
                 </p>
             </section>
 
@@ -306,13 +453,13 @@ fn app() -> Html {
 
                     <div class="control-group">
                         <div class="control-label">
-                            <span>{ "Digits Used" }</span>
+                            <span>{ "Notes Used" }</span>
                             <span class="control-value">{ *digits }</span>
                         </div>
                         <input
                             type="range"
                             min="8"
-                            max="96"
+                            max="1000"
                             step="1"
                             value={digits.to_string()}
                             oninput={on_digits_input}
@@ -334,7 +481,7 @@ fn app() -> Html {
                         />
                     </div>
 
-                    <h3>{ "Mode" }</h3>
+                    <h3>{ "Melody Mode" }</h3>
                     <div class="mode-row">
                         <button
                             class={classes!("secondary", matches!(*mode, MusicMode::Calm).then_some("active"))}
@@ -356,33 +503,49 @@ fn app() -> Html {
                         </button>
                     </div>
 
-                    <h3>{ "Playback" }</h3>
-                    <div class="button-row">
-                        <button class="primary" onclick={start_playback}>
-                            { "Play" }
+                    <h3>{ "Instrument Flavor" }</h3>
+                    <div class="instrument-row">
+                        <button
+                            class={classes!("secondary", matches!(*instrument, Instrument::Piano).then_some("active"))}
+                            onclick={set_piano}
+                        >
+                            { "Piano" }
                         </button>
-                        <button class="secondary" onclick={stop_playback}>
-                            { "Stop" }
+                        <button
+                            class={classes!("secondary", matches!(*instrument, Instrument::Oboe).then_some("active"))}
+                            onclick={set_oboe}
+                        >
+                            { "Oboe" }
+                        </button>
+                        <button
+                            class={classes!("secondary", matches!(*instrument, Instrument::ElectricGuitar).then_some("active"))}
+                            onclick={set_guitar}
+                        >
+                            { "Electric Guitar" }
+                        </button>
+                        <button
+                            class={classes!("secondary", matches!(*instrument, Instrument::Violin).then_some("active"))}
+                            onclick={set_violin}
+                        >
+                            { "Violin" }
                         </button>
                     </div>
 
+                    <h3>{ "Playback" }</h3>
+                    <div class="button-row">
+                        <button class="primary" onclick={start_playback}>{ "Play" }</button>
+                        <button class="secondary" onclick={stop_playback}>{ "Stop" }</button>
+                    </div>
+
                     <div class="desc-box">
-                        { "Digit mapping: 1=C, 2=D, 3=E, 4=F, 5=G, 6=A, 7=B, 8=high C, 9=high D, 0=rest. Odd digits hold longer, even digits play shorter." }
+                        { "This version keeps the proven iPhone-safe path: synthesize in Rust, generate a WAV in memory, then play it through HTMLAudioElement." }
                     </div>
                 </aside>
 
                 <main class="card">
                     <h2>{ "Pi Melody Preview" }</h2>
 
-                    <span class="status-pill">
-                        {
-                            if *is_playing {
-                                (*status_text).clone()
-                            } else {
-                                (*status_text).clone()
-                            }
-                        }
-                    </span>
+                    <span class="status-pill">{ (*status_text).clone() }</span>
 
                     <div class="info-grid">
                         <div class="info-card">
@@ -390,7 +553,11 @@ fn app() -> Html {
                             <div class="info-value">{ mode.label() }</div>
                         </div>
                         <div class="info-card">
-                            <div class="info-label">{ "Digits" }</div>
+                            <div class="info-label">{ "Instrument" }</div>
+                            <div class="info-value">{ instrument.label() }</div>
+                        </div>
+                        <div class="info-card">
+                            <div class="info-label">{ "Notes" }</div>
                             <div class="info-value">{ *digits }</div>
                         </div>
                         <div class="info-card">
@@ -406,7 +573,7 @@ fn app() -> Html {
 
                     <div class="footer">
                         <strong>{ "Pi Day music mission:" }</strong>
-                        { " Let π compose the melody." }
+                        { " Let π compose a longer melody." }
                     </div>
                 </main>
             </section>
