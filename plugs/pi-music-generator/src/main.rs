@@ -123,8 +123,7 @@ fn play_note(ctx: &AudioContext, freq: Option<f32>, mode: &MusicMode, duration_m
     let _ = osc.stop_with_when(now + dur_secs);
 }
 
-/// Tiny immediate sound to "unlock" Web Audio on iPhone/iOS browsers.
-fn prime_audio(ctx: &AudioContext) {
+fn unlock_audio(ctx: &AudioContext) {
     let Ok(osc) = OscillatorNode::new(ctx) else {
         return;
     };
@@ -141,10 +140,10 @@ fn prime_audio(ctx: &AudioContext) {
 
     let now = ctx.current_time();
     let _ = gain.gain().set_value_at_time(0.0001, now);
-    let _ = gain.gain().linear_ramp_to_value_at_time(0.0001, now + 0.02);
+    let _ = gain.gain().linear_ramp_to_value_at_time(0.0001, now + 0.03);
 
     let _ = osc.start();
-    let _ = osc.stop_with_when(now + 0.02);
+    let _ = osc.stop_with_when(now + 0.03);
 }
 
 #[function_component(App)]
@@ -154,7 +153,8 @@ fn app() -> Html {
     let mode = use_state(|| MusicMode::Calm);
     let is_playing = use_state(|| false);
     let current_index = use_state(|| 0usize);
-    let status_text = use_state(|| "Ready".to_string());
+    let audio_enabled = use_state(|| false);
+    let status_text = use_state(|| "Tap Enable Audio first on iPhone".to_string());
 
     let audio_ctx = use_mut_ref(|| None::<AudioContext>);
     let timeout_ref = use_mut_ref(|| None::<Timeout>);
@@ -197,6 +197,31 @@ fn app() -> Html {
         Callback::from(move |_| mode.set(MusicMode::Space))
     };
 
+    let enable_audio = {
+        let audio_enabled = audio_enabled.clone();
+        let audio_ctx = audio_ctx.clone();
+        let status_text = status_text.clone();
+
+        Callback::from(move |_| {
+            let ctx = if let Some(existing) = audio_ctx.borrow().as_ref() {
+                existing.clone()
+            } else {
+                let Ok(created) = AudioContext::new() else {
+                    status_text.set("Could not create AudioContext".to_string());
+                    return;
+                };
+                *audio_ctx.borrow_mut() = Some(created.clone());
+                created
+            };
+
+            let _ = ctx.resume();
+            unlock_audio(&ctx);
+
+            audio_enabled.set(true);
+            status_text.set("Audio enabled. Tap Play.".to_string());
+        })
+    };
+
     let stop_playback = {
         let is_playing = is_playing.clone();
         let current_index = current_index.clone();
@@ -219,32 +244,28 @@ fn app() -> Html {
         let mode = mode.clone();
         let is_playing = is_playing.clone();
         let current_index = current_index.clone();
+        let audio_enabled = audio_enabled.clone();
         let audio_ctx = audio_ctx.clone();
         let timeout_ref = timeout_ref.clone();
         let playback_token = playback_token.clone();
         let status_text = status_text.clone();
 
         Callback::from(move |_| {
+            if !*audio_enabled {
+                status_text.set("Tap Enable Audio first".to_string());
+                return;
+            }
+
             *timeout_ref.borrow_mut() = None;
             *playback_token.borrow_mut() += 1;
             let token = *playback_token.borrow();
 
-            let ctx = if let Some(existing) = audio_ctx.borrow().as_ref() {
-                existing.clone()
-            } else {
-                let Ok(created) = AudioContext::new() else {
-                    status_text.set("Could not create AudioContext".to_string());
-                    return;
-                };
-                *audio_ctx.borrow_mut() = Some(created.clone());
-                created
+            let Some(ctx) = audio_ctx.borrow().as_ref().cloned() else {
+                status_text.set("Audio context missing. Tap Enable Audio again.".to_string());
+                return;
             };
 
-            // Resume inside the direct tap/click handler.
             let _ = ctx.resume();
-
-            // Immediate tiny beep inside the same user gesture to unlock iPhone audio.
-            prime_audio(&ctx);
 
             current_index.set(0);
             is_playing.set(true);
@@ -397,8 +418,15 @@ fn app() -> Html {
 
                     <h3>{ "Playback" }</h3>
                     <div class="button-row">
-                        <button class="primary" onclick={start_playback}>{ "Play" }</button>
-                        <button class="secondary" onclick={stop_playback}>{ "Stop" }</button>
+                        <button class="primary" onclick={enable_audio}>
+                            { if *audio_enabled { "Audio Enabled" } else { "Enable Audio" } }
+                        </button>
+                        <button class="primary" onclick={start_playback} disabled={!*audio_enabled}>
+                            { "Play" }
+                        </button>
+                        <button class="secondary" onclick={stop_playback}>
+                            { "Stop" }
+                        </button>
                     </div>
 
                     <div class="desc-box">
