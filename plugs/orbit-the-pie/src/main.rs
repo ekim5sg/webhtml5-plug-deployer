@@ -1,25 +1,110 @@
-use gloo::timers::callback::Interval;
+use gloo::timers::callback::{Interval, Timeout};
 use js_sys::Math;
-use web_sys::HtmlInputElement;
+use web_sys::{window, HtmlInputElement};
 use yew::prelude::*;
 
 const PI_DIGITS_100: &str =
     "3.14159265358979323846264338327950288419716939937510\
      58209749445923078164062862089986280348253421170679";
 
+const BEST_SCORE_KEY: &str = "orbit_the_pie_best_score";
+
+#[derive(Clone, PartialEq)]
+struct Mission {
+    title: &'static str,
+    prompt: &'static str,
+    target_type: MissionTarget,
+    target_value: f64,
+    tolerance: f64,
+}
+
+#[derive(Clone, PartialEq)]
+enum MissionTarget {
+    Radius,
+    Circumference,
+    Area,
+}
+
 fn format_num(value: f64) -> String {
     format!("{value:.2}")
 }
 
+fn mission_label(target: &MissionTarget) -> &'static str {
+    match target {
+        MissionTarget::Radius => "Radius",
+        MissionTarget::Circumference => "Circumference",
+        MissionTarget::Area => "Area",
+    }
+}
+
+fn mission_actual_value(target: &MissionTarget, radius: f64) -> f64 {
+    match target {
+        MissionTarget::Radius => radius,
+        MissionTarget::Circumference => 2.0 * std::f64::consts::PI * radius,
+        MissionTarget::Area => std::f64::consts::PI * radius * radius,
+    }
+}
+
+fn missions() -> Vec<Mission> {
+    vec![
+        Mission {
+            title: "Mission 1",
+            prompt: "Set the radius so the circumference is about 314.16.",
+            target_type: MissionTarget::Circumference,
+            target_value: 314.16,
+            tolerance: 2.0,
+        },
+        Mission {
+            title: "Mission 2",
+            prompt: "Find a radius that makes the area close to 10,000.",
+            target_type: MissionTarget::Area,
+            target_value: 10_000.0,
+            tolerance: 120.0,
+        },
+        Mission {
+            title: "Mission 3",
+            prompt: "Set the radius to classic Pi Day mode: 31.4.",
+            target_type: MissionTarget::Radius,
+            target_value: 31.4,
+            tolerance: 0.25,
+        },
+    ]
+}
+
+fn load_best_score() -> u32 {
+    window()
+        .and_then(|w| w.local_storage().ok().flatten())
+        .and_then(|storage| storage.get_item(BEST_SCORE_KEY).ok().flatten())
+        .and_then(|value| value.parse::<u32>().ok())
+        .unwrap_or(0)
+}
+
+fn save_best_score(score: u32) {
+    if let Some(storage) = window().and_then(|w| w.local_storage().ok().flatten()) {
+        let _ = storage.set_item(BEST_SCORE_KEY, &score.to_string());
+    }
+}
+
 #[function_component(App)]
 fn app() -> Html {
-    let radius = use_state(|| 120.0_f64);
+    let radius = use_state(|| 94.0_f64);
     let speed = use_state(|| 2.2_f64);
     let angle = use_state(|| 0.0_f64);
     let is_running = use_state(|| true);
     let show_labels = use_state(|| true);
     let show_astronaut = use_state(|| false);
     let digits_count = use_state(|| 50_usize);
+
+    let mission_list = use_memo((), |_| missions());
+    let mission_index = use_state(|| 0_usize);
+    let mission_message = use_state(|| {
+        "Mission ready. Adjust the orbit and use the current radius to test your answer.".to_string()
+    });
+    let mission_score = use_state(|| 0_u32);
+    let best_score = use_state(load_best_score);
+    let mission_completed = use_state(|| false);
+    let confetti_active = use_state(|| false);
+    let confetti_burst = use_state(|| 0_u32);
 
     {
         let angle = angle.clone();
@@ -103,6 +188,121 @@ fn app() -> Html {
         Callback::from(move |_| show_labels.set(!*show_labels))
     };
 
+    let set_radius_50 = {
+        let radius = radius.clone();
+        Callback::from(move |_| radius.set(50.0))
+    };
+
+    let set_radius_75 = {
+        let radius = radius.clone();
+        Callback::from(move |_| radius.set(75.0))
+    };
+
+    let set_radius_100 = {
+        let radius = radius.clone();
+        Callback::from(move |_| radius.set(100.0))
+    };
+
+    let pi_day_preset = {
+        let radius = radius.clone();
+        let speed = speed.clone();
+        let mission_message = mission_message.clone();
+        Callback::from(move |_| {
+            radius.set(31.4);
+            speed.set(3.14);
+            mission_message.set("Pi Day preset activated: radius = 31.4 and speed = 3.14.".to_string());
+        })
+    };
+
+    let reset_scores = {
+        let mission_score = mission_score.clone();
+        let best_score = best_score.clone();
+        let mission_completed = mission_completed.clone();
+        let mission_message = mission_message.clone();
+        Callback::from(move |_| {
+            mission_score.set(0);
+            best_score.set(0);
+            mission_completed.set(false);
+            save_best_score(0);
+            mission_message.set("Scores reset. Ready for a fresh Pi mission run.".to_string());
+        })
+    };
+
+    let current_mission = mission_list[*mission_index].clone();
+
+    let check_mission = {
+        let radius = radius.clone();
+        let mission_message = mission_message.clone();
+        let mission_score = mission_score.clone();
+        let best_score = best_score.clone();
+        let mission_completed = mission_completed.clone();
+        let current_mission = current_mission.clone();
+        let confetti_active = confetti_active.clone();
+        let confetti_burst = confetti_burst.clone();
+
+        Callback::from(move |_| {
+            let actual = mission_actual_value(&current_mission.target_type, *radius);
+            let diff = (actual - current_mission.target_value).abs();
+
+            if diff <= current_mission.tolerance {
+                if !*mission_completed {
+                    let new_score = *mission_score + 1;
+                    mission_score.set(new_score);
+
+                    if new_score > *best_score {
+                        best_score.set(new_score);
+                        save_best_score(new_score);
+                    }
+
+                    confetti_active.set(true);
+                    confetti_burst.set(*confetti_burst + 1);
+
+                    {
+                        let confetti_active = confetti_active.clone();
+                        Timeout::new(1400, move || {
+                            confetti_active.set(false);
+                        })
+                        .forget();
+                    }
+                }
+
+                mission_completed.set(true);
+                mission_message.set(format!(
+                    "Success! {} target {:.2} reached with {:.2}.",
+                    mission_label(&current_mission.target_type),
+                    current_mission.target_value,
+                    actual
+                ));
+            } else {
+                mission_completed.set(false);
+                mission_message.set(format!(
+                    "Not quite. Current {} is {:.2}. Target is {:.2} (within ±{:.2}).",
+                    mission_label(&current_mission.target_type).to_lowercase(),
+                    actual,
+                    current_mission.target_value,
+                    current_mission.tolerance
+                ));
+            }
+        })
+    };
+
+    let next_mission = {
+        let mission_index = mission_index.clone();
+        let mission_message = mission_message.clone();
+        let mission_completed = mission_completed.clone();
+        let mission_list = mission_list.clone();
+
+        Callback::from(move |_| {
+            let next = (*mission_index + 1) % mission_list.len();
+            mission_index.set(next);
+            mission_completed.set(false);
+            mission_message.set(format!(
+                "{} ready. {}",
+                mission_list[next].title, mission_list[next].prompt
+            ));
+        })
+    };
+
     let orbit_size = *radius * 2.0;
     let stage_size = 100.0_f64;
     let orbiter_size = 12.0_f64;
@@ -147,21 +347,31 @@ fn app() -> Html {
 
     let facts = [
         "Pi is the ratio of a circle’s circumference to its diameter.",
-        "A perfect circular orbit makes Pi Day a fun bridge between math and space.",
-        "The first digits of pi are 3.14159, which is why Pi Day is celebrated on March 14.",
+        "Circular motion makes Pi Day a natural bridge between math and space.",
+        "March 14 is celebrated as Pi Day because the first digits are 3.14.",
     ];
 
     let fact_index = (((*angle / 120.0).floor() as usize) + (*digits_count / 25) - 1) % facts.len();
     let digits_to_show = (*digits_count).min(PI_DIGITS_100.len());
     let digits_display = &PI_DIGITS_100[..digits_to_show];
 
+    let confetti_particles: Vec<(f64, f64, f64, f64)> = (0..28)
+        .map(|i| {
+            let left = 8.0 + Math::random() * 84.0;
+            let delay = Math::random() * 0.45;
+            let drift = -70.0 + Math::random() * 140.0;
+            let duration = 0.9 + Math::random() * 0.8 + (i as f64 * 0.005);
+            (left, delay, drift, duration)
+        })
+        .collect();
+
     html! {
         <div class="app-shell">
             <section class="hero">
                 <div class="kicker">{ "MIKEGYVER STUDIO • PI DAY LAUNCH" }</div>
-                <h1>{ "Orbit the Pie: Pi Day Space Simulator" }</h1>
+                <h1>{ "Orbit the Pie: Pi Day Space Simulator v3" }</h1>
                 <p>
-                    { "Adjust the orbit radius, change the speed, and watch how π shapes motion in space. A playful Rust + Yew STEM mini-app built for Pi Day." }
+                    { "Adjust the orbit radius, explore live circle math, complete Pi missions, save your best score, and celebrate success with confetti." }
                 </p>
             </section>
 
@@ -176,9 +386,9 @@ fn app() -> Html {
                         </div>
                         <input
                             type="range"
-                            min="70"
+                            min="20"
                             max="160"
-                            step="1"
+                            step="0.1"
                             value={radius.to_string()}
                             oninput={on_radius_input}
                         />
@@ -197,6 +407,14 @@ fn app() -> Html {
                             value={speed.to_string()}
                             oninput={on_speed_input}
                         />
+                    </div>
+
+                    <h3>{ "Quick Radius Presets" }</h3>
+                    <div class="toggle-row">
+                        <button class="secondary" onclick={set_radius_50}>{ "50" }</button>
+                        <button class="secondary" onclick={set_radius_75}>{ "75" }</button>
+                        <button class="secondary" onclick={set_radius_100}>{ "100" }</button>
+                        <button class="secondary" onclick={pi_day_preset}>{ "Pi Day" }</button>
                     </div>
 
                     <h3>{ "Orbiter Type" }</h3>
@@ -231,8 +449,28 @@ fn app() -> Html {
                             { if *is_running { "Pause Orbit" } else { "Launch Orbit" } }
                         </button>
                         <button class="secondary" onclick={reset_orbit}>
-                            { "Reset" }
+                            { "Reset Orbit" }
                         </button>
+                    </div>
+
+                    <h3>{ "Mission Mode" }</h3>
+                    <div class="mission-card">
+                        <div class="mission-head">
+                            <strong>{ current_mission.title }</strong>
+                            <span>{ format!("Score: {}", *mission_score) }</span>
+                        </div>
+                        <div class="score-row">
+                            <span>{ format!("Best: {}", *best_score) }</span>
+                            <button class="secondary small-btn" onclick={reset_scores}>{ "Reset Scores" }</button>
+                        </div>
+                        <p class="mission-prompt">{ current_mission.prompt }</p>
+                        <div class="button-row">
+                            <button class="primary" onclick={check_mission}>{ "Use Current Radius" }</button>
+                            <button class="secondary" onclick={next_mission}>{ "Next Mission" }</button>
+                        </div>
+                        <div class={classes!("mission-status", (*mission_completed).then_some("success"))}>
+                            { (*mission_message).clone() }
+                        </div>
                     </div>
                 </aside>
 
@@ -251,6 +489,30 @@ fn app() -> Html {
 
                     <div class="stage">
                         <div class="pi-badge">{ "π = 3.14159…" }</div>
+
+                        {
+                            if *confetti_active {
+                                html! {
+                                    <div class="confetti-layer" key={format!("burst-{}", *confetti_burst)}>
+                                        {
+                                            for confetti_particles.iter().enumerate().map(|(i, (left, delay, drift, duration))| {
+                                                let hue = (i * 37) % 360;
+                                                html! {
+                                                    <span
+                                                        class="confetti-piece"
+                                                        style={format!(
+                                                            "left:{left:.2}%; animation-delay:{delay:.2}s; --drift:{drift:.2}px; animation-duration:{duration:.2}s; background:hsl({hue} 95% 65%);"
+                                                        )}
+                                                    />
+                                                }
+                                            })
+                                        }
+                                    </div>
+                                }
+                            } else {
+                                Html::default()
+                            }
+                        }
 
                         { for star_positions.iter().map(|(left, top)| {
                             let twinkle = 0.55 + Math::random() * 0.45;
