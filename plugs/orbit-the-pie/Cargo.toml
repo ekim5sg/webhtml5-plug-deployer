@@ -1,0 +1,17 @@
+[package]
+name = "orbit-the-pie"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+yew = { version = "0.21", features = ["csr"] }
+gloo = "0.11"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = ["HtmlInputElement"] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
