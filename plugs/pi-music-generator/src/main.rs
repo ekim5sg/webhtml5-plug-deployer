@@ -123,6 +123,30 @@ fn play_note(ctx: &AudioContext, freq: Option<f32>, mode: &MusicMode, duration_m
     let _ = osc.stop_with_when(now + dur_secs);
 }
 
+/// Tiny immediate sound to "unlock" Web Audio on iPhone/iOS browsers.
+fn prime_audio(ctx: &AudioContext) {
+    let Ok(osc) = OscillatorNode::new(ctx) else {
+        return;
+    };
+    let Ok(gain) = GainNode::new(ctx) else {
+        return;
+    };
+
+    osc.set_type(OscillatorType::Sine);
+    osc.frequency().set_value(440.0);
+    gain.gain().set_value(0.0001);
+
+    let _ = osc.connect_with_audio_node(&gain);
+    let _ = gain.connect_with_audio_node(&ctx.destination());
+
+    let now = ctx.current_time();
+    let _ = gain.gain().set_value_at_time(0.0001, now);
+    let _ = gain.gain().linear_ramp_to_value_at_time(0.0001, now + 0.02);
+
+    let _ = osc.start();
+    let _ = osc.stop_with_when(now + 0.02);
+}
+
 #[function_component(App)]
 fn app() -> Html {
     let digits = use_state(|| 24usize);
@@ -130,6 +154,7 @@ fn app() -> Html {
     let mode = use_state(|| MusicMode::Calm);
     let is_playing = use_state(|| false);
     let current_index = use_state(|| 0usize);
+    let status_text = use_state(|| "Ready".to_string());
 
     let audio_ctx = use_mut_ref(|| None::<AudioContext>);
     let timeout_ref = use_mut_ref(|| None::<Timeout>);
@@ -177,12 +202,14 @@ fn app() -> Html {
         let current_index = current_index.clone();
         let timeout_ref = timeout_ref.clone();
         let playback_token = playback_token.clone();
+        let status_text = status_text.clone();
 
         Callback::from(move |_| {
             *timeout_ref.borrow_mut() = None;
             *playback_token.borrow_mut() += 1;
             is_playing.set(false);
             current_index.set(0);
+            status_text.set("Stopped".to_string());
         })
     };
 
@@ -195,6 +222,7 @@ fn app() -> Html {
         let audio_ctx = audio_ctx.clone();
         let timeout_ref = timeout_ref.clone();
         let playback_token = playback_token.clone();
+        let status_text = status_text.clone();
 
         Callback::from(move |_| {
             *timeout_ref.borrow_mut() = None;
@@ -205,16 +233,22 @@ fn app() -> Html {
                 existing.clone()
             } else {
                 let Ok(created) = AudioContext::new() else {
+                    status_text.set("Could not create AudioContext".to_string());
                     return;
                 };
                 *audio_ctx.borrow_mut() = Some(created.clone());
                 created
             };
 
+            // Resume inside the direct tap/click handler.
             let _ = ctx.resume();
+
+            // Immediate tiny beep inside the same user gesture to unlock iPhone audio.
+            prime_audio(&ctx);
 
             current_index.set(0);
             is_playing.set(true);
+            status_text.set("Playing".to_string());
 
             let digits_value = *digits;
             let bpm_value = *bpm;
@@ -230,6 +264,7 @@ fn app() -> Html {
                 is_playing: UseStateHandle<bool>,
                 timeout_ref: std::rc::Rc<std::cell::RefCell<Option<Timeout>>>,
                 playback_token: std::rc::Rc<std::cell::RefCell<u64>>,
+                status_text: UseStateHandle<String>,
                 token: u64,
             ) {
                 if *playback_token.borrow() != token {
@@ -240,6 +275,7 @@ fn app() -> Html {
                     *timeout_ref.borrow_mut() = None;
                     is_playing.set(false);
                     current_index.set(0);
+                    status_text.set("Finished".to_string());
                     return;
                 }
 
@@ -250,6 +286,7 @@ fn app() -> Html {
 
                 play_note(&ctx, freq, &mode_value, dur);
                 current_index.set(idx + 1);
+                status_text.set(format!("Playing note {} of {}", idx + 1, total));
 
                 let ctx2 = ctx.clone();
                 let current_index2 = current_index.clone();
@@ -257,6 +294,7 @@ fn app() -> Html {
                 let timeout_ref2 = timeout_ref.clone();
                 let playback_token2 = playback_token.clone();
                 let mode_value2 = mode_value.clone();
+                let status_text2 = status_text.clone();
 
                 *timeout_ref.borrow_mut() = Some(Timeout::new(dur, move || {
                     schedule_note(
@@ -269,6 +307,7 @@ fn app() -> Html {
                         is_playing2,
                         timeout_ref2,
                         playback_token2,
+                        status_text2,
                         token,
                     );
                 }));
@@ -284,6 +323,7 @@ fn app() -> Html {
                 is_playing.clone(),
                 timeout_ref.clone(),
                 playback_token.clone(),
+                status_text.clone(),
                 token,
             );
         })
@@ -369,15 +409,7 @@ fn app() -> Html {
                 <main class="card">
                     <h2>{ "Pi Melody Preview" }</h2>
 
-                    <span class="status-pill">
-                        {
-                            if *is_playing {
-                                format!("Playing • Note {}", (*current_index).min(*digits))
-                            } else {
-                                "Ready".to_string()
-                            }
-                        }
-                    </span>
+                    <span class="status-pill">{ (*status_text).clone() }</span>
 
                     <div class="info-grid">
                         <div class="info-card">
