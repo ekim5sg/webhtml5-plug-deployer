@@ -10,7 +10,7 @@ const PI_DIGITS: &str = "314159265358979323846264338327950288419716939937510\
 45648566923460348610454326648213393607260249141273\
 72458700660631558817488152092096282925409171536436";
 
-const SAMPLE_RATE: u32 = 22050;
+const SAMPLE_RATE: u32 = 22_050;
 const PREVIEW_LIMIT: usize = 48;
 
 #[derive(Clone, PartialEq)]
@@ -31,47 +31,83 @@ impl MusicMode {
 }
 
 #[derive(Clone, PartialEq)]
-enum Instrument {
-    Piano,
-    Oboe,
-    ElectricGuitar,
-    Violin,
+enum Preset {
+    SoftKeys,
+    BrightPluck,
+    BowedAir,
+    CosmicLead,
 }
 
-impl Instrument {
+impl Preset {
     fn label(&self) -> &'static str {
         match self {
-            Instrument::Piano => "Piano",
-            Instrument::Oboe => "Oboe",
-            Instrument::ElectricGuitar => "Electric Guitar",
-            Instrument::Violin => "Violin",
+            Preset::SoftKeys => "Soft Keys",
+            Preset::BrightPluck => "Bright Pluck",
+            Preset::BowedAir => "Bowed Air",
+            Preset::CosmicLead => "Cosmic Lead",
         }
     }
 
     fn amplitude(&self) -> f32 {
         match self {
-            Instrument::Piano => 0.34,
-            Instrument::Oboe => 0.28,
-            Instrument::ElectricGuitar => 0.25,
-            Instrument::Violin => 0.30,
+            Preset::SoftKeys => 0.34,
+            Preset::BrightPluck => 0.28,
+            Preset::BowedAir => 0.27,
+            Preset::CosmicLead => 0.30,
         }
     }
 
     fn attack_ratio(&self) -> f32 {
         match self {
-            Instrument::Piano => 0.01,
-            Instrument::Oboe => 0.06,
-            Instrument::ElectricGuitar => 0.015,
-            Instrument::Violin => 0.08,
+            Preset::SoftKeys => 0.02,
+            Preset::BrightPluck => 0.004,
+            Preset::BowedAir => 0.10,
+            Preset::CosmicLead => 0.025,
         }
     }
 
     fn release_ratio(&self) -> f32 {
         match self {
-            Instrument::Piano => 0.45,
-            Instrument::Oboe => 0.18,
-            Instrument::ElectricGuitar => 0.28,
-            Instrument::Violin => 0.22,
+            Preset::SoftKeys => 0.34,
+            Preset::BrightPluck => 0.48,
+            Preset::BowedAir => 0.20,
+            Preset::CosmicLead => 0.28,
+        }
+    }
+
+    fn vibrato_depth(&self) -> f32 {
+        match self {
+            Preset::SoftKeys => 0.0015,
+            Preset::BrightPluck => 0.0,
+            Preset::BowedAir => 0.010,
+            Preset::CosmicLead => 0.014,
+        }
+    }
+
+    fn vibrato_rate(&self) -> f32 {
+        match self {
+            Preset::SoftKeys => 4.0,
+            Preset::BrightPluck => 0.0,
+            Preset::BowedAir => 5.4,
+            Preset::CosmicLead => 6.8,
+        }
+    }
+
+    fn echo_mix(&self) -> f32 {
+        match self {
+            Preset::SoftKeys => 0.08,
+            Preset::BrightPluck => 0.06,
+            Preset::BowedAir => 0.12,
+            Preset::CosmicLead => 0.18,
+        }
+    }
+
+    fn echo_delay_ms(&self) -> u32 {
+        match self {
+            Preset::SoftKeys => 90,
+            Preset::BrightPluck => 70,
+            Preset::BowedAir => 120,
+            Preset::CosmicLead => 150,
         }
     }
 }
@@ -152,17 +188,23 @@ fn digit_to_note_name(index: usize, digit: u32, mode: &MusicMode) -> &'static st
     }
 }
 
-fn note_duration_secs(digit: u32, bpm: u32, index: usize) -> f32 {
+fn note_duration_secs(digit: u32, bpm: u32, index: usize, mode: &MusicMode) -> f32 {
     let quarter = 60.0 / bpm.max(1) as f32;
 
-    if index % 8 == 7 {
-        quarter * 1.4
+    let base = if index % 8 == 7 {
+        quarter * 1.35
     } else if digit == 0 {
-        quarter * 0.4
+        quarter * 0.38
     } else if digit % 2 == 0 {
-        quarter * 0.55
+        quarter * 0.52
     } else {
-        quarter * 0.9
+        quarter * 0.86
+    };
+
+    match mode {
+        MusicMode::Calm => base * 1.08,
+        MusicMode::Arcade => base * 0.88,
+        MusicMode::Space => base * 1.00,
     }
 }
 
@@ -176,45 +218,77 @@ fn preview_notes(total_digits: usize, mode: &MusicMode) -> String {
         .collect::<Vec<_>>();
 
     if total_digits > PREVIEW_LIMIT {
-        format!("{} • ... (showing first {} of {} notes)", notes.join(" • "), PREVIEW_LIMIT, total_digits)
+        format!(
+            "{} • ... (showing first {} of {} notes)",
+            notes.join(" • "),
+            PREVIEW_LIMIT,
+            total_digits
+        )
     } else {
         notes.join(" • ")
     }
 }
 
-fn instrument_sample(instrument: &Instrument, t: f32, freq: f32) -> f32 {
-    let p = 2.0 * std::f32::consts::PI * freq * t;
+fn soft_clip(x: f32) -> f32 {
+    (x * 1.4).tanh()
+}
 
-    match instrument {
-        Instrument::Piano => {
-            0.90 * p.sin()
-                + 0.25 * (2.0 * p).sin()
-                + 0.12 * (3.0 * p).sin()
-        }
-        Instrument::Oboe => {
-            0.70 * p.sin()
-                + 0.45 * (2.0 * p).sin()
-                + 0.30 * (3.0 * p).sin()
-                + 0.18 * (4.0 * p).sin()
-        }
-        Instrument::ElectricGuitar => {
-            let raw = 0.85 * p.sin()
-                + 0.35 * (2.0 * p).sin()
-                + 0.22 * (3.0 * p).sin();
-            (raw * 1.8).tanh()
-        }
-        Instrument::Violin => {
-            0.75 * p.sin()
-                + 0.20 * (2.0 * p).sin()
-                + 0.15 * (3.0 * p).sin()
-                + 0.08 * (4.0 * p).sin()
-        }
+fn synth_soft_keys(t: f32, freq: f32) -> f32 {
+    let p = 2.0 * std::f32::consts::PI * freq * t;
+    let body = 0.88 * p.sin()
+        + 0.20 * (2.0 * p).sin()
+        + 0.09 * (3.0 * p).sin()
+        + 0.04 * (4.0 * p).sin();
+    soft_clip(body)
+}
+
+fn synth_bright_pluck(t: f32, freq: f32) -> f32 {
+    let p = 2.0 * std::f32::consts::PI * freq * t;
+    let sparkle = 0.72 * p.sin()
+        + 0.34 * (2.0 * p).sin()
+        + 0.20 * (3.0 * p).sin()
+        + 0.10 * (5.0 * p).sin();
+    soft_clip(sparkle * 1.05)
+}
+
+fn synth_bowed_air(t: f32, freq: f32, vib: f32) -> f32 {
+    let f = freq * (1.0 + vib);
+    let p = 2.0 * std::f32::consts::PI * f * t;
+    let smooth = 0.78 * p.sin()
+        + 0.26 * (2.0 * p).sin()
+        + 0.14 * (3.0 * p).sin()
+        + 0.06 * (4.0 * p).sin();
+    soft_clip(smooth * 0.95)
+}
+
+fn synth_cosmic_lead(t: f32, freq: f32, vib: f32) -> f32 {
+    let f = freq * (1.0 + vib);
+    let p = 2.0 * std::f32::consts::PI * f * t;
+    let lead = 0.70 * p.sin()
+        + 0.22 * (2.0 * p).sin()
+        + 0.16 * (3.0 * p).sin()
+        + 0.08 * (0.5 * p).sin();
+    soft_clip(lead * 1.15)
+}
+
+fn preset_sample(preset: &Preset, t: f32, freq: f32) -> f32 {
+    let vib = if preset.vibrato_depth() > 0.0 {
+        (2.0 * std::f32::consts::PI * preset.vibrato_rate() * t).sin() * preset.vibrato_depth()
+    } else {
+        0.0
+    };
+
+    match preset {
+        Preset::SoftKeys => synth_soft_keys(t, freq),
+        Preset::BrightPluck => synth_bright_pluck(t, freq),
+        Preset::BowedAir => synth_bowed_air(t, freq, vib),
+        Preset::CosmicLead => synth_cosmic_lead(t, freq, vib),
     }
 }
 
-fn apply_envelope(i: usize, sample_count: usize, instrument: &Instrument) -> f32 {
-    let attack = ((sample_count as f32) * instrument.attack_ratio()).max(1.0) as usize;
-    let release = ((sample_count as f32) * instrument.release_ratio()).max(1.0) as usize;
+fn apply_envelope(i: usize, sample_count: usize, preset: &Preset) -> f32 {
+    let attack = ((sample_count as f32) * preset.attack_ratio()).max(1.0) as usize;
+    let release = ((sample_count as f32) * preset.release_ratio()).max(1.0) as usize;
 
     if i < attack {
         i as f32 / attack as f32
@@ -226,11 +300,24 @@ fn apply_envelope(i: usize, sample_count: usize, instrument: &Instrument) -> f32
     }
 }
 
+fn add_echo(samples: &mut [f32], preset: &Preset) {
+    let delay_samples = ((preset.echo_delay_ms() as f32 / 1000.0) * SAMPLE_RATE as f32) as usize;
+    if delay_samples == 0 || delay_samples >= samples.len() {
+        return;
+    }
+
+    let mix = preset.echo_mix();
+    for i in delay_samples..samples.len() {
+        let delayed = samples[i - delay_samples] * mix;
+        samples[i] = (samples[i] + delayed).clamp(-1.0, 1.0);
+    }
+}
+
 fn generate_wav_bytes(
     total_digits: usize,
     bpm: u32,
     mode: &MusicMode,
-    instrument: &Instrument,
+    preset: &Preset,
 ) -> Vec<u8> {
     let digits: Vec<u32> = PI_DIGITS
         .chars()
@@ -239,26 +326,30 @@ fn generate_wav_bytes(
         .filter_map(|ch| ch.to_digit(10))
         .collect();
 
-    let mut samples: Vec<i16> = Vec::new();
+    let mut float_samples: Vec<f32> = Vec::new();
 
     for (index, digit) in digits.into_iter().enumerate() {
-        let duration = note_duration_secs(digit, bpm, index);
+        let duration = note_duration_secs(digit, bpm, index, mode);
         let sample_count = (duration * SAMPLE_RATE as f32) as usize;
 
         if let Some(freq) = musical_freq_from_digit(index, digit, mode) {
             for i in 0..sample_count {
                 let t = i as f32 / SAMPLE_RATE as f32;
-                let env = apply_envelope(i, sample_count, instrument);
-                let value = instrument_sample(instrument, t, freq)
-                    * env
-                    * instrument.amplitude();
-                let pcm = (value.clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
-                samples.push(pcm);
+                let env = apply_envelope(i, sample_count, preset);
+                let value = preset_sample(preset, t, freq) * env * preset.amplitude();
+                float_samples.push(value.clamp(-1.0, 1.0));
             }
         } else {
-            samples.extend(std::iter::repeat_n(0i16, sample_count));
+            float_samples.extend(std::iter::repeat_n(0.0_f32, sample_count));
         }
     }
+
+    add_echo(&mut float_samples, preset);
+
+    let samples: Vec<i16> = float_samples
+        .into_iter()
+        .map(|v| (v.clamp(-1.0, 1.0) * i16::MAX as f32) as i16)
+        .collect();
 
     let data_len = (samples.len() * 2) as u32;
     let file_len = 36 + data_len;
@@ -305,7 +396,7 @@ fn app() -> Html {
     let digits = use_state(|| 64usize);
     let bpm = use_state(|| 120u32);
     let mode = use_state(|| MusicMode::Calm);
-    let instrument = use_state(|| Instrument::Piano);
+    let preset = use_state(|| Preset::SoftKeys);
     let is_playing = use_state(|| false);
     let status_text = use_state(|| "Ready".to_string());
 
@@ -347,24 +438,24 @@ fn app() -> Html {
         Callback::from(move |_| mode.set(MusicMode::Space))
     };
 
-    let set_piano = {
-        let instrument = instrument.clone();
-        Callback::from(move |_| instrument.set(Instrument::Piano))
+    let set_soft_keys = {
+        let preset = preset.clone();
+        Callback::from(move |_| preset.set(Preset::SoftKeys))
     };
 
-    let set_oboe = {
-        let instrument = instrument.clone();
-        Callback::from(move |_| instrument.set(Instrument::Oboe))
+    let set_bright_pluck = {
+        let preset = preset.clone();
+        Callback::from(move |_| preset.set(Preset::BrightPluck))
     };
 
-    let set_guitar = {
-        let instrument = instrument.clone();
-        Callback::from(move |_| instrument.set(Instrument::ElectricGuitar))
+    let set_bowed_air = {
+        let preset = preset.clone();
+        Callback::from(move |_| preset.set(Preset::BowedAir))
     };
 
-    let set_violin = {
-        let instrument = instrument.clone();
-        Callback::from(move |_| instrument.set(Instrument::Violin))
+    let set_cosmic_lead = {
+        let preset = preset.clone();
+        Callback::from(move |_| preset.set(Preset::CosmicLead))
     };
 
     let stop_playback = {
@@ -386,7 +477,7 @@ fn app() -> Html {
         let digits = digits.clone();
         let bpm = bpm.clone();
         let mode = mode.clone();
-        let instrument = instrument.clone();
+        let preset = preset.clone();
         let is_playing = is_playing.clone();
         let status_text = status_text.clone();
         let audio_ref = audio_ref.clone();
@@ -403,7 +494,7 @@ fn app() -> Html {
 
             status_text.set("Generating WAV...".to_string());
 
-            let bytes = generate_wav_bytes(*digits, *bpm, &mode, &instrument);
+            let bytes = generate_wav_bytes(*digits, *bpm, &mode, &preset);
             let Some(url) = make_audio_url(&bytes) else {
                 status_text.set("Could not create WAV URL".to_string());
                 return;
@@ -426,7 +517,7 @@ fn app() -> Html {
                         "Playing {} notes • {} • {}",
                         *digits,
                         mode.label(),
-                        instrument.label()
+                        preset.label()
                     ));
                 }
                 Err(_) => {
@@ -441,9 +532,9 @@ fn app() -> Html {
         <div class="app-shell">
             <section class="hero">
                 <div class="kicker">{ "MIKEGYVER STUDIO • PI DAY AUDIO BUILD" }</div>
-                <h1>{ "Pi Music Generator v2" }</h1>
+                <h1>{ "Pi Music Generator v3" }</h1>
                 <p>
-                    { "Turn the digits of π into a longer, more musical melody with instrument-style synthesis and reliable iPhone-friendly WAV playback." }
+                    { "Turn the digits of π into a longer, more musical melody with improved synth presets and the proven iPhone-safe WAV playback path." }
                 </p>
             </section>
 
@@ -503,31 +594,31 @@ fn app() -> Html {
                         </button>
                     </div>
 
-                    <h3>{ "Instrument Flavor" }</h3>
+                    <h3>{ "Preset" }</h3>
                     <div class="instrument-row">
                         <button
-                            class={classes!("secondary", matches!(*instrument, Instrument::Piano).then_some("active"))}
-                            onclick={set_piano}
+                            class={classes!("secondary", matches!(*preset, Preset::SoftKeys).then_some("active"))}
+                            onclick={set_soft_keys}
                         >
-                            { "Piano" }
+                            { "Soft Keys" }
                         </button>
                         <button
-                            class={classes!("secondary", matches!(*instrument, Instrument::Oboe).then_some("active"))}
-                            onclick={set_oboe}
+                            class={classes!("secondary", matches!(*preset, Preset::BrightPluck).then_some("active"))}
+                            onclick={set_bright_pluck}
                         >
-                            { "Oboe" }
+                            { "Bright Pluck" }
                         </button>
                         <button
-                            class={classes!("secondary", matches!(*instrument, Instrument::ElectricGuitar).then_some("active"))}
-                            onclick={set_guitar}
+                            class={classes!("secondary", matches!(*preset, Preset::BowedAir).then_some("active"))}
+                            onclick={set_bowed_air}
                         >
-                            { "Electric Guitar" }
+                            { "Bowed Air" }
                         </button>
                         <button
-                            class={classes!("secondary", matches!(*instrument, Instrument::Violin).then_some("active"))}
-                            onclick={set_violin}
+                            class={classes!("secondary", matches!(*preset, Preset::CosmicLead).then_some("active"))}
+                            onclick={set_cosmic_lead}
                         >
-                            { "Violin" }
+                            { "Cosmic Lead" }
                         </button>
                     </div>
 
@@ -538,7 +629,7 @@ fn app() -> Html {
                     </div>
 
                     <div class="desc-box">
-                        { "This version keeps the proven iPhone-safe path: synthesize in Rust, generate a WAV in memory, then play it through HTMLAudioElement." }
+                        { "Path A+ keeps the reliable approach: generate the sound in Rust, bake it into a WAV, then play it through HTMLAudioElement for iPhone-safe playback." }
                     </div>
                 </aside>
 
@@ -553,8 +644,8 @@ fn app() -> Html {
                             <div class="info-value">{ mode.label() }</div>
                         </div>
                         <div class="info-card">
-                            <div class="info-label">{ "Instrument" }</div>
-                            <div class="info-value">{ instrument.label() }</div>
+                            <div class="info-label">{ "Preset" }</div>
+                            <div class="info-value">{ preset.label() }</div>
                         </div>
                         <div class="info-card">
                             <div class="info-label">{ "Notes" }</div>
@@ -573,7 +664,7 @@ fn app() -> Html {
 
                     <div class="footer">
                         <strong>{ "Pi Day music mission:" }</strong>
-                        { " Let π compose a longer melody." }
+                        { " Let π compose a longer, better-sounding melody." }
                     </div>
                 </main>
             </section>
