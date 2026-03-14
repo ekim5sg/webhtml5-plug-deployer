@@ -181,7 +181,6 @@ fn app() -> Html {
     let is_animating = use_state(|| false);
     let mode = use_state(|| ArtMode::Spiral);
 
-    // Keeps live animation progress in sync across interval ticks.
     let live_progress = use_mut_ref(|| 600usize);
 
     {
@@ -224,8 +223,8 @@ fn app() -> Html {
 
                 Some(Interval::new(24, move || {
                     let current = *live_progress.borrow();
-                    let step = ((digits - current) / 12).max(4);
-let next = (current + step).min(*digits);
+                    let step = (((*digits).saturating_sub(current)) / 12).max(4);
+                    let next = (current + step).min(*digits);
 
                     *live_progress.borrow_mut() = next;
                     progress.set(next);
