@@ -204,7 +204,7 @@ fn note_duration_secs(digit: u32, bpm: u32, index: usize, mode: &MusicMode) -> f
     match mode {
         MusicMode::Calm => base * 1.08,
         MusicMode::Arcade => base * 0.88,
-        MusicMode::Space => base * 1.00,
+        MusicMode::Space => base,
     }
 }
 
@@ -465,7 +465,7 @@ fn app() -> Html {
 
         Callback::from(move |_| {
             if let Some(audio) = audio_ref.borrow().as_ref() {
-                let _ = audio.pause();
+                audio.pause().ok();
                 audio.set_current_time(0.0);
             }
             is_playing.set(false);
@@ -485,11 +485,11 @@ fn app() -> Html {
 
         Callback::from(move |_| {
             if let Some(audio) = audio_ref.borrow().as_ref() {
-                let _ = audio.pause();
+                audio.pause().ok();
             }
 
             if let Some(old_url) = current_url.borrow_mut().take() {
-                let _ = Url::revoke_object_url(&old_url);
+                Url::revoke_object_url(&old_url).ok();
             }
 
             status_text.set("Generating WAV...".to_string());
@@ -502,7 +502,7 @@ fn app() -> Html {
 
             let Ok(audio) = HtmlAudioElement::new_with_src(&url) else {
                 status_text.set("Could not create audio element".to_string());
-                let _ = Url::revoke_object_url(&url);
+                Url::revoke_object_url(&url).ok();
                 return;
             };
 
@@ -522,7 +522,7 @@ fn app() -> Html {
                 }
                 Err(_) => {
                     status_text.set("Playback blocked by browser".to_string());
-                    let _ = Url::revoke_object_url(&url);
+                    Url::revoke_object_url(&url).ok();
                 }
             }
         })
