@@ -1,4 +1,3 @@
-use gloo::timers::callback::Timeout;
 use web_sys::{AudioContext, GainNode, HtmlInputElement, OscillatorNode, OscillatorType};
 use yew::prelude::*;
 
@@ -33,9 +32,9 @@ impl MusicMode {
 
     fn gain_multiplier(&self) -> f32 {
         match self {
-            MusicMode::Calm => 0.06,
-            MusicMode::Arcade => 0.045,
-            MusicMode::Space => 0.055,
+            MusicMode::Calm => 0.05,
+            MusicMode::Arcade => 0.04,
+            MusicMode::Space => 0.045,
         }
     }
 }
@@ -72,10 +71,10 @@ fn digit_to_note_name(digit: u32) -> &'static str {
     }
 }
 
-fn note_duration_ms(digit: u32, bpm: u32) -> u32 {
-    let quarter = 60_000 / bpm.max(1);
+fn note_duration_secs(digit: u32, bpm: u32) -> f64 {
+    let quarter = 60.0 / bpm.max(1) as f64;
     if digit % 2 == 0 {
-        quarter / 2
+        quarter / 2.0
     } else {
         quarter
     }
@@ -90,37 +89,6 @@ fn preview_notes(total_digits: usize) -> String {
         .map(digit_to_note_name)
         .collect::<Vec<_>>()
         .join(" • ")
-}
-
-fn play_note(ctx: &AudioContext, freq: Option<f32>, mode: &MusicMode, duration_ms: u32) {
-    let Some(freq) = freq else {
-        return;
-    };
-
-    let Ok(osc) = OscillatorNode::new(ctx) else {
-        return;
-    };
-    let Ok(gain) = GainNode::new(ctx) else {
-        return;
-    };
-
-    osc.set_type(mode.oscillator());
-    osc.frequency().set_value(freq);
-    gain.gain().set_value(mode.gain_multiplier());
-
-    let _ = osc.connect_with_audio_node(&gain);
-    let _ = gain.connect_with_audio_node(&ctx.destination());
-
-    let now = ctx.current_time();
-    let dur_secs = duration_ms as f64 / 1000.0;
-
-    let _ = gain.gain().set_value_at_time(mode.gain_multiplier(), now);
-    let _ = gain
-        .gain()
-        .linear_ramp_to_value_at_time(0.0001, now + dur_secs * 0.95);
-
-    let _ = osc.start();
-    let _ = osc.stop_with_when(now + dur_secs);
 }
 
 fn unlock_audio(ctx: &AudioContext) {
@@ -139,11 +107,55 @@ fn unlock_audio(ctx: &AudioContext) {
     let _ = gain.connect_with_audio_node(&ctx.destination());
 
     let now = ctx.current_time();
-    let _ = gain.gain().set_value_at_time(0.0001, now);
-    let _ = gain.gain().linear_ramp_to_value_at_time(0.0001, now + 0.03);
-
-    let _ = osc.start();
+    let _ = osc.start_with_when(now);
     let _ = osc.stop_with_when(now + 0.03);
+}
+
+fn schedule_melody(
+    ctx: &AudioContext,
+    total_digits: usize,
+    bpm: u32,
+    mode: &MusicMode,
+) -> f64 {
+    let start_time = ctx.current_time() + 0.05;
+    let mut t = start_time;
+
+    for ch in PI_DIGITS.chars().cycle().take(total_digits) {
+        let digit = ch.to_digit(10).unwrap_or(0);
+        let dur = note_duration_secs(digit, bpm);
+
+        if let Some(freq) = digit_to_freq(digit) {
+            let Ok(osc) = OscillatorNode::new(ctx) else {
+                t += dur;
+                continue;
+            };
+            let Ok(gain) = GainNode::new(ctx) else {
+                t += dur;
+                continue;
+            };
+
+            osc.set_type(mode.oscillator());
+            osc.frequency().set_value(freq);
+            gain.gain().set_value(0.0001);
+
+            let _ = osc.connect_with_audio_node(&gain);
+            let _ = gain.connect_with_audio_node(&ctx.destination());
+
+            let attack_gain = mode.gain_multiplier();
+            let _ = gain.gain().set_value_at_time(0.0001, t);
+            let _ = gain.gain().linear_ramp_to_value_at_time(attack_gain, t + 0.01);
+            let _ = gain
+                .gain()
+                .linear_ramp_to_value_at_time(0.0001, t + dur * 0.92);
+
+            let _ = osc.start_with_when(t);
+            let _ = osc.stop_with_when(t + dur);
+        }
+
+        t += dur;
+    }
+
+    t
 }
 
 #[function_component(App)]
@@ -152,24 +164,19 @@ fn app() -> Html {
     let bpm = use_state(|| 120u32);
     let mode = use_state(|| MusicMode::Calm);
     let is_playing = use_state(|| false);
-    let current_index = use_state(|| 0usize);
     let audio_enabled = use_state(|| false);
     let status_text = use_state(|| "Tap Enable Audio first on iPhone".to_string());
 
     let audio_ctx = use_mut_ref(|| None::<AudioContext>);
-    let timeout_ref = use_mut_ref(|| None::<Timeout>);
-    let playback_token = use_mut_ref(|| 0u64);
 
     let notes_preview = preview_notes(*digits);
 
     let on_digits_input = {
         let digits = digits.clone();
-        let current_index = current_index.clone();
         Callback::from(move |e: InputEvent| {
             let input: HtmlInputElement = e.target_unchecked_into();
             let value = input.value().parse::<usize>().unwrap_or(24).clamp(8, 96);
             digits.set(value);
-            current_index.set(0);
         })
     };
 
@@ -224,16 +231,14 @@ fn app() -> Html {
 
     let stop_playback = {
         let is_playing = is_playing.clone();
-        let current_index = current_index.clone();
-        let timeout_ref = timeout_ref.clone();
-        let playback_token = playback_token.clone();
         let status_text = status_text.clone();
+        let audio_ctx = audio_ctx.clone();
 
         Callback::from(move |_| {
-            *timeout_ref.borrow_mut() = None;
-            *playback_token.borrow_mut() += 1;
+            if let Some(ctx) = audio_ctx.borrow().as_ref() {
+                let _ = ctx.suspend();
+            }
             is_playing.set(false);
-            current_index.set(0);
             status_text.set("Stopped".to_string());
         })
     };
@@ -243,11 +248,8 @@ fn app() -> Html {
         let bpm = bpm.clone();
         let mode = mode.clone();
         let is_playing = is_playing.clone();
-        let current_index = current_index.clone();
         let audio_enabled = audio_enabled.clone();
         let audio_ctx = audio_ctx.clone();
-        let timeout_ref = timeout_ref.clone();
-        let playback_token = playback_token.clone();
         let status_text = status_text.clone();
 
         Callback::from(move |_| {
@@ -256,10 +258,6 @@ fn app() -> Html {
                 return;
             }
 
-            *timeout_ref.borrow_mut() = None;
-            *playback_token.borrow_mut() += 1;
-            let token = *playback_token.borrow();
-
             let Some(ctx) = audio_ctx.borrow().as_ref().cloned() else {
                 status_text.set("Audio context missing. Tap Enable Audio again.".to_string());
                 return;
@@ -267,86 +265,26 @@ fn app() -> Html {
 
             let _ = ctx.resume();
 
-            current_index.set(0);
+            // Schedule the full melody immediately inside this tap handler.
+            let end_time = schedule_melody(&ctx, *digits, *bpm, &mode);
+
             is_playing.set(true);
-            status_text.set("Playing".to_string());
+            status_text.set(format!(
+                "Playing {} notes in {} mode",
+                *digits,
+                mode.label()
+            ));
 
-            let digits_value = *digits;
-            let bpm_value = *bpm;
-            let mode_value = (*mode).clone();
+            // Best-effort UI reset after playback duration.
+            let is_playing_done = is_playing.clone();
+            let status_text_done = status_text.clone();
+            let duration_ms = ((end_time - ctx.current_time()).max(0.0) * 1000.0) as u32 + 50;
 
-            fn schedule_note(
-                idx: usize,
-                total: usize,
-                bpm_value: u32,
-                mode_value: MusicMode,
-                ctx: AudioContext,
-                current_index: UseStateHandle<usize>,
-                is_playing: UseStateHandle<bool>,
-                timeout_ref: std::rc::Rc<std::cell::RefCell<Option<Timeout>>>,
-                playback_token: std::rc::Rc<std::cell::RefCell<u64>>,
-                status_text: UseStateHandle<String>,
-                token: u64,
-            ) {
-                if *playback_token.borrow() != token {
-                    return;
-                }
-
-                if idx >= total {
-                    *timeout_ref.borrow_mut() = None;
-                    is_playing.set(false);
-                    current_index.set(0);
-                    status_text.set("Finished".to_string());
-                    return;
-                }
-
-                let ch = PI_DIGITS.chars().cycle().nth(idx).unwrap_or('0');
-                let digit = ch.to_digit(10).unwrap_or(0);
-                let freq = digit_to_freq(digit);
-                let dur = note_duration_ms(digit, bpm_value);
-
-                play_note(&ctx, freq, &mode_value, dur);
-                current_index.set(idx + 1);
-                status_text.set(format!("Playing note {} of {}", idx + 1, total));
-
-                let ctx2 = ctx.clone();
-                let current_index2 = current_index.clone();
-                let is_playing2 = is_playing.clone();
-                let timeout_ref2 = timeout_ref.clone();
-                let playback_token2 = playback_token.clone();
-                let mode_value2 = mode_value.clone();
-                let status_text2 = status_text.clone();
-
-                *timeout_ref.borrow_mut() = Some(Timeout::new(dur, move || {
-                    schedule_note(
-                        idx + 1,
-                        total,
-                        bpm_value,
-                        mode_value2,
-                        ctx2,
-                        current_index2,
-                        is_playing2,
-                        timeout_ref2,
-                        playback_token2,
-                        status_text2,
-                        token,
-                    );
-                }));
-            }
-
-            schedule_note(
-                0,
-                digits_value,
-                bpm_value,
-                mode_value,
-                ctx,
-                current_index.clone(),
-                is_playing.clone(),
-                timeout_ref.clone(),
-                playback_token.clone(),
-                status_text.clone(),
-                token,
-            );
+            gloo::timers::callback::Timeout::new(duration_ms, move || {
+                is_playing_done.set(false);
+                status_text_done.set("Finished".to_string());
+            })
+            .forget();
         })
     };
 
