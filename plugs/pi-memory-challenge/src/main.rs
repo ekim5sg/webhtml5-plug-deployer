@@ -158,18 +158,18 @@ fn push_named_score(name: &str, score: usize, board: &mut Vec<NamedScore>) {
 fn finish_round(
     final_score: usize,
     player_name: &str,
-    leaderboard: &UseStateHandle<Vec<usize>>,
-    named_leaderboard: &UseStateHandle<Vec<NamedScore>>,
+    leaderboard_state: &UseStateHandle<Vec<usize>>,
+    named_leaderboard_state: &UseStateHandle<Vec<NamedScore>>,
 ) {
-    let mut board = (*leaderboard).clone();
-    push_leaderboard(final_score, &mut board);
-    save_leaderboard(&board);
-    leaderboard.set(board);
+    let mut numeric_scores: Vec<usize> = (*leaderboard_state).clone();
+    push_leaderboard(final_score, &mut numeric_scores);
+    save_leaderboard(&numeric_scores);
+    leaderboard_state.set(numeric_scores);
 
-    let mut named = (*named_leaderboard).clone();
-    push_named_score(player_name, final_score, &mut named);
-    save_named_leaderboard(&named);
-    named_leaderboard.set(named);
+    let mut named_scores: Vec<NamedScore> = (*named_leaderboard_state).clone();
+    push_named_score(player_name, final_score, &mut named_scores);
+    save_named_leaderboard(&named_scores);
+    named_leaderboard_state.set(named_scores);
 }
 
 #[function_component(App)]
