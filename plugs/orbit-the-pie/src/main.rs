@@ -26,22 +26,21 @@ fn app() -> Html {
         let is_running = is_running.clone();
         let speed = speed.clone();
 
-        use_effect_with(
-            ((*is_running), (*speed)),
-            move |(running, speed_value)| {
-                if !*running {
-                    return || {};
-                }
-
+        use_effect_with((is_running.clone(), speed.clone()), move |_| {
+            let interval = if *is_running {
                 let angle = angle.clone();
-                let interval = Interval::new(30, move || {
-                    let next = (*angle + *speed_value) % 360.0;
-                    angle.set(next);
-                });
+                let speed_value = *speed;
 
-                move || drop(interval)
-            },
-        );
+                Some(Interval::new(30, move || {
+                    let next = (*angle + speed_value) % 360.0;
+                    angle.set(next);
+                }))
+            } else {
+                None
+            };
+
+            move || drop(interval)
+        });
     }
 
     let on_radius_input = {
@@ -104,23 +103,23 @@ fn app() -> Html {
         Callback::from(move |_| show_labels.set(!*show_labels))
     };
 
-    let orbit_size = radius * 2.0;
+    let orbit_size = *radius * 2.0;
     let stage_size = 100.0_f64;
     let orbiter_size = 12.0_f64;
 
-    let angle_rad = angle.to_radians();
-    let x = 50.0 + (radius / 2.1) * angle_rad.cos();
-    let y = 50.0 + (radius / 2.1) * angle_rad.sin();
+    let angle_rad = (*angle).to_radians();
+    let x = 50.0 + (*radius / 2.1) * angle_rad.cos();
+    let y = 50.0 + (*radius / 2.1) * angle_rad.sin();
 
     let orbiter_style = format!(
         "left: calc({x:.3}% - {orbiter_size:.3}% / 2); \
          top: calc({y:.3}% - {orbiter_size:.3}% / 2);"
     );
 
+    let orbit_ring_percent = (orbit_size / 2.1).min(stage_size - 8.0);
     let orbit_ring_style = format!(
         "width: {:.3}%; height: {:.3}%;",
-        (orbit_size / 2.1).min(stage_size - 8.0),
-        (orbit_size / 2.1).min(stage_size - 8.0)
+        orbit_ring_percent, orbit_ring_percent
     );
 
     let circumference = 2.0 * std::f64::consts::PI * *radius;
