@@ -1,5 +1,5 @@
-use gloo::timers::callback::Interval;
-use web_sys::{window, AudioContext, GainNode, HtmlInputElement, OscillatorNode, OscillatorType};
+use gloo::timers::callback::Timeout;
+use web_sys::{AudioContext, GainNode, HtmlInputElement, OscillatorNode, OscillatorType};
 use yew::prelude::*;
 
 const PI_DIGITS: &str = "314159265358979323846264338327950288419716939937510\
@@ -84,6 +84,7 @@ fn note_duration_ms(digit: u32, bpm: u32) -> u32 {
 fn preview_notes(total_digits: usize) -> String {
     PI_DIGITS
         .chars()
+        .cycle()
         .take(total_digits)
         .filter_map(|ch| ch.to_digit(10))
         .map(digit_to_note_name)
@@ -114,7 +115,9 @@ fn play_note(ctx: &AudioContext, freq: Option<f32>, mode: &MusicMode, duration_m
     let dur_secs = duration_ms as f64 / 1000.0;
 
     let _ = gain.gain().set_value_at_time(mode.gain_multiplier(), now);
-    let _ = gain.gain().linear_ramp_to_value_at_time(0.0001, now + dur_secs * 0.95);
+    let _ = gain
+        .gain()
+        .linear_ramp_to_value_at_time(0.0001, now + dur_secs * 0.95);
 
     let _ = osc.start();
     let _ = osc.stop_with_when(now + dur_secs);
@@ -129,7 +132,8 @@ fn app() -> Html {
     let current_index = use_state(|| 0usize);
 
     let audio_ctx = use_mut_ref(|| None::<AudioContext>);
-    let playback_interval = use_mut_ref(|| None::<Interval>);
+    let timeout_ref = use_mut_ref(|| None::<Timeout>);
+    let playback_token = use_mut_ref(|| 0u64);
 
     let notes_preview = preview_notes(*digits);
 
@@ -138,11 +142,7 @@ fn app() -> Html {
         let current_index = current_index.clone();
         Callback::from(move |e: InputEvent| {
             let input: HtmlInputElement = e.target_unchecked_into();
-            let value = input
-                .value()
-                .parse::<usize>()
-                .unwrap_or(24)
-                .clamp(8, 96);
+            let value = input.value().parse::<usize>().unwrap_or(24).clamp(8, 96);
             digits.set(value);
             current_index.set(0);
         })
@@ -152,11 +152,7 @@ fn app() -> Html {
         let bpm = bpm.clone();
         Callback::from(move |e: InputEvent| {
             let input: HtmlInputElement = e.target_unchecked_into();
-            let value = input
-                .value()
-                .parse::<u32>()
-                .unwrap_or(120)
-                .clamp(60, 220);
+            let value = input.value().parse::<u32>().unwrap_or(120).clamp(60, 220);
             bpm.set(value);
         })
     };
@@ -179,10 +175,12 @@ fn app() -> Html {
     let stop_playback = {
         let is_playing = is_playing.clone();
         let current_index = current_index.clone();
-        let playback_interval = playback_interval.clone();
+        let timeout_ref = timeout_ref.clone();
+        let playback_token = playback_token.clone();
 
         Callback::from(move |_| {
-            *playback_interval.borrow_mut() = None;
+            *timeout_ref.borrow_mut() = None;
+            *playback_token.borrow_mut() += 1;
             is_playing.set(false);
             current_index.set(0);
         })
@@ -195,10 +193,13 @@ fn app() -> Html {
         let is_playing = is_playing.clone();
         let current_index = current_index.clone();
         let audio_ctx = audio_ctx.clone();
-        let playback_interval = playback_interval.clone();
+        let timeout_ref = timeout_ref.clone();
+        let playback_token = playback_token.clone();
 
         Callback::from(move |_| {
-            *playback_interval.borrow_mut() = None;
+            *timeout_ref.borrow_mut() = None;
+            *playback_token.borrow_mut() += 1;
+            let token = *playback_token.borrow();
 
             let ctx = if let Some(existing) = audio_ctx.borrow().as_ref() {
                 existing.clone()
@@ -219,110 +220,72 @@ fn app() -> Html {
             let bpm_value = *bpm;
             let mode_value = (*mode).clone();
 
-            let current_index_handle = current_index.clone();
-            let is_playing_handle = is_playing.clone();
-            let ctx_clone = ctx.clone();
-
-            *playback_interval.borrow_mut() = Some(Interval::new(10, move || {
-                let index = *current_index_handle;
-
-                if index >= digits_value {
-                    is_playing_handle.set(false);
+            fn schedule_note(
+                idx: usize,
+                total: usize,
+                bpm_value: u32,
+                mode_value: MusicMode,
+                ctx: AudioContext,
+                current_index: UseStateHandle<usize>,
+                is_playing: UseStateHandle<bool>,
+                timeout_ref: std::rc::Rc<std::cell::RefCell<Option<Timeout>>>,
+                playback_token: std::rc::Rc<std::cell::RefCell<u64>>,
+                token: u64,
+            ) {
+                if *playback_token.borrow() != token {
                     return;
                 }
 
-                let ch = PI_DIGITS.chars().nth(index).unwrap_or('0');
+                if idx >= total {
+                    *timeout_ref.borrow_mut() = None;
+                    is_playing.set(false);
+                    current_index.set(0);
+                    return;
+                }
+
+                let ch = PI_DIGITS.chars().cycle().nth(idx).unwrap_or('0');
                 let digit = ch.to_digit(10).unwrap_or(0);
                 let freq = digit_to_freq(digit);
                 let dur = note_duration_ms(digit, bpm_value);
 
-                play_note(&ctx_clone, freq, &mode_value, dur);
-                current_index_handle.set(index + 1);
-            }));
+                play_note(&ctx, freq, &mode_value, dur);
+                current_index.set(idx + 1);
 
-            // Replace fast polling with timed musical stepping using chained interval recreation.
-            let digits_value2 = *digits;
-            let bpm_value2 = *bpm;
-            let mode_value2 = (*mode).clone();
-            let current_index_handle2 = current_index.clone();
-            let is_playing_handle2 = is_playing.clone();
-            let ctx_clone2 = ctx.clone();
-            let playback_interval2 = playback_interval.clone();
+                let ctx2 = ctx.clone();
+                let current_index2 = current_index.clone();
+                let is_playing2 = is_playing.clone();
+                let timeout_ref2 = timeout_ref.clone();
+                let playback_token2 = playback_token.clone();
+                let mode_value2 = mode_value.clone();
 
-            let schedule_next = move || {
-                let index = *current_index_handle2;
-                if index >= digits_value2 {
-                    *playback_interval2.borrow_mut() = None;
-                    is_playing_handle2.set(false);
-                    current_index_handle2.set(0);
-                    return;
-                }
-
-                let ch = PI_DIGITS.chars().nth(index).unwrap_or('0');
-                let digit = ch.to_digit(10).unwrap_or(0);
-                let freq = digit_to_freq(digit);
-                let dur = note_duration_ms(digit, bpm_value2);
-
-                play_note(&ctx_clone2, freq, &mode_value2, dur);
-                current_index_handle2.set(index + 1);
-            };
-
-            *playback_interval.borrow_mut() = None;
-
-            let digits_value3 = *digits;
-            let bpm_value3 = *bpm;
-            let mode_value3 = (*mode).clone();
-            let current_index_handle3 = current_index.clone();
-            let is_playing_handle3 = is_playing.clone();
-            let ctx_clone3 = ctx.clone();
-            let playback_interval3 = playback_interval.clone();
-
-            let tick = move || {
-                let index = *current_index_handle3;
-                if index >= digits_value3 {
-                    *playback_interval3.borrow_mut() = None;
-                    is_playing_handle3.set(false);
-                    current_index_handle3.set(0);
-                    return;
-                }
-
-                let ch = PI_DIGITS.chars().nth(index).unwrap_or('0');
-                let digit = ch.to_digit(10).unwrap_or(0);
-                let freq = digit_to_freq(digit);
-                let dur = note_duration_ms(digit, bpm_value3);
-
-                play_note(&ctx_clone3, freq, &mode_value3, dur);
-                current_index_handle3.set(index + 1);
-
-                let next_delay = dur;
-                *playback_interval3.borrow_mut() = Some(Interval::new(next_delay, {
-                    let playback_interval_inner = playback_interval3.clone();
-                    let current_index_inner = current_index_handle3.clone();
-                    let is_playing_inner = is_playing_handle3.clone();
-                    let ctx_inner = ctx_clone3.clone();
-                    let mode_inner = mode_value3.clone();
-
-                    move || {
-                        let idx = *current_index_inner;
-                        if idx >= digits_value3 {
-                            *playback_interval_inner.borrow_mut() = None;
-                            is_playing_inner.set(false);
-                            current_index_inner.set(0);
-                            return;
-                        }
-
-                        let ch2 = PI_DIGITS.chars().nth(idx).unwrap_or('0');
-                        let digit2 = ch2.to_digit(10).unwrap_or(0);
-                        let freq2 = digit_to_freq(digit2);
-                        let dur2 = note_duration_ms(digit2, bpm_value3);
-
-                        play_note(&ctx_inner, freq2, &mode_inner, dur2);
-                        current_index_inner.set(idx + 1);
-                    }
+                *timeout_ref.borrow_mut() = Some(Timeout::new(dur, move || {
+                    schedule_note(
+                        idx + 1,
+                        total,
+                        bpm_value,
+                        mode_value2,
+                        ctx2,
+                        current_index2,
+                        is_playing2,
+                        timeout_ref2,
+                        playback_token2,
+                        token,
+                    );
                 }));
-            };
+            }
 
-            tick();
+            schedule_note(
+                0,
+                digits_value,
+                bpm_value,
+                mode_value,
+                ctx,
+                current_index.clone(),
+                is_playing.clone(),
+                timeout_ref.clone(),
+                playback_token.clone(),
+                token,
+            );
         })
     };
 
