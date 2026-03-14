@@ -1,7 +1,21 @@
 [package]
 name = "pi_music_generator"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2021"
 
 [dependencies]
 yew = { version = "0.21", features = ["csr"] }
+js-sys = "0.3"
+web-sys = { version = "0.3", features = [
+  "Blob",
+  "HtmlAudioElement",
+  "HtmlInputElement",
+  "Url"
+] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
