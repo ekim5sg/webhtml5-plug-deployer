@@ -75,7 +75,7 @@ body {
 
 .grid {
   display: grid;
-  grid-template-columns: 340px minmax(320px, 1fr);
+  grid-template-columns: 360px minmax(320px, 1fr);
   gap: 18px;
   align-items: start;
 }
@@ -125,7 +125,8 @@ input[type="range"] {
 }
 
 .mode-row,
-.button-row {
+.button-row,
+.instrument-row {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
@@ -162,7 +163,7 @@ button.active {
 
 .info-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 10px;
   margin-top: 14px;
 }
@@ -240,6 +241,6 @@ button.active {
   }
 
   .info-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr 1fr;
   }
 }
