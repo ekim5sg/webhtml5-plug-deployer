@@ -317,7 +317,8 @@ button.active {
 }
 
 .digits-box,
-.fact-box {
+.fact-box,
+.mission-card {
   margin-top: 14px;
   padding: 12px 14px;
   border-radius: 16px;
@@ -338,6 +339,38 @@ button.active {
   margin: 0;
   color: var(--muted);
   line-height: 1.55;
+}
+
+.mission-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 8px;
+  color: var(--accent2);
+}
+
+.mission-prompt {
+  margin: 0 0 12px;
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.mission-status {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(124, 199, 255, 0.08);
+  border: 1px solid rgba(124, 199, 255, 0.16);
+  color: var(--muted);
+  line-height: 1.45;
+  font-size: 0.93rem;
+}
+
+.mission-status.success {
+  background: rgba(140, 233, 154, 0.12);
+  border-color: rgba(140, 233, 154, 0.25);
+  color: #d9ffe0;
 }
 
 .footer-note {
