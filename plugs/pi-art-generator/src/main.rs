@@ -2,8 +2,7 @@ use gloo::timers::callback::Interval;
 use js_sys::Math;
 use wasm_bindgen::JsCast;
 use web_sys::{
-    window, Blob, CanvasRenderingContext2d, HtmlAnchorElement, HtmlCanvasElement, HtmlInputElement,
-    Url,
+    window, CanvasRenderingContext2d, HtmlAnchorElement, HtmlCanvasElement, HtmlInputElement,
 };
 use yew::prelude::*;
 
@@ -188,22 +187,19 @@ fn app() -> Html {
         let progress = progress.clone();
         let mode = mode.clone();
 
-        use_effect_with(
-            ((*digits), (*progress), (*mode).clone()),
-            move |_| {
-                if let Some((canvas, ctx)) = get_canvas_and_ctx(&canvas_ref) {
-                    draw_art(
-                        &ctx,
-                        canvas.width() as f64,
-                        canvas.height() as f64,
-                        *digits,
-                        &mode,
-                        *progress,
-                    );
-                }
-                || {}
-            },
-        );
+        use_effect_with(((*digits), (*progress), (*mode).clone()), move |_| {
+            if let Some((canvas, ctx)) = get_canvas_and_ctx(&canvas_ref) {
+                draw_art(
+                    &ctx,
+                    canvas.width() as f64,
+                    canvas.height() as f64,
+                    *digits,
+                    &mode,
+                    *progress,
+                );
+            }
+            || {}
+        });
     }
 
     {
@@ -216,9 +212,6 @@ fn app() -> Html {
                 Some(Interval::new(24, move || {
                     let next = (*progress + 12).min(*digits);
                     progress.set(next);
-                    if next >= *digits {
-                        // stop requested by state on next user interaction; visual completes here
-                    }
                 }))
             } else {
                 None
@@ -234,7 +227,11 @@ fn app() -> Html {
         let is_animating = is_animating.clone();
         Callback::from(move |e: InputEvent| {
             let input: HtmlInputElement = e.target_unchecked_into();
-            let value = input.value().parse::<usize>().unwrap_or(600).clamp(50, 5000);
+            let value = input
+                .value()
+                .parse::<usize>()
+                .unwrap_or(600)
+                .clamp(50, 5000);
             digits.set(value);
             progress.set(value);
             is_animating.set(false);
@@ -315,7 +312,6 @@ fn app() -> Html {
 
             anchor.set_href(&data_url);
             anchor.set_download("pi-art-generator.png");
-            let _ = anchor.style().set_property("display", "none");
 
             if let Some(body) = document.body() {
                 let _ = body.append_child(&anchor);
