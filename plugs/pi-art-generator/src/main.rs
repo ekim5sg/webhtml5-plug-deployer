@@ -166,7 +166,7 @@ fn draw_art(
     ctx.set_fill_style_str("rgba(255,255,255,0.55)");
     ctx.set_font("14px Arial");
     let _ = ctx.fill_text(
-        &format!("Mode: {} • Digits: {}", mode.label(), total_digits),
+        &format!("Mode: {} • Digits: {} • Drawn: {}", mode.label(), total_digits, max_steps),
         18.0,
         54.0,
     );
@@ -181,13 +181,19 @@ fn app() -> Html {
     let is_animating = use_state(|| false);
     let mode = use_state(|| ArtMode::Spiral);
 
+    // Keeps live animation progress in sync across interval ticks.
+    let live_progress = use_mut_ref(|| 600usize);
+
     {
         let canvas_ref = canvas_ref.clone();
         let digits = digits.clone();
         let progress = progress.clone();
         let mode = mode.clone();
+        let live_progress = live_progress.clone();
 
         use_effect_with(((*digits), (*progress), (*mode).clone()), move |_| {
+            *live_progress.borrow_mut() = *progress;
+
             if let Some((canvas, ctx)) = get_canvas_and_ctx(&canvas_ref) {
                 draw_art(
                     &ctx,
@@ -198,6 +204,7 @@ fn app() -> Html {
                     *progress,
                 );
             }
+
             || {}
         });
     }
@@ -206,12 +213,25 @@ fn app() -> Html {
         let is_animating = is_animating.clone();
         let progress = progress.clone();
         let digits = digits.clone();
+        let live_progress = live_progress.clone();
 
         use_effect_with((*is_animating, *digits), move |_| {
             let interval = if *is_animating {
+                let is_animating = is_animating.clone();
+                let progress = progress.clone();
+                let digits = digits.clone();
+                let live_progress = live_progress.clone();
+
                 Some(Interval::new(24, move || {
-                    let next = (*progress + 12).min(*digits);
+                    let current = *live_progress.borrow();
+                    let next = (current + 12).min(*digits);
+
+                    *live_progress.borrow_mut() = next;
                     progress.set(next);
+
+                    if next >= *digits {
+                        is_animating.set(false);
+                    }
                 }))
             } else {
                 None
@@ -225,6 +245,8 @@ fn app() -> Html {
         let digits = digits.clone();
         let progress = progress.clone();
         let is_animating = is_animating.clone();
+        let live_progress = live_progress.clone();
+
         Callback::from(move |e: InputEvent| {
             let input: HtmlInputElement = e.target_unchecked_into();
             let value = input
@@ -232,8 +254,10 @@ fn app() -> Html {
                 .parse::<usize>()
                 .unwrap_or(600)
                 .clamp(50, 5000);
+
             digits.set(value);
             progress.set(value);
+            *live_progress.borrow_mut() = value;
             is_animating.set(false);
         })
     };
@@ -257,8 +281,11 @@ fn app() -> Html {
         let progress = progress.clone();
         let digits = digits.clone();
         let is_animating = is_animating.clone();
+        let live_progress = live_progress.clone();
+
         Callback::from(move |_| {
             progress.set(*digits);
+            *live_progress.borrow_mut() = *digits;
             is_animating.set(false);
         })
     };
@@ -266,7 +293,10 @@ fn app() -> Html {
     let animate_draw = {
         let progress = progress.clone();
         let is_animating = is_animating.clone();
+        let live_progress = live_progress.clone();
+
         Callback::from(move |_| {
+            *live_progress.borrow_mut() = 0;
             progress.set(0);
             is_animating.set(true);
         })
@@ -276,9 +306,13 @@ fn app() -> Html {
         let canvas_ref = canvas_ref.clone();
         let is_animating = is_animating.clone();
         let progress = progress.clone();
+        let live_progress = live_progress.clone();
+
         Callback::from(move |_| {
             is_animating.set(false);
+            *live_progress.borrow_mut() = 0;
             progress.set(0);
+
             if let Some((canvas, ctx)) = get_canvas_and_ctx(&canvas_ref) {
                 clear_canvas(&ctx, canvas.width() as f64, canvas.height() as f64);
             }
@@ -287,6 +321,7 @@ fn app() -> Html {
 
     let download_png = {
         let canvas_ref = canvas_ref.clone();
+
         Callback::from(move |_| {
             let Some((canvas, _ctx)) = get_canvas_and_ctx(&canvas_ref) else {
                 return;
