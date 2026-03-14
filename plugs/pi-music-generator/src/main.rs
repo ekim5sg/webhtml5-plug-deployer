@@ -1,10 +1,14 @@
-use web_sys::{AudioContext, GainNode, HtmlInputElement, OscillatorNode, OscillatorType};
+use js_sys::{Array, Uint8Array};
+use wasm_bindgen::JsCast;
+use web_sys::{window, Blob, HtmlAudioElement, HtmlInputElement, Url};
 use yew::prelude::*;
 
 const PI_DIGITS: &str = "314159265358979323846264338327950288419716939937510\
 58209749445923078164062862089986280348253421170679\
 82148086513282306647093844609550582231725359408128\
 48111745028410270193852110555964462294895493038196";
+
+const SAMPLE_RATE: u32 = 22050;
 
 #[derive(Clone, PartialEq)]
 enum MusicMode {
@@ -22,19 +26,11 @@ impl MusicMode {
         }
     }
 
-    fn oscillator(&self) -> OscillatorType {
+    fn amplitude(&self) -> f32 {
         match self {
-            MusicMode::Calm => OscillatorType::Sine,
-            MusicMode::Arcade => OscillatorType::Square,
-            MusicMode::Space => OscillatorType::Triangle,
-        }
-    }
-
-    fn gain_multiplier(&self) -> f32 {
-        match self {
-            MusicMode::Calm => 0.05,
-            MusicMode::Arcade => 0.04,
-            MusicMode::Space => 0.045,
+            MusicMode::Calm => 0.35,
+            MusicMode::Arcade => 0.28,
+            MusicMode::Space => 0.32,
         }
     }
 }
@@ -71,8 +67,8 @@ fn digit_to_note_name(digit: u32) -> &'static str {
     }
 }
 
-fn note_duration_secs(digit: u32, bpm: u32) -> f64 {
-    let quarter = 60.0 / bpm.max(1) as f64;
+fn note_duration_secs(digit: u32, bpm: u32) -> f32 {
+    let quarter = 60.0 / bpm.max(1) as f32;
     if digit % 2 == 0 {
         quarter / 2.0
     } else {
@@ -91,71 +87,95 @@ fn preview_notes(total_digits: usize) -> String {
         .join(" • ")
 }
 
-fn unlock_audio(ctx: &AudioContext) {
-    let Ok(osc) = OscillatorNode::new(ctx) else {
-        return;
-    };
-    let Ok(gain) = GainNode::new(ctx) else {
-        return;
-    };
-
-    osc.set_type(OscillatorType::Sine);
-    osc.frequency().set_value(440.0);
-    gain.gain().set_value(0.0001);
-
-    let _ = osc.connect_with_audio_node(&gain);
-    let _ = gain.connect_with_audio_node(&ctx.destination());
-
-    let now = ctx.current_time();
-    let _ = osc.start_with_when(now);
-    let _ = osc.stop_with_when(now + 0.03);
+fn synth_sample(mode: &MusicMode, t: f32, freq: f32) -> f32 {
+    let phase = 2.0 * std::f32::consts::PI * freq * t;
+    match mode {
+        MusicMode::Calm => phase.sin(),
+        MusicMode::Arcade => {
+            if phase.sin() >= 0.0 { 1.0 } else { -1.0 }
+        }
+        MusicMode::Space => {
+            let tri = (2.0 / std::f32::consts::PI) * phase.sin().asin();
+            0.75 * tri + 0.25 * (phase * 0.5).sin()
+        }
+    }
 }
 
-fn schedule_melody(
-    ctx: &AudioContext,
-    total_digits: usize,
-    bpm: u32,
-    mode: &MusicMode,
-) -> f64 {
-    let start_time = ctx.current_time() + 0.05;
-    let mut t = start_time;
+fn generate_wav_bytes(total_digits: usize, bpm: u32, mode: &MusicMode) -> Vec<u8> {
+    let digits: Vec<u32> = PI_DIGITS
+        .chars()
+        .cycle()
+        .take(total_digits)
+        .filter_map(|ch| ch.to_digit(10))
+        .collect();
 
-    for ch in PI_DIGITS.chars().cycle().take(total_digits) {
-        let digit = ch.to_digit(10).unwrap_or(0);
-        let dur = note_duration_secs(digit, bpm);
+    let mut samples: Vec<i16> = Vec::new();
+
+    for digit in digits {
+        let duration = note_duration_secs(digit, bpm);
+        let sample_count = (duration * SAMPLE_RATE as f32) as usize;
+        let attack = ((sample_count as f32) * 0.08).max(1.0) as usize;
+        let release = ((sample_count as f32) * 0.18).max(1.0) as usize;
 
         if let Some(freq) = digit_to_freq(digit) {
-            let Ok(osc) = OscillatorNode::new(ctx) else {
-                t += dur;
-                continue;
-            };
-            let Ok(gain) = GainNode::new(ctx) else {
-                t += dur;
-                continue;
-            };
+            for i in 0..sample_count {
+                let t = i as f32 / SAMPLE_RATE as f32;
+                let mut env = 1.0_f32;
 
-            osc.set_type(mode.oscillator());
-            osc.frequency().set_value(freq);
-            gain.gain().set_value(0.0001);
+                if i < attack {
+                    env = i as f32 / attack as f32;
+                } else if i > sample_count.saturating_sub(release) {
+                    let remain = sample_count.saturating_sub(i);
+                    env = remain as f32 / release as f32;
+                }
 
-            let _ = osc.connect_with_audio_node(&gain);
-            let _ = gain.connect_with_audio_node(&ctx.destination());
-
-            let attack_gain = mode.gain_multiplier();
-            let _ = gain.gain().set_value_at_time(0.0001, t);
-            let _ = gain.gain().linear_ramp_to_value_at_time(attack_gain, t + 0.01);
-            let _ = gain
-                .gain()
-                .linear_ramp_to_value_at_time(0.0001, t + dur * 0.92);
-
-            let _ = osc.start_with_when(t);
-            let _ = osc.stop_with_when(t + dur);
+                let value = synth_sample(mode, t, freq) * env * mode.amplitude();
+                let pcm = (value.clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
+                samples.push(pcm);
+            }
+        } else {
+            samples.extend(std::iter::repeat_n(0i16, sample_count));
         }
-
-        t += dur;
     }
 
-    t
+    let data_len = (samples.len() * 2) as u32;
+    let file_len = 36 + data_len;
+
+    let mut wav: Vec<u8> = Vec::with_capacity((44 + data_len) as usize);
+
+    wav.extend_from_slice(b"RIFF");
+    wav.extend_from_slice(&file_len.to_le_bytes());
+    wav.extend_from_slice(b"WAVE");
+
+    wav.extend_from_slice(b"fmt ");
+    wav.extend_from_slice(&16u32.to_le_bytes()); // PCM chunk size
+    wav.extend_from_slice(&1u16.to_le_bytes());  // PCM format
+    wav.extend_from_slice(&1u16.to_le_bytes());  // mono
+    wav.extend_from_slice(&SAMPLE_RATE.to_le_bytes());
+    let byte_rate = SAMPLE_RATE * 2;
+    wav.extend_from_slice(&byte_rate.to_le_bytes());
+    wav.extend_from_slice(&2u16.to_le_bytes()); // block align
+    wav.extend_from_slice(&16u16.to_le_bytes()); // bits/sample
+
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&data_len.to_le_bytes());
+
+    for s in samples {
+        wav.extend_from_slice(&s.to_le_bytes());
+    }
+
+    wav
+}
+
+fn make_audio_url(bytes: &[u8]) -> Option<String> {
+    let arr = Uint8Array::new_with_length(bytes.len() as u32);
+    arr.copy_from(bytes);
+
+    let parts = Array::new();
+    parts.push(&arr.buffer());
+
+    let blob = Blob::new_with_u8_array_sequence(&parts).ok()?;
+    Url::create_object_url_with_blob(&blob).ok()
 }
 
 #[function_component(App)]
@@ -164,10 +184,10 @@ fn app() -> Html {
     let bpm = use_state(|| 120u32);
     let mode = use_state(|| MusicMode::Calm);
     let is_playing = use_state(|| false);
-    let audio_enabled = use_state(|| false);
-    let status_text = use_state(|| "Tap Enable Audio first on iPhone".to_string());
+    let status_text = use_state(|| "Ready".to_string());
 
-    let audio_ctx = use_mut_ref(|| None::<AudioContext>);
+    let audio_ref = use_mut_ref(|| None::<HtmlAudioElement>);
+    let current_url = use_mut_ref(|| None::<String>);
 
     let notes_preview = preview_notes(*digits);
 
@@ -204,39 +224,15 @@ fn app() -> Html {
         Callback::from(move |_| mode.set(MusicMode::Space))
     };
 
-    let enable_audio = {
-        let audio_enabled = audio_enabled.clone();
-        let audio_ctx = audio_ctx.clone();
-        let status_text = status_text.clone();
-
-        Callback::from(move |_| {
-            let ctx = if let Some(existing) = audio_ctx.borrow().as_ref() {
-                existing.clone()
-            } else {
-                let Ok(created) = AudioContext::new() else {
-                    status_text.set("Could not create AudioContext".to_string());
-                    return;
-                };
-                *audio_ctx.borrow_mut() = Some(created.clone());
-                created
-            };
-
-            let _ = ctx.resume();
-            unlock_audio(&ctx);
-
-            audio_enabled.set(true);
-            status_text.set("Audio enabled. Tap Play.".to_string());
-        })
-    };
-
     let stop_playback = {
         let is_playing = is_playing.clone();
         let status_text = status_text.clone();
-        let audio_ctx = audio_ctx.clone();
+        let audio_ref = audio_ref.clone();
 
         Callback::from(move |_| {
-            if let Some(ctx) = audio_ctx.borrow().as_ref() {
-                let _ = ctx.suspend();
+            if let Some(audio) = audio_ref.borrow().as_ref() {
+                let _ = audio.pause();
+                audio.set_current_time(0.0);
             }
             is_playing.set(false);
             status_text.set("Stopped".to_string());
@@ -248,43 +244,49 @@ fn app() -> Html {
         let bpm = bpm.clone();
         let mode = mode.clone();
         let is_playing = is_playing.clone();
-        let audio_enabled = audio_enabled.clone();
-        let audio_ctx = audio_ctx.clone();
         let status_text = status_text.clone();
+        let audio_ref = audio_ref.clone();
+        let current_url = current_url.clone();
 
         Callback::from(move |_| {
-            if !*audio_enabled {
-                status_text.set("Tap Enable Audio first".to_string());
-                return;
+            if let Some(audio) = audio_ref.borrow().as_ref() {
+                let _ = audio.pause();
             }
 
-            let Some(ctx) = audio_ctx.borrow().as_ref().cloned() else {
-                status_text.set("Audio context missing. Tap Enable Audio again.".to_string());
+            if let Some(old_url) = current_url.borrow_mut().take() {
+                let _ = Url::revoke_object_url(&old_url);
+            }
+
+            let bytes = generate_wav_bytes(*digits, *bpm, &mode);
+            let Some(url) = make_audio_url(&bytes) else {
+                status_text.set("Could not create WAV URL".to_string());
                 return;
             };
 
-            let _ = ctx.resume();
+            let Ok(audio) = HtmlAudioElement::new_with_src(&url) else {
+                status_text.set("Could not create audio element".to_string());
+                let _ = Url::revoke_object_url(&url);
+                return;
+            };
 
-            // Schedule the full melody immediately inside this tap handler.
-            let end_time = schedule_melody(&ctx, *digits, *bpm, &mode);
+            audio.set_preload("auto");
 
-            is_playing.set(true);
-            status_text.set(format!(
-                "Playing {} notes in {} mode",
-                *digits,
-                mode.label()
-            ));
-
-            // Best-effort UI reset after playback duration.
-            let is_playing_done = is_playing.clone();
-            let status_text_done = status_text.clone();
-            let duration_ms = ((end_time - ctx.current_time()).max(0.0) * 1000.0) as u32 + 50;
-
-            gloo::timers::callback::Timeout::new(duration_ms, move || {
-                is_playing_done.set(false);
-                status_text_done.set("Finished".to_string());
-            })
-            .forget();
+            match audio.play() {
+                Ok(_promise) => {
+                    *audio_ref.borrow_mut() = Some(audio);
+                    *current_url.borrow_mut() = Some(url);
+                    is_playing.set(true);
+                    status_text.set(format!(
+                        "Playing {} notes in {} mode",
+                        *digits,
+                        mode.label()
+                    ));
+                }
+                Err(_) => {
+                    status_text.set("Playback blocked by browser".to_string());
+                    let _ = Url::revoke_object_url(&url);
+                }
+            }
         })
     };
 
@@ -356,10 +358,7 @@ fn app() -> Html {
 
                     <h3>{ "Playback" }</h3>
                     <div class="button-row">
-                        <button class="primary" onclick={enable_audio}>
-                            { if *audio_enabled { "Audio Enabled" } else { "Enable Audio" } }
-                        </button>
-                        <button class="primary" onclick={start_playback} disabled={!*audio_enabled}>
+                        <button class="primary" onclick={start_playback}>
                             { "Play" }
                         </button>
                         <button class="secondary" onclick={stop_playback}>
@@ -375,7 +374,15 @@ fn app() -> Html {
                 <main class="card">
                     <h2>{ "Pi Melody Preview" }</h2>
 
-                    <span class="status-pill">{ (*status_text).clone() }</span>
+                    <span class="status-pill">
+                        {
+                            if *is_playing {
+                                (*status_text).clone()
+                            } else {
+                                (*status_text).clone()
+                            }
+                        }
+                    </span>
 
                     <div class="info-grid">
                         <div class="info-card">
