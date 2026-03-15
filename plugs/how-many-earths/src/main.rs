@@ -652,11 +652,13 @@ fn render_quiz_card(
                                         let quiz_score_for_check = quiz_score_handle.clone();
                                         let audio_unlocked_for_check = audio_unlocked_handle.clone();
                                         let audio_ref_for_check = audio_ref.clone();
+                                        let quiz_selected_for_check = quiz_selected_handle.clone();
+
                                         html! {
                                             <button
                                                 class="quiz-btn"
                                                 onclick={Callback::from(move |_| {
-                                                    if let Some(selected_idx) = *quiz_selected_handle {
+                                                    if let Some(selected_idx) = *quiz_selected_for_check {
                                                         let correct = selected_idx == current_question.correct_index;
                                                         if correct {
                                                             quiz_score_for_check.set(*quiz_score_for_check + 1);
