@@ -1,4 +1,4 @@
-use web_sys::HtmlInputElement;
+use web_sys::{HtmlAudioElement, HtmlInputElement};
 use yew::prelude::*;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -25,6 +25,14 @@ struct Planet {
     accent: &'static str,
     blurb: &'static str,
     fact: &'static str,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+struct QuizQuestion {
+    prompt: &'static str,
+    options: [&'static str; 4],
+    correct_index: usize,
+    explanation: &'static str,
 }
 
 const PLANETS: [Planet; 4] = [
@@ -70,6 +78,32 @@ const PLANETS: [Planet; 4] = [
     },
 ];
 
+const QUIZ_QUESTIONS: [QuizQuestion; 3] = [
+    QuizQuestion {
+        prompt: "Which planet in this app can hold the most Earths by volume?",
+        options: ["Saturn", "Neptune", "Jupiter", "Uranus"],
+        correct_index: 2,
+        explanation: "Jupiter is the largest planet here and can hold about 1,321 Earths by volume.",
+    },
+    QuizQuestion {
+        prompt: "Why is a planet's volume comparison so much bigger than its diameter comparison?",
+        options: [
+            "Because planets stretch at night",
+            "Because volume measures 3D space, not just width",
+            "Because only rings count",
+            "Because Earth gets smaller in space",
+        ],
+        correct_index: 1,
+        explanation: "Diameter is one line across. Volume measures space in three dimensions, so it grows much faster.",
+    },
+    QuizQuestion {
+        prompt: "Jupiter is about 11 Earths wide. Which quick estimate best matches its volume idea?",
+        options: ["11 + 11 + 11", "11 × 2", "11 × 11 × 11", "11 - 1"],
+        correct_index: 2,
+        explanation: "A quick cube-style intuition is 11 × 11 × 11, which gets close to Jupiter's volume comparison.",
+    },
+];
+
 fn planet_by_key(key: PlanetKey) -> Planet {
     PLANETS
         .iter()
@@ -78,12 +112,36 @@ fn planet_by_key(key: PlanetKey) -> Planet {
         .unwrap_or(PLANETS[0])
 }
 
+fn play_theme(audio_ref: &NodeRef) {
+    if let Some(audio) = audio_ref.cast::<HtmlAudioElement>() {
+        let _ = audio.pause();
+        audio.set_current_time(0.0);
+        let _ = audio.play();
+    }
+}
+
+fn stop_theme(audio_ref: &NodeRef) {
+    if let Some(audio) = audio_ref.cast::<HtmlAudioElement>() {
+        let _ = audio.pause();
+        audio.set_current_time(0.0);
+    }
+}
+
 #[function_component(App)]
 fn app() -> Html {
     let selected = use_state(|| PlanetKey::Jupiter);
     let fill_percent = use_state(|| 100u32);
     let compare_mode = use_state(|| CompareMode::Volume);
     let show_answer = use_state(|| false);
+
+    let quiz_index = use_state(|| 0usize);
+    let quiz_score = use_state(|| 0usize);
+    let quiz_selected = use_state(|| Option::<usize>::None);
+    let quiz_checked = use_state(|| false);
+    let quiz_finished = use_state(|| false);
+    let audio_unlocked = use_state(|| false);
+
+    let audio_ref = use_node_ref();
 
     let planet = planet_by_key(*selected);
 
@@ -94,6 +152,8 @@ fn app() -> Html {
     let current_diameter_value =
         planet.diameter_earths * (*fill_percent as f64 / 100.0);
     let current_diameter_value = current_diameter_value.min(planet.diameter_earths);
+
+    let current_question = QUIZ_QUESTIONS[*quiz_index];
 
     let selected_for_jupiter = selected.clone();
     let fill_for_jupiter = fill_percent.clone();
@@ -121,6 +181,17 @@ fn app() -> Html {
 
     let reveal_answer = show_answer.clone();
     let hide_answer = show_answer.clone();
+
+    let play_audio_handle = audio_ref.clone();
+    let stop_audio_handle = audio_ref.clone();
+
+    let restart_quiz_index = quiz_index.clone();
+    let restart_quiz_score = quiz_score.clone();
+    let restart_quiz_selected = quiz_selected.clone();
+    let restart_quiz_checked = quiz_checked.clone();
+    let restart_quiz_finished = quiz_finished.clone();
+    let restart_audio_unlocked = audio_unlocked.clone();
+    let restart_audio_ref = audio_ref.clone();
 
     let metric_label = match *compare_mode {
         CompareMode::Diameter => format!("{:.1}", current_diameter_value),
@@ -154,8 +225,19 @@ fn app() -> Html {
         CompareMode::Volume => "Volume",
     };
 
+    let is_current_correct = quiz_selected
+        .as_ref()
+        .is_some_and(|selected_index| *selected_index == current_question.correct_index);
+
     html! {
         <div class="app-shell">
+            <audio
+                ref={audio_ref.clone()}
+                preload="auto"
+                loop=true
+                src="assets/audio/how-many-earths-theme.mp3"
+            />
+
             <section class="hero">
                 <div class="eyebrow">{"MikeGyver Studio • STEM Build"}</div>
                 <h1>{"How Many Earths?"}</h1>
@@ -251,6 +333,24 @@ fn app() -> Html {
                             >
                                 {"🙈 Hide Answer"}
                             </button>
+
+                            <button
+                                class="toolbar-btn music"
+                                onclick={Callback::from(move |_| {
+                                    play_theme(&play_audio_handle);
+                                })}
+                            >
+                                {"▶️ Play Theme"}
+                            </button>
+
+                            <button
+                                class="toolbar-btn music"
+                                onclick={Callback::from(move |_| {
+                                    stop_theme(&stop_audio_handle);
+                                })}
+                            >
+                                {"⏹ Stop Theme"}
+                            </button>
                         </div>
 
                         <div class="stat-strip">
@@ -335,6 +435,30 @@ fn app() -> Html {
                         {render_formula_card(planet)}
                         {render_cube_ladder(planet)}
                         {render_challenge_card(planet, *show_answer, reveal_answer)}
+                        {render_quiz_card(
+                            current_question,
+                            *quiz_index,
+                            *quiz_score,
+                            *quiz_selected,
+                            *quiz_checked,
+                            *quiz_finished,
+                            *audio_unlocked,
+                            is_current_correct,
+                            quiz_selected.clone(),
+                            quiz_checked.clone(),
+                            quiz_index.clone(),
+                            quiz_score.clone(),
+                            quiz_finished.clone(),
+                            audio_unlocked.clone(),
+                            audio_ref.clone(),
+                            restart_quiz_index,
+                            restart_quiz_score,
+                            restart_quiz_selected,
+                            restart_quiz_checked,
+                            restart_quiz_finished,
+                            restart_audio_unlocked,
+                            restart_audio_ref,
+                        )}
 
                         <div class="fact">
                             {explainer_text}
@@ -361,8 +485,242 @@ fn app() -> Html {
 
             <div class="source">
                 {"Educational visualization based on commonly cited NASA Solar System Exploration comparisons. "}
-                {"This app emphasizes learning intuition: width is 1D, but volume grows like width × width × width."}
+                {"Theme audio expects a file at assets/audio/how-many-earths-theme.mp3 and is played through HTMLAudioElement for iPhone-browser-friendly playback."}
             </div>
+        </div>
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_quiz_card(
+    current_question: QuizQuestion,
+    quiz_index: usize,
+    quiz_score: usize,
+    quiz_selected: Option<usize>,
+    quiz_checked: bool,
+    quiz_finished: bool,
+    audio_unlocked: bool,
+    is_current_correct: bool,
+    quiz_selected_handle: UseStateHandle<Option<usize>>,
+    quiz_checked_handle: UseStateHandle<bool>,
+    quiz_index_handle: UseStateHandle<usize>,
+    quiz_score_handle: UseStateHandle<usize>,
+    quiz_finished_handle: UseStateHandle<bool>,
+    audio_unlocked_handle: UseStateHandle<bool>,
+    audio_ref: NodeRef,
+    restart_quiz_index: UseStateHandle<usize>,
+    restart_quiz_score: UseStateHandle<usize>,
+    restart_quiz_selected: UseStateHandle<Option<usize>>,
+    restart_quiz_checked: UseStateHandle<bool>,
+    restart_quiz_finished: UseStateHandle<bool>,
+    restart_audio_unlocked: UseStateHandle<bool>,
+    restart_audio_ref: NodeRef,
+) -> Html {
+    let total_questions = QUIZ_QUESTIONS.len();
+
+    html! {
+        <div class="quiz-card">
+            <div class="quiz-head">
+                <div class="quiz-title">{"🧠 Quiz Mode"}</div>
+                <div class="quiz-progress">
+                    {format!("Score: {} / {}", quiz_score, total_questions)}
+                </div>
+            </div>
+
+            {
+                if quiz_finished {
+                    html! {
+                        <>
+                            <div class="quiz-finished">
+                                <strong>{"Quiz complete"}</strong>
+                                <div>
+                                    {format!("You scored {} out of {}.", quiz_score, total_questions)}
+                                </div>
+
+                                {
+                                    if quiz_score == total_questions {
+                                        html! {
+                                            <div class="unlock-note">
+                                                {"Perfect score unlocked the theme song. Tap Play Theme anytime, or it should have started automatically on the final correct answer."}
+                                            </div>
+                                        }
+                                    } else {
+                                        html! {
+                                            <div class="unlock-note">
+                                                {"Almost there. Get a perfect score to unlock the celebratory theme-song moment automatically."}
+                                            </div>
+                                        }
+                                    }
+                                }
+                            </div>
+
+                            <div class="quiz-actions">
+                                <button
+                                    class="quiz-btn"
+                                    onclick={Callback::from(move |_| {
+                                        restart_quiz_index.set(0);
+                                        restart_quiz_score.set(0);
+                                        restart_quiz_selected.set(None);
+                                        restart_quiz_checked.set(false);
+                                        restart_quiz_finished.set(false);
+                                        restart_audio_unlocked.set(false);
+                                        stop_theme(&restart_audio_ref);
+                                    })}
+                                >
+                                    {"Restart Quiz"}
+                                </button>
+                            </div>
+
+                            <div class="audio-status">
+                                {
+                                    if audio_unlocked {
+                                        "Theme unlocked."
+                                    } else {
+                                        "Theme not unlocked yet."
+                                    }
+                                }
+                            </div>
+                        </>
+                    }
+                } else {
+                    html! {
+                        <>
+                            <div class="quiz-progress">
+                                {format!("Question {} of {}", quiz_index + 1, total_questions)}
+                            </div>
+
+                            <div class="quiz-question">{current_question.prompt}</div>
+
+                            <div class="quiz-options">
+                                {
+                                    for current_question.options.iter().enumerate().map(|(idx, option)| {
+                                        let quiz_selected_for_option = quiz_selected_handle.clone();
+                                        let selected = quiz_selected == Some(idx);
+                                        let class_name = if quiz_checked {
+                                            if idx == current_question.correct_index {
+                                                classes!("quiz-option", "correct")
+                                            } else if selected {
+                                                classes!("quiz-option", "wrong")
+                                            } else {
+                                                classes!("quiz-option")
+                                            }
+                                        } else if selected {
+                                            classes!("quiz-option", "selected")
+                                        } else {
+                                            classes!("quiz-option")
+                                        };
+
+                                        html! {
+                                            <button
+                                                class={class_name}
+                                                onclick={Callback::from(move |_| {
+                                                    if !quiz_checked {
+                                                        quiz_selected_for_option.set(Some(idx));
+                                                    }
+                                                })}
+                                            >
+                                                {(*option).to_string()}
+                                            </button>
+                                        }
+                                    })
+                                }
+                            </div>
+
+                            {
+                                if quiz_checked {
+                                    html! {
+                                        <div class={classes!("quiz-feedback", if is_current_correct { "good" } else { "bad" })}>
+                                            {
+                                                if is_current_correct {
+                                                    "Correct! "
+                                                } else {
+                                                    "Not quite. "
+                                                }
+                                            }
+                                            {current_question.explanation}
+                                        </div>
+                                    }
+                                } else {
+                                    html! {}
+                                }
+                            }
+
+                            <div class="quiz-actions">
+                                {
+                                    if !quiz_checked {
+                                        let quiz_checked_for_check = quiz_checked_handle.clone();
+                                        let quiz_score_for_check = quiz_score_handle.clone();
+                                        let audio_unlocked_for_check = audio_unlocked_handle.clone();
+                                        let audio_ref_for_check = audio_ref.clone();
+                                        html! {
+                                            <button
+                                                class="quiz-btn"
+                                                onclick={Callback::from(move |_| {
+                                                    if let Some(selected_idx) = *quiz_selected_handle {
+                                                        let correct = selected_idx == current_question.correct_index;
+                                                        if correct {
+                                                            quiz_score_for_check.set(*quiz_score_for_check + 1);
+                                                            let final_correct_perfect = quiz_index + 1 == total_questions
+                                                                && *quiz_score_for_check + 1 == total_questions;
+                                                            if final_correct_perfect {
+                                                                audio_unlocked_for_check.set(true);
+                                                                play_theme(&audio_ref_for_check);
+                                                            }
+                                                        }
+                                                        quiz_checked_for_check.set(true);
+                                                    }
+                                                })}
+                                            >
+                                                {"Check Answer"}
+                                            </button>
+                                        }
+                                    } else {
+                                        html! {}
+                                    }
+                                }
+
+                                {
+                                    if quiz_checked && quiz_index + 1 < total_questions {
+                                        let quiz_index_for_next = quiz_index_handle.clone();
+                                        let quiz_selected_for_next = quiz_selected_handle.clone();
+                                        let quiz_checked_for_next = quiz_checked_handle.clone();
+                                        html! {
+                                            <button
+                                                class="quiz-btn"
+                                                onclick={Callback::from(move |_| {
+                                                    quiz_index_for_next.set(*quiz_index_for_next + 1);
+                                                    quiz_selected_for_next.set(None);
+                                                    quiz_checked_for_next.set(false);
+                                                })}
+                                            >
+                                                {"Next Question"}
+                                            </button>
+                                        }
+                                    } else if quiz_checked && quiz_index + 1 == total_questions {
+                                        let quiz_finished_for_done = quiz_finished_handle.clone();
+                                        let quiz_selected_for_done = quiz_selected_handle.clone();
+                                        let quiz_checked_for_done = quiz_checked_handle.clone();
+                                        html! {
+                                            <button
+                                                class="quiz-btn"
+                                                onclick={Callback::from(move |_| {
+                                                    quiz_finished_for_done.set(true);
+                                                    quiz_selected_for_done.set(None);
+                                                    quiz_checked_for_done.set(false);
+                                                })}
+                                            >
+                                                {"Finish Quiz"}
+                                            </button>
+                                        }
+                                    } else {
+                                        html! {}
+                                    }
+                                }
+                            </div>
+                        </>
+                    }
+                }
+            }
         </div>
     }
 }
