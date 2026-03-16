@@ -52,6 +52,10 @@ body {
   min-height: 100vh;
 }
 
+button, select {
+  font: inherit;
+}
+
 button {
   appearance: none;
   border: 0;
@@ -95,8 +99,22 @@ button.ghost {
   border: 1px solid var(--border);
 }
 
+select {
+  width: 100%;
+  border-radius: 14px;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.05);
+  color: var(--text);
+  outline: none;
+}
+
+option {
+  color: #111;
+}
+
 .app-shell {
-  width: min(1240px, calc(100% - 24px));
+  width: min(1280px, calc(100% - 24px));
   margin: 0 auto;
   padding: 18px 0 40px;
 }
@@ -197,7 +215,7 @@ button.ghost {
 .card {
   background: linear-gradient(180deg, var(--panel), var(--panel-2));
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: 24px;
   box-shadow: var(--shadow);
   overflow: hidden;
 }
@@ -472,6 +490,43 @@ button.ghost {
   font-size: 1rem;
 }
 
+.screenshot-mode .layout {
+  grid-template-columns: 1fr;
+}
+
+.screenshot-mode .terminal,
+.screenshot-mode .footer-note,
+.screenshot-mode .hero-actions,
+.screenshot-mode .hero-tags,
+.screenshot-mode .controls,
+.screenshot-mode .section-hide-on-shot {
+  display: none !important;
+}
+
+.screenshot-mode .hero {
+  padding: 28px;
+}
+
+.screenshot-mode .card {
+  max-width: 980px;
+  margin: 0 auto;
+}
+
+.screenshot-mode .badge-grid,
+.screenshot-mode .metrics-grid,
+.screenshot-mode .share-stats {
+  grid-template-columns: repeat(3, minmax(0,1fr));
+}
+
+.legend-banner {
+  margin-top: 18px;
+  border-radius: 20px;
+  padding: 16px 18px;
+  border: 1px solid rgba(126,240,201,0.25);
+  background: linear-gradient(135deg, rgba(126,240,201,0.16), rgba(124,199,255,0.10));
+  font-weight: 800;
+}
+
 .terminal {
   background: #060b14;
   color: #d8e6ff;
@@ -582,7 +637,10 @@ body.theme-day .terminal {
 
   .badge-grid,
   .metrics-grid,
-  .share-stats {
+  .share-stats,
+  .screenshot-mode .badge-grid,
+  .screenshot-mode .metrics-grid,
+  .screenshot-mode .share-stats {
     grid-template-columns: 1fr;
   }
 
