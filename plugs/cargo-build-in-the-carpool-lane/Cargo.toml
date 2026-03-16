@@ -1,22 +1,16 @@
 [package]
 name = "cargo-build-in-the-carpool-lane"
-version = "0.4.0"
+version = "0.3.0"
 edition = "2021"
 
 [dependencies]
 yew = { version = "0.21", features = ["csr"] }
-gloo = { version = "0.11", features = ["timers", "file"] }
+gloo = { version = "0.11", features = ["timers"] }
 js-sys = "0.3"
-wasm-bindgen = "0.2"
 web-sys = { version = "0.3", features = [
   "Window",
   "Document",
   "HtmlElement",
   "Navigator",
-  "Clipboard",
-  "Blob",
-  "BlobPropertyBag",
-  "Url",
-  "HtmlAnchorElement",
-  "HtmlAudioElement"
+  "Clipboard"
 ] }
