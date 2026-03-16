@@ -27,6 +27,97 @@ enum ThemeMode {
     Day,
 }
 
+#[derive(Clone, PartialEq)]
+enum Difficulty {
+    ParkingLot,
+    SchoolPickup,
+    RushHour,
+    IphoneSafariDevMode,
+    ConferenceWifi,
+}
+
+impl Difficulty {
+    fn label(&self) -> &'static str {
+        match self {
+            Self::ParkingLot => "Parking Lot",
+            Self::SchoolPickup => "School Pickup",
+            Self::RushHour => "Rush Hour",
+            Self::IphoneSafariDevMode => "iPhone Safari Dev Mode",
+            Self::ConferenceWifi => "Conference Wi-Fi",
+        }
+    }
+
+    fn from_value(v: &str) -> Self {
+        match v {
+            "school_pickup" => Self::SchoolPickup,
+            "rush_hour" => Self::RushHour,
+            "iphone_safari_dev_mode" => Self::IphoneSafariDevMode,
+            "conference_wifi" => Self::ConferenceWifi,
+            _ => Self::ParkingLot,
+        }
+    }
+
+    fn as_value(&self) -> &'static str {
+        match self {
+            Self::ParkingLot => "parking_lot",
+            Self::SchoolPickup => "school_pickup",
+            Self::RushHour => "rush_hour",
+            Self::IphoneSafariDevMode => "iphone_safari_dev_mode",
+            Self::ConferenceWifi => "conference_wifi",
+        }
+    }
+
+    fn success_bias(&self) -> f64 {
+        match self {
+            Self::ParkingLot => 0.50,
+            Self::SchoolPickup => 0.42,
+            Self::RushHour => 0.33,
+            Self::IphoneSafariDevMode => 0.24,
+            Self::ConferenceWifi => 0.16,
+        }
+    }
+
+    fn warning_bias(&self) -> f64 {
+        match self {
+            Self::ParkingLot => 0.30,
+            Self::SchoolPickup => 0.34,
+            Self::RushHour => 0.37,
+            Self::IphoneSafariDevMode => 0.40,
+            Self::ConferenceWifi => 0.42,
+        }
+    }
+
+    fn battery_drain_range(&self) -> (u32, u32) {
+        match self {
+            Self::ParkingLot => (4, 9),
+            Self::SchoolPickup => (6, 11),
+            Self::RushHour => (8, 13),
+            Self::IphoneSafariDevMode => (9, 15),
+            Self::ConferenceWifi => (10, 17),
+        }
+    }
+
+    fn safari_range(&self) -> (u32, u32) {
+        match self {
+            Self::ParkingLot => (52, 92),
+            Self::SchoolPickup => (42, 84),
+            Self::RushHour => (30, 72),
+            Self::IphoneSafariDevMode => (18, 58),
+            Self::ConferenceWifi => (12, 48),
+        }
+    }
+
+    fn progress_range(&self) -> (u32, u32) {
+        match self {
+            Self::ParkingLot => (80, 100),
+            Self::SchoolPickup => (74, 96),
+            Self::RushHour => (70, 92),
+            Self::IphoneSafariDevMode => (66, 88),
+            Self::ConferenceWifi => (60, 84),
+        }
+    }
+}
+
 fn random_index(len: usize) -> usize {
     ((Math::random() * len as f64).floor() as usize).min(len.saturating_sub(1))
 }
@@ -50,7 +141,7 @@ fn phase_for_progress(progress: u32) -> String {
     }
 }
 
-fn make_outcome() -> BuildOutcome {
+fn make_outcome(difficulty: &Difficulty) -> BuildOutcome {
     let roll = Math::random();
 
     let successes = [
@@ -107,7 +198,10 @@ fn make_outcome() -> BuildOutcome {
         ),
     ];
 
-    if roll < 0.38 {
+    let success_cutoff = difficulty.success_bias();
+    let warning_cutoff = success_cutoff + difficulty.warning_bias();
+
+    if roll < success_cutoff {
         let (verdict, detail, badge) = successes[random_index(successes.len())];
         BuildOutcome {
             verdict: verdict.to_string(),
@@ -115,7 +209,7 @@ fn make_outcome() -> BuildOutcome {
             kind: OutcomeKind::Success,
             badge: badge.to_string(),
         }
-    } else if roll < 0.74 {
+    } else if roll < warning_cutoff {
         let (verdict, detail, badge) = warnings[random_index(warnings.len())];
         BuildOutcome {
             verdict: verdict.to_string(),
@@ -163,7 +257,31 @@ fn make_motivation() -> String {
     random_pick(&quotes)
 }
 
-fn build_log_script(progress: u32, phase: &str, drain: u32, outcome: &BuildOutcome) -> Vec<String> {
+fn rust_chaos_line() -> String {
+    let lines = [
+        "error[E0507]: cannot move out of optimism because it is borrowed by reality",
+        "warning: variable `weekend_plans` is never used",
+        "error[E0382]: motivation was moved into closure",
+        "help: consider borrowing courage instead",
+        "warning: function `sleep_schedule` is never used",
+        "error[E0277]: trait bound `Coffee: Compile` is not satisfied",
+        "warning: mobile Safari remains legally skeptical",
+        "note: required by a bound in `finish_the_build_anyway`",
+        "error[E0599]: no method named `inner_peace` found for struct `Developer`",
+        "help: try `clone()` on your dreams before reuse",
+    ];
+
+    random_pick(&lines)
+}
+
+fn build_log_script(
+    progress: u32,
+    phase: &str,
+    drain: u32,
+    outcome: &BuildOutcome,
+    chaos_mode: bool,
+    difficulty: &Difficulty,
+) -> Vec<String> {
     let openings = [
         "INFO  starting cargo build in the carpool lane...",
         "INFO  syncing with thumb-powered dev infrastructure...",
@@ -206,6 +324,7 @@ fn build_log_script(progress: u32, phase: &str, drain: u32, outcome: &BuildOutco
     let mut script = vec![
         random_pick(&openings),
         random_pick(&targets),
+        format!("INFO  difficulty = {}", difficulty.label()),
         random_pick(&telemetry),
         random_pick(&steps),
         format!("INFO  phase = {phase}"),
@@ -214,18 +333,32 @@ fn build_log_script(progress: u32, phase: &str, drain: u32, outcome: &BuildOutco
         format!("INFO  battery drain this run = -{}%", drain),
     ];
 
+    if chaos_mode {
+        script.insert(4, rust_chaos_line());
+        script.insert(7, rust_chaos_line());
+    }
+
     match outcome.kind {
         OutcomeKind::Success => {
             script.push("INFO  finished build pipeline".to_string());
+            if chaos_mode {
+                script.push(rust_chaos_line());
+            }
             script.push(format!("SUCCESS  {}", outcome.detail));
         }
         OutcomeKind::Warning => {
             script.push("INFO  finished build pipeline with interpretive confidence".to_string());
+            if chaos_mode {
+                script.push(rust_chaos_line());
+            }
             script.push(format!("WARN  {}", outcome.detail));
         }
         OutcomeKind::Failure => {
             script.push(format!("ERROR  {}", outcome.detail));
             script.push("HELP  suggestion: clone your dreams before use".to_string());
+            if chaos_mode {
+                script.push(rust_chaos_line());
+            }
             script.push("HELP  alternate suggestion: blame the closure respectfully".to_string());
         }
     }
@@ -233,12 +366,18 @@ fn build_log_script(progress: u32, phase: &str, drain: u32, outcome: &BuildOutco
     script
 }
 
-fn add_body_theme_class(theme: &ThemeMode) {
+fn add_body_theme_class(theme: &ThemeMode, screenshot_mode: bool) {
     if let Some(doc) = window().and_then(|w| w.document()) {
         if let Some(body) = doc.body() {
-            match theme {
-                ThemeMode::Night => body.set_class_name("theme-night"),
-                ThemeMode::Day => body.set_class_name("theme-day"),
+            let theme_class = match theme {
+                ThemeMode::Night => "theme-night",
+                ThemeMode::Day => "theme-day",
+            };
+
+            if screenshot_mode {
+                body.set_class_name(&format!("{theme_class} screenshot-mode"));
+            } else {
+                body.set_class_name(theme_class);
             }
         }
     }
@@ -390,11 +529,177 @@ fn trigger_text_download(filename: &str, content: &str) {
     let _ = Url::revoke_object_url(&url);
 }
 
+#[derive(Clone)]
+struct BuildPlan {
+    signal: String,
+    target: String,
+    mood: String,
+    resistance: u32,
+    drain: u32,
+    progress: u32,
+    phase: String,
+    outcome: BuildOutcome,
+    script: Vec<String>,
+    staged_progress_values: Vec<u32>,
+}
+
+fn make_build_plan(difficulty: &Difficulty, chaos_mode: bool) -> BuildPlan {
+    let signal_options = [
+        "1 bar + stubbornness",
+        "2 bars + faith",
+        "parking-lot Wi-Fi aura",
+        "surprisingly decent LTE",
+        "held together by hope",
+    ];
+
+    let target_options = [
+        "wasm32-unknown-unknown",
+        "mobile-safari-experimental",
+        "iphone-browser-release-ish",
+        "wasm32-unknown-unknown-and-pray",
+        "yew-prod-mobile-chaos",
+    ];
+
+    let mood_options = [
+        "Judgmental but fair",
+        "Cautiously impressed",
+        "Not mad, just strict",
+        "Emotionally unavailable",
+        "Stern, glowing, inevitable",
+    ];
+
+    let (drain_min, drain_max) = difficulty.battery_drain_range();
+    let (safari_min, safari_max) = difficulty.safari_range();
+    let (progress_min, progress_max) = difficulty.progress_range();
+
+    let final_progress = random_range(progress_min, progress_max);
+    let phase = phase_for_progress(final_progress);
+    let outcome = make_outcome(difficulty);
+    let drain = random_range(drain_min, drain_max);
+
+    let staged = vec![
+        5u32,
+        12,
+        21,
+        33,
+        46,
+        58,
+        69,
+        79,
+        90,
+        final_progress,
+    ];
+
+    let script = build_log_script(final_progress, &phase, drain, &outcome, chaos_mode, difficulty);
+
+    BuildPlan {
+        signal: random_pick(&signal_options),
+        target: random_pick(&target_options),
+        mood: random_pick(&mood_options),
+        resistance: random_range(safari_min, safari_max),
+        drain,
+        progress: final_progress,
+        phase,
+        outcome,
+        script,
+        staged_progress_values: staged,
+    }
+}
+
+fn schedule_build_run(
+    plan: BuildPlan,
+    logs: UseStateHandle<Vec<String>>,
+    outcome: UseStateHandle<Option<BuildOutcome>>,
+    build_count: UseStateHandle<u32>,
+    progress: UseStateHandle<u32>,
+    phase: UseStateHandle<String>,
+    env_signal: UseStateHandle<String>,
+    env_battery: UseStateHandle<u32>,
+    env_target: UseStateHandle<String>,
+    env_mood: UseStateHandle<String>,
+    safari_resistance: UseStateHandle<u32>,
+    is_building: UseStateHandle<bool>,
+    sound_enabled: UseStateHandle<bool>,
+    run_delay_ms: u32,
+    on_finish: Option<Callback<()>>,
+) {
+    let start_logs = logs.clone();
+    let start_phase = phase.clone();
+    let start_progress = progress.clone();
+    let start_env_signal = env_signal.clone();
+    let start_env_target = env_target.clone();
+    let start_env_mood = env_mood.clone();
+    let start_env_battery = env_battery.clone();
+    let start_safari = safari_resistance.clone();
+    let start_is_building = is_building.clone();
+
+    Timeout::new(run_delay_ms, move || {
+        start_is_building.set(true);
+        start_env_signal.set(plan.signal.clone());
+        start_env_target.set(plan.target.clone());
+        start_env_mood.set(plan.mood.clone());
+        start_safari.set(plan.resistance);
+
+        let current_battery = *start_env_battery;
+        start_env_battery.set(current_battery.saturating_sub(plan.drain));
+
+        start_progress.set(1);
+        start_phase.set("Bootstrapping questionable brilliance".to_string());
+        start_logs.set(vec![
+            "INFO  preparing animated build sequence...".to_string(),
+            "INFO  conditions accepted. consequences pending.".to_string(),
+        ]);
+
+        for (idx, line) in plan.script.clone().into_iter().enumerate() {
+            let logs = logs.clone();
+            let progress = progress.clone();
+            let phase = phase.clone();
+            let outcome = outcome.clone();
+            let build_count = build_count.clone();
+            let is_building = is_building.clone();
+            let outcome_final = plan.outcome.clone();
+            let phase_final = plan.phase.clone();
+            let staged_progress_values = plan.staged_progress_values.clone();
+            let final_progress = plan.progress;
+            let sound_enabled = sound_enabled.clone();
+            let on_finish = on_finish.clone();
+
+            Timeout::new(run_delay_ms + (idx as u32) * 520 + 180, move || {
+                let mut current = (*logs).clone();
+                current.push(line);
+                logs.set(current);
+
+                let staged = staged_progress_values.get(idx).copied().unwrap_or(final_progress);
+                progress.set(staged);
+                phase.set(phase_for_progress(staged));
+
+                if idx + 1 == staged_progress_values.len() {
+                    progress.set(final_progress);
+                    phase.set(phase_final);
+                    outcome.set(Some(outcome_final.clone()));
+                    build_count.set(*build_count + 1);
+                    is_building.set(false);
+
+                    if *sound_enabled {
+                        play_outcome_sound(&outcome_final.kind);
+                    }
+
+                    if let Some(cb) = on_finish {
+                        cb.emit(());
+                    }
+                }
+            })
+            .forget();
+        }
+    })
+    .forget();
+}
+
 #[function_component(App)]
 fn app() -> Html {
     let logs = use_state(|| {
         vec![
-            "Cargo Build in the Carpool Lane v4 ready.".to_string(),
+            "Cargo Build in the Carpool Lane v5 ready.".to_string(),
             "Tap “Start Animated Build” to test your courage under mobile conditions.".to_string(),
         ]
     });
@@ -411,6 +716,12 @@ fn app() -> Html {
     let sound_enabled = use_state(|| true);
     let certificate_flash = use_state(|| false);
     let share_flash = use_state(|| false);
+    let screenshot_mode = use_state(|| false);
+    let chaos_mode = use_state(|| true);
+    let demo_mode = use_state(|| false);
+    let demo_count = use_state(|| 0u32);
+    let legend_unlocked = use_state(|| false);
+    let difficulty = use_state(|| Difficulty::ParkingLot);
 
     let env_signal = use_state(|| "2 bars + faith".to_string());
     let env_battery = use_state(|| 17u32);
@@ -420,8 +731,9 @@ fn app() -> Html {
 
     {
         let theme = theme.clone();
-        use_effect_with(theme, move |theme_mode| {
-            add_body_theme_class(theme_mode);
+        let screenshot_mode = screenshot_mode.clone();
+        use_effect_with((theme, screenshot_mode), move |(theme_mode, shot_mode)| {
+            add_body_theme_class(theme_mode, *shot_mode);
             || ()
         });
     }
@@ -441,6 +753,20 @@ fn app() -> Html {
         let sound_enabled = sound_enabled.clone();
         Callback::from(move |_| {
             sound_enabled.set(!*sound_enabled);
+        })
+    };
+
+    let on_toggle_screenshot = {
+        let screenshot_mode = screenshot_mode.clone();
+        Callback::from(move |_| {
+            screenshot_mode.set(!*screenshot_mode);
+        })
+    };
+
+    let on_toggle_chaos = {
+        let chaos_mode = chaos_mode.clone();
+        Callback::from(move |_| {
+            chaos_mode.set(!*chaos_mode);
         })
     };
 
@@ -492,13 +818,15 @@ fn app() -> Html {
         let env_target = env_target.clone();
         let env_mood = env_mood.clone();
         let safari_resistance = safari_resistance.clone();
+        let difficulty = difficulty.clone();
         let copied = copied.clone();
 
         Callback::from(move |_| {
             let result_text = if let Some(result) = &*outcome {
                 format!(
-                    "Cargo Build in the Carpool Lane v4\n\
+                    "Cargo Build in the Carpool Lane v5\n\
                      Build #{}\n\
+                     Difficulty: {}\n\
                      Verdict: {}\n\
                      Detail: {}\n\
                      Badge: {}\n\
@@ -510,6 +838,7 @@ fn app() -> Html {
                      Compiler Mood: {}\n\
                      Safari Resistance: {}/100",
                     *build_count,
+                    difficulty.label(),
                     result.verdict,
                     result.detail,
                     result.badge,
@@ -522,7 +851,7 @@ fn app() -> Html {
                     *safari_resistance
                 )
             } else {
-                "Cargo Build in the Carpool Lane v4\nNo completed build report yet.".to_string()
+                "Cargo Build in the Carpool Lane v5\nNo completed build report yet.".to_string()
             };
 
             if let Some(clipboard) = window().map(|w| w.navigator().clipboard()) {
@@ -548,6 +877,7 @@ fn app() -> Html {
         let env_target = env_target.clone();
         let env_mood = env_mood.clone();
         let safari_resistance = safari_resistance.clone();
+        let difficulty = difficulty.clone();
         let certificate_flash = certificate_flash.clone();
 
         Callback::from(move |_| {
@@ -556,8 +886,9 @@ fn app() -> Html {
                     "CERTIFICATE OF IMPROBABLE COMPILATION\n\
                      ====================================\n\n\
                      This certifies that Build #{} of\n\
-                     Cargo Build in the Carpool Lane v4\n\
+                     Cargo Build in the Carpool Lane v5\n\
                      was attempted under deeply mobile conditions.\n\n\
+                     Difficulty: {}\n\
                      Verdict: {}\n\
                      Detail: {}\n\
                      Badge: {}\n\
@@ -574,6 +905,7 @@ fn app() -> Html {
                      Signed,\n\
                      The Department of Unreasonable Optimism\n",
                     *build_count,
+                    difficulty.label(),
                     result.verdict,
                     result.detail,
                     result.badge,
@@ -628,10 +960,13 @@ fn app() -> Html {
         let is_building = is_building.clone();
         let certificate_flash = certificate_flash.clone();
         let share_flash = share_flash.clone();
+        let demo_mode = demo_mode.clone();
+        let demo_count = demo_count.clone();
+        let legend_unlocked = legend_unlocked.clone();
 
         Callback::from(move |_| {
             logs.set(vec![
-                "Cargo Build in the Carpool Lane v4 ready.".to_string(),
+                "Cargo Build in the Carpool Lane v5 ready.".to_string(),
                 "Tap “Start Animated Build” to test your courage under mobile conditions.".to_string(),
             ]);
             outcome.set(None);
@@ -648,6 +983,9 @@ fn app() -> Html {
             is_building.set(false);
             certificate_flash.set(false);
             share_flash.set(false);
+            demo_mode.set(false);
+            demo_count.set(0);
+            legend_unlocked.set(false);
         })
     };
 
@@ -666,105 +1004,169 @@ fn app() -> Html {
         let safari_resistance = safari_resistance.clone();
         let is_building = is_building.clone();
         let sound_enabled = sound_enabled.clone();
+        let difficulty = difficulty.clone();
+        let chaos_mode = chaos_mode.clone();
+        let demo_mode = demo_mode.clone();
+        let demo_count = demo_count.clone();
+        let legend_unlocked = legend_unlocked.clone();
 
         Callback::from(move |_| {
             if *is_building {
                 return;
             }
 
-            is_building.set(true);
+            demo_mode.set(false);
+            demo_count.set(0);
+            legend_unlocked.set(false);
+
             outcome.set(None);
             excuse.set(make_excuse());
             motivation.set(make_motivation());
 
-            let signal_options = [
-                "1 bar + stubbornness",
-                "2 bars + faith",
-                "parking-lot Wi-Fi aura",
-                "surprisingly decent LTE",
-                "held together by hope",
-            ];
+            let plan = make_build_plan(&difficulty, *chaos_mode);
 
-            let target_options = [
-                "wasm32-unknown-unknown",
-                "mobile-safari-experimental",
-                "iphone-browser-release-ish",
-                "wasm32-unknown-unknown-and-pray",
-                "yew-prod-mobile-chaos",
-            ];
+            schedule_build_run(
+                plan,
+                logs.clone(),
+                outcome.clone(),
+                build_count.clone(),
+                progress.clone(),
+                phase.clone(),
+                env_signal.clone(),
+                env_battery.clone(),
+                env_target.clone(),
+                env_mood.clone(),
+                safari_resistance.clone(),
+                is_building.clone(),
+                sound_enabled.clone(),
+                0,
+                None,
+            );
+        })
+    };
 
-            let mood_options = [
-                "Judgmental but fair",
-                "Cautiously impressed",
-                "Not mad, just strict",
-                "Emotionally unavailable",
-                "Stern, glowing, inevitable",
-            ];
+    let on_demo_mode = {
+        let logs = logs.clone();
+        let outcome = outcome.clone();
+        let build_count = build_count.clone();
+        let progress = progress.clone();
+        let phase = phase.clone();
+        let excuse = excuse.clone();
+        let motivation = motivation.clone();
+        let env_signal = env_signal.clone();
+        let env_battery = env_battery.clone();
+        let env_target = env_target.clone();
+        let env_mood = env_mood.clone();
+        let safari_resistance = safari_resistance.clone();
+        let is_building = is_building.clone();
+        let sound_enabled = sound_enabled.clone();
+        let difficulty = difficulty.clone();
+        let chaos_mode = chaos_mode.clone();
+        let demo_mode = demo_mode.clone();
+        let demo_count = demo_count.clone();
+        let legend_unlocked = legend_unlocked.clone();
 
-            let new_signal = random_pick(&signal_options);
-            let new_target = random_pick(&target_options);
-            let new_mood = random_pick(&mood_options);
-            let new_resistance = random_range(18, 96);
-            let drain = random_range(4, 13);
-            let new_progress = random_range(72, 100);
-            let new_phase = phase_for_progress(new_progress);
-            let new_outcome = make_outcome();
-
-            let current_battery = *env_battery;
-            let new_battery = current_battery.saturating_sub(drain);
-
-            env_signal.set(new_signal);
-            env_target.set(new_target);
-            env_mood.set(new_mood);
-            env_battery.set(new_battery);
-            safari_resistance.set(new_resistance);
-
-            progress.set(1);
-            phase.set("Bootstrapping questionable brilliance".to_string());
-
-            let script = build_log_script(new_progress, &new_phase, drain, &new_outcome);
-            let staged_progress_values = vec![5u32, 12, 21, 33, 46, 58, 69, 79, 90, new_progress];
-
-            logs.set(vec![
-                "INFO  preparing animated build sequence...".to_string(),
-                "INFO  conditions accepted. consequences pending.".to_string(),
-            ]);
-
-            for (idx, line) in script.into_iter().enumerate() {
-                let logs = logs.clone();
-                let progress = progress.clone();
-                let phase = phase.clone();
-                let outcome = outcome.clone();
-                let build_count = build_count.clone();
-                let is_building = is_building.clone();
-                let phase_final = new_phase.clone();
-                let outcome_final = new_outcome.clone();
-                let staged_progress_values = staged_progress_values.clone();
-                let sound_enabled = sound_enabled.clone();
-
-                Timeout::new((idx as u32) * 520 + 180, move || {
-                    let mut current = (*logs).clone();
-                    current.push(line);
-                    logs.set(current);
-
-                    let staged = staged_progress_values.get(idx).copied().unwrap_or(new_progress);
-                    progress.set(staged);
-                    phase.set(phase_for_progress(staged));
-
-                    if idx + 1 == staged_progress_values.len() {
-                        progress.set(new_progress);
-                        phase.set(phase_final);
-                        outcome.set(Some(outcome_final.clone()));
-                        build_count.set(*build_count + 1);
-                        is_building.set(false);
-
-                        if *sound_enabled {
-                            play_outcome_sound(&outcome_final.kind);
-                        }
-                    }
-                })
-                .forget();
+        Callback::from(move |_| {
+            if *is_building {
+                return;
             }
+
+            demo_mode.set(true);
+            demo_count.set(0);
+            legend_unlocked.set(false);
+            outcome.set(None);
+            excuse.set(make_excuse());
+            motivation.set(make_motivation());
+
+            let demo_count_after_1 = demo_count.clone();
+            let demo_count_after_2 = demo_count.clone();
+            let demo_count_after_3 = demo_count.clone();
+            let legend_after_3 = legend_unlocked.clone();
+            let demo_mode_after_3 = demo_mode.clone();
+
+            let cb1 = Callback::from(move |_| {
+                demo_count_after_1.set(1);
+            });
+
+            let cb2 = Callback::from(move |_| {
+                demo_count_after_2.set(2);
+            });
+
+            let cb3 = Callback::from(move |_| {
+                demo_count_after_3.set(3);
+                legend_after_3.set(true);
+                demo_mode_after_3.set(false);
+            });
+
+            let plan1 = make_build_plan(&difficulty, *chaos_mode);
+            let plan2 = make_build_plan(&difficulty, *chaos_mode);
+            let plan3 = make_build_plan(&difficulty, *chaos_mode);
+
+            schedule_build_run(
+                plan1,
+                logs.clone(),
+                outcome.clone(),
+                build_count.clone(),
+                progress.clone(),
+                phase.clone(),
+                env_signal.clone(),
+                env_battery.clone(),
+                env_target.clone(),
+                env_mood.clone(),
+                safari_resistance.clone(),
+                is_building.clone(),
+                sound_enabled.clone(),
+                0,
+                Some(cb1),
+            );
+
+            schedule_build_run(
+                plan2,
+                logs.clone(),
+                outcome.clone(),
+                build_count.clone(),
+                progress.clone(),
+                phase.clone(),
+                env_signal.clone(),
+                env_battery.clone(),
+                env_target.clone(),
+                env_mood.clone(),
+                safari_resistance.clone(),
+                is_building.clone(),
+                sound_enabled.clone(),
+                6200,
+                Some(cb2),
+            );
+
+            schedule_build_run(
+                plan3,
+                logs.clone(),
+                outcome.clone(),
+                build_count.clone(),
+                progress.clone(),
+                phase.clone(),
+                env_signal.clone(),
+                env_battery.clone(),
+                env_target.clone(),
+                env_mood.clone(),
+                safari_resistance.clone(),
+                is_building.clone(),
+                sound_enabled.clone(),
+                12400,
+                Some(cb3),
+            );
+        })
+    };
+
+    let on_change_difficulty = {
+        let difficulty = difficulty.clone();
+        Callback::from(move |e: Event| {
+            let input: web_sys::HtmlElement = e.target_unchecked_into();
+            let value = js_sys::Reflect::get(&input, &"value".into())
+                .ok()
+                .and_then(|v| v.as_string())
+                .unwrap_or_else(|| "parking_lot".to_string());
+            difficulty.set(Difficulty::from_value(&value));
         })
     };
 
@@ -836,8 +1238,9 @@ fn app() -> Html {
 
     let report_preview = if let Some(result) = &*outcome {
         format!(
-            "build={} | verdict={} | battery={} | signal={} | safari={}/100 | badge={}",
+            "build={} | difficulty={} | verdict={} | battery={} | signal={} | safari={}/100 | badge={}",
             *build_count,
+            difficulty.label(),
             result.verdict,
             *env_battery,
             (*env_signal).clone(),
@@ -864,11 +1267,11 @@ fn app() -> Html {
             <section class="hero">
                 <div class="hero-top">
                     <div>
-                        <div class="eyebrow">{"🚗🦀 Viral Demo Build Edition, v4"}</div>
-                        <h1>{"Cargo Build in the Carpool Lane v4"}</h1>
+                        <div class="eyebrow">{"🚗🦀 Legendary Edition, v5"}</div>
+                        <h1>{"Cargo Build in the Carpool Lane v5"}</h1>
                         <p>
                             {"A polished fake compiler dashboard for deeply real developer energy: limited battery, questionable signal, mobile-browser drama, and the quiet refusal to give up. "}
-                            {"Now with theatrical verdicts, downloadable build certificates, a share-card preview, and iPhone-friendly generated WAV sound effects."}
+                            {"Now with screenshot mode, demo mode, Rust chaos, and difficulty levels that make bad decisions feel configurable."}
                         </p>
                     </div>
 
@@ -877,6 +1280,9 @@ fn app() -> Html {
                         <button class="secondary" onclick={on_toggle_sound}>
                             {if *sound_enabled { "🔊 Sound On" } else { "🔇 Sound Off" }}
                         </button>
+                        <button class="secondary" onclick={on_toggle_screenshot}>
+                            {if *screenshot_mode { "🖼 Exit Screenshot Mode" } else { "📸 Screenshot Mode" }}
+                        </button>
                         <button class="secondary" onclick={on_copy_report}>
                             {if *copied { "✅ Copied" } else { "📋 Copy Build Report" }}
                         </button>
@@ -884,10 +1290,10 @@ fn app() -> Html {
                 </div>
 
                 <div class="hero-tags">
-                    <span class="tag">{"Animated terminal playback"}</span>
-                    <span class="tag">{"Generated WAV sound effects"}</span>
-                    <span class="tag">{"Downloadable build certificate"}</span>
-                    <span class="tag">{"Screenshot-ready share card"}</span>
+                    <span class="tag">{"Screenshot-ready UI"}</span>
+                    <span class="tag">{"Demo Mode"}</span>
+                    <span class="tag">{"Rust Chaos Logs"}</span>
+                    <span class="tag">{"Difficulty Modes"}</span>
                 </div>
             </section>
 
@@ -921,12 +1327,32 @@ fn app() -> Html {
                                 </div>
                             </div>
 
-                            <div class="controls">
-                                <button class="primary" onclick={on_start_build} disabled={*is_building}>
+                            <div class="section-box section-hide-on-shot">
+                                <div class="section-label">{"Carpool Lane Difficulty"}</div>
+                                <select onchange={on_change_difficulty} value={difficulty.as_value()}>
+                                    <option value="parking_lot">{"Parking Lot"}</option>
+                                    <option value="school_pickup">{"School Pickup"}</option>
+                                    <option value="rush_hour">{"Rush Hour"}</option>
+                                    <option value="iphone_safari_dev_mode">{"iPhone Safari Dev Mode"}</option>
+                                    <option value="conference_wifi">{"Conference Wi-Fi"}</option>
+                                </select>
+                                <div class="card-subtitle" style="margin-top:8px;">
+                                    {format!("Current difficulty: {}", difficulty.label())}
+                                </div>
+                            </div>
+
+                            <div class="controls section-hide-on-shot">
+                                <button class="primary" onclick={on_start_build} disabled={*is_building || *demo_mode}>
                                     {if *is_building { "⏳ Building..." } else { "🚗 Start Animated Build" }}
+                                </button>
+                                <button class="secondary" onclick={on_demo_mode} disabled={*is_building || *demo_mode}>
+                                    {if *demo_mode { "🎬 Demo Running..." } else { "🎬 Demo Mode" }}
                                 </button>
                                 <button class="secondary" onclick={on_add_drama}>{"🎭 Add More Drama"}</button>
                                 <button class="secondary" onclick={on_recharge}>{"🔋 Emergency Recharge"}</button>
+                                <button class="secondary" onclick={on_toggle_chaos}>
+                                    {if *chaos_mode { "🦀 Chaos On" } else { "🙂 Chaos Off" }}
+                                </button>
                                 <button class="ghost" onclick={on_reset}>{"↺ Reset"}</button>
                             </div>
 
@@ -942,7 +1368,7 @@ fn app() -> Html {
                                 <div class="metric">
                                     <div class="metric-label">{"Terminal Status"}</div>
                                     <div class="metric-value">
-                                        {if *is_building { "Live Chaos" } else { "Standing By" }}
+                                        {if *demo_mode { "Auto Demo" } else if *is_building { "Live Chaos" } else { "Standing By" }}
                                     </div>
                                 </div>
                             </div>
@@ -950,7 +1376,6 @@ fn app() -> Html {
                             <div class="section-box">
                                 <div class="section-label">{"Build Phase"}</div>
                                 <div class="phase-value">{(*phase).clone()}</div>
-
                                 <div class="progress-wrap">
                                     <div class="progress-track">
                                         <div class="progress-fill" style={format!("width:{}%;", *progress)}></div>
@@ -961,7 +1386,7 @@ fn app() -> Html {
                                 </div>
                             </div>
 
-                            <div class="section-box">
+                            <div class="section-box section-hide-on-shot">
                                 <div class="section-label">{"Compiler Excuse of the Day"}</div>
                                 <div class="card-subtitle" style="margin-top:0;">{(*excuse).clone()}</div>
                             </div>
@@ -980,6 +1405,22 @@ fn app() -> Html {
                             </div>
 
                             {result_block}
+
+                            {if *demo_mode {
+                                html! {
+                                    <div class="legend-banner">
+                                        {format!("🎬 Demo Mode in progress • completed runs: {}", *demo_count)}
+                                    </div>
+                                }
+                            } else if *legend_unlocked {
+                                html! {
+                                    <div class="legend-banner">
+                                        {"🏆 Legend unlocked: Persistent Mobile Rust Developer"}
+                                    </div>
+                                }
+                            } else {
+                                html! {}
+                            }}
                         </div>
                     </section>
 
@@ -998,7 +1439,7 @@ fn app() -> Html {
                                 <div class="report-box">{report_preview}</div>
                             </div>
 
-                            <div class="controls">
+                            <div class="controls section-hide-on-shot">
                                 <button class="secondary" onclick={on_download_certificate}>
                                     {if *certificate_flash { "🏆 Certificate Ready" } else { "📜 Download Build Certificate" }}
                                 </button>
@@ -1010,7 +1451,7 @@ fn app() -> Html {
                             <div class="share-preview">
                                 <div class="share-preview-top">
                                     <div class="share-brand">{"MikeGyver Studio • Rust iPhone Compiler Lore"}</div>
-                                    <div class="share-brand">{"v4"}</div>
+                                    <div class="share-brand">{"v5"}</div>
                                 </div>
 
                                 <div class="share-title">{share_title}</div>
@@ -1040,8 +1481,8 @@ fn app() -> Html {
                                         <div class="share-stat-value">{format!("{}%", *progress)}</div>
                                     </div>
                                     <div class="share-stat">
-                                        <div class="share-stat-label">{"Build Count"}</div>
-                                        <div class="share-stat-value">{*build_count}</div>
+                                        <div class="share-stat-label">{"Difficulty"}</div>
+                                        <div class="share-stat-value">{difficulty.label()}</div>
                                     </div>
                                 </div>
                             </div>
@@ -1056,7 +1497,7 @@ fn app() -> Html {
                             <span class="dot"></span>
                             <span class="dot"></span>
                         </div>
-                        <div class="terminal-title">{"carpool-lane-terminal-v4.log"}</div>
+                        <div class="terminal-title">{"carpool-lane-terminal-v5.log"}</div>
                     </div>
 
                     <div class="terminal-body">
