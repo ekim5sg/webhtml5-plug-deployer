@@ -577,18 +577,7 @@ fn make_build_plan(difficulty: &Difficulty, chaos_mode: bool) -> BuildPlan {
     let outcome = make_outcome(difficulty);
     let drain = random_range(drain_min, drain_max);
 
-    let staged = vec![
-        5u32,
-        12,
-        21,
-        33,
-        46,
-        58,
-        69,
-        79,
-        90,
-        final_progress,
-    ];
+    let staged = vec![5u32, 12, 21, 33, 46, 58, 69, 79, 90, final_progress];
 
     let script = build_log_script(final_progress, &phase, drain, &outcome, chaos_mode, difficulty);
 
@@ -606,6 +595,7 @@ fn make_build_plan(difficulty: &Difficulty, chaos_mode: bool) -> BuildPlan {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn schedule_build_run(
     plan: BuildPlan,
     logs: UseStateHandle<Vec<String>>,
@@ -733,7 +723,7 @@ fn app() -> Html {
         let theme = theme.clone();
         let screenshot_mode = screenshot_mode.clone();
         use_effect_with((theme, screenshot_mode), move |(theme_mode, shot_mode)| {
-            add_body_theme_class(theme_mode, *shot_mode);
+            add_body_theme_class(theme_mode, **shot_mode);
             || ()
         });
     }
