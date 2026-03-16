@@ -1,0 +1,10 @@
+[package]
+name = "cargo-build-in-the-carpool-lane"
+version = "0.3.0"
+edition = "2021"
+
+[dependencies]
+yew = { version = "0.21", features = ["csr"] }
+gloo = { version = "0.11", features = ["timers"] }
+js-sys = "0.3"
+web-sys = { version = "0.3", features = ["Window", "Navigator", "Clipboard"] }
