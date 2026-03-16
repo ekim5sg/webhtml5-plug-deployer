@@ -233,17 +233,9 @@ fn build_log_script(progress: u32, phase: &str, drain: u32, outcome: &BuildOutco
 fn add_body_theme_class(theme: &ThemeMode) {
     if let Some(doc) = window().and_then(|w| w.document()) {
         if let Some(body) = doc.body() {
-            let classes = body.class_list();
-            let _ = classes.remove_1("theme-night");
-            let _ = classes.remove_1("theme-day");
-
             match theme {
-                ThemeMode::Night => {
-                    let _ = classes.add_1("theme-night");
-                }
-                ThemeMode::Day => {
-                    let _ = classes.add_1("theme-day");
-                }
+                ThemeMode::Night => body.set_class_name("theme-night"),
+                ThemeMode::Day => body.set_class_name("theme-day"),
             }
         }
     }
