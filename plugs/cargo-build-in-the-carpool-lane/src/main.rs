@@ -408,7 +408,6 @@ fn app() -> Html {
     let theme = use_state(|| ThemeMode::Night);
     let copied = use_state(|| false);
     let is_building = use_state(|| false);
-    let build_token = use_state(|| 0u32);
     let sound_enabled = use_state(|| true);
     let certificate_flash = use_state(|| false);
     let share_flash = use_state(|| false);
@@ -627,7 +626,6 @@ fn app() -> Html {
         let safari_resistance = safari_resistance.clone();
         let copied = copied.clone();
         let is_building = is_building.clone();
-        let build_token = build_token.clone();
         let certificate_flash = certificate_flash.clone();
         let share_flash = share_flash.clone();
 
@@ -648,7 +646,6 @@ fn app() -> Html {
             safari_resistance.set(61);
             copied.set(false);
             is_building.set(false);
-            build_token.set(*build_token + 1);
             certificate_flash.set(false);
             share_flash.set(false);
         })
@@ -668,7 +665,6 @@ fn app() -> Html {
         let env_mood = env_mood.clone();
         let safari_resistance = safari_resistance.clone();
         let is_building = is_building.clone();
-        let build_token = build_token.clone();
         let sound_enabled = sound_enabled.clone();
 
         Callback::from(move |_| {
@@ -680,9 +676,6 @@ fn app() -> Html {
             outcome.set(None);
             excuse.set(make_excuse());
             motivation.set(make_motivation());
-
-            let next_token = *build_token + 1;
-            build_token.set(next_token);
 
             let signal_options = [
                 "1 bar + stubbornness",
@@ -744,17 +737,12 @@ fn app() -> Html {
                 let outcome = outcome.clone();
                 let build_count = build_count.clone();
                 let is_building = is_building.clone();
-                let build_token_check = build_token.clone();
                 let phase_final = new_phase.clone();
                 let outcome_final = new_outcome.clone();
                 let staged_progress_values = staged_progress_values.clone();
                 let sound_enabled = sound_enabled.clone();
 
                 Timeout::new((idx as u32) * 520 + 180, move || {
-                    if *build_token_check != next_token {
-                        return;
-                    }
-
                     let mut current = (*logs).clone();
                     current.push(line);
                     logs.set(current);
