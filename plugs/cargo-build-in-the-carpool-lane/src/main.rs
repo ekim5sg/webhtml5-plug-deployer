@@ -1,9 +1,6 @@
 use gloo::timers::callback::Timeout;
-use js_sys::{Array, Math, Uint8Array};
-use wasm_bindgen::JsCast;
-use web_sys::{
-    window, Blob, BlobPropertyBag, HtmlAnchorElement, HtmlAudioElement, Url,
-};
+use js_sys::Math;
+use web_sys::window;
 use yew::prelude::*;
 
 #[derive(Clone, PartialEq)]
@@ -239,6 +236,7 @@ fn add_body_theme_class(theme: &ThemeMode) {
             let classes = body.class_list();
             let _ = classes.remove_1("theme-night");
             let _ = classes.remove_1("theme-day");
+
             match theme {
                 ThemeMode::Night => {
                     let _ = classes.add_1("theme-night");
@@ -251,157 +249,11 @@ fn add_body_theme_class(theme: &ThemeMode) {
     }
 }
 
-fn write_le_u16(bytes: &mut Vec<u8>, v: u16) {
-    bytes.push((v & 0xff) as u8);
-    bytes.push((v >> 8) as u8);
-}
-
-fn write_le_u32(bytes: &mut Vec<u8>, v: u32) {
-    bytes.push((v & 0xff) as u8);
-    bytes.push(((v >> 8) & 0xff) as u8);
-    bytes.push(((v >> 16) & 0xff) as u8);
-    bytes.push(((v >> 24) & 0xff) as u8);
-}
-
-fn generate_wav_bytes(freq_hz: f32, duration_ms: u32, volume: f32) -> Vec<u8> {
-    let sample_rate: u32 = 22050;
-    let channels: u16 = 1;
-    let bits_per_sample: u16 = 16;
-    let total_samples = (sample_rate as f32 * (duration_ms as f32 / 1000.0)) as usize;
-    let byte_rate = sample_rate * channels as u32 * bits_per_sample as u32 / 8;
-    let block_align = channels * bits_per_sample / 8;
-    let data_size = (total_samples * 2) as u32;
-
-    let mut bytes = Vec::with_capacity(44 + data_size as usize);
-    bytes.extend_from_slice(b"RIFF");
-    write_le_u32(&mut bytes, 36 + data_size);
-    bytes.extend_from_slice(b"WAVE");
-    bytes.extend_from_slice(b"fmt ");
-    write_le_u32(&mut bytes, 16);
-    write_le_u16(&mut bytes, 1);
-    write_le_u16(&mut bytes, channels);
-    write_le_u32(&mut bytes, sample_rate);
-    write_le_u32(&mut bytes, byte_rate);
-    write_le_u16(&mut bytes, block_align);
-    write_le_u16(&mut bytes, bits_per_sample);
-    bytes.extend_from_slice(b"data");
-    write_le_u32(&mut bytes, data_size);
-
-    let amp = (i16::MAX as f32 * volume).round() as i16;
-    for i in 0..total_samples {
-        let t = i as f32 / sample_rate as f32;
-        let sample = (f32::sin(2.0 * std::f32::consts::PI * freq_hz * t) * amp as f32) as i16;
-        write_le_u16(&mut bytes, sample as u16);
-    }
-
-    bytes
-}
-
-fn play_tone(freq_hz: f32, duration_ms: u32, volume: f32) {
-    let Some(win) = window() else { return; };
-    let Some(doc) = win.document() else { return; };
-
-    let wav = generate_wav_bytes(freq_hz, duration_ms, volume);
-    let arr = Uint8Array::new_with_length(wav.len() as u32);
-    arr.copy_from(&wav);
-
-    let parts = Array::new();
-    parts.push(&arr.buffer());
-
-    let bag = BlobPropertyBag::new();
-    bag.set_type("audio/wav");
-
-    let Ok(blob) = Blob::new_with_u8_array_sequence_and_options(&parts, &bag) else {
-        return;
-    };
-
-    let Ok(url) = Url::create_object_url_with_blob(&blob) else {
-        return;
-    };
-
-    let Ok(el) = doc.create_element("audio") else {
-        let _ = Url::revoke_object_url(&url);
-        return;
-    };
-
-    let Ok(audio) = el.dyn_into::<HtmlAudioElement>() else {
-        let _ = Url::revoke_object_url(&url);
-        return;
-    };
-
-    audio.set_src(&url);
-    let _ = audio.play();
-
-    Timeout::new(duration_ms + 400, move || {
-        let _ = Url::revoke_object_url(&url);
-    })
-    .forget();
-}
-
-fn play_outcome_sound(kind: &OutcomeKind) {
-    match kind {
-        OutcomeKind::Success => {
-            play_tone(660.0, 140, 0.22);
-            Timeout::new(150, move || play_tone(880.0, 180, 0.22)).forget();
-        }
-        OutcomeKind::Warning => {
-            play_tone(520.0, 160, 0.20);
-            Timeout::new(170, move || play_tone(460.0, 180, 0.18)).forget();
-        }
-        OutcomeKind::Failure => {
-            play_tone(320.0, 220, 0.22);
-            Timeout::new(210, move || play_tone(220.0, 260, 0.20)).forget();
-        }
-    }
-}
-
-fn trigger_text_download(filename: &str, content: &str) {
-    let Some(win) = window() else { return; };
-    let Some(doc) = win.document() else { return; };
-
-    let bytes = Uint8Array::from(content.as_bytes());
-    let parts = Array::new();
-    parts.push(&bytes.buffer());
-
-    let bag = BlobPropertyBag::new();
-    bag.set_type("text/plain;charset=utf-8");
-
-    let Ok(blob) = Blob::new_with_u8_array_sequence_and_options(&parts, &bag) else {
-        return;
-    };
-
-    let Ok(url) = Url::create_object_url_with_blob(&blob) else {
-        return;
-    };
-
-    let Ok(el) = doc.create_element("a") else {
-        let _ = Url::revoke_object_url(&url);
-        return;
-    };
-
-    let Ok(anchor) = el.dyn_into::<HtmlAnchorElement>() else {
-        let _ = Url::revoke_object_url(&url);
-        return;
-    };
-
-    anchor.set_href(&url);
-    anchor.set_download(filename);
-    let _ = anchor.style().set_property("display", "none");
-
-    if let Some(body) = doc.body() {
-        let _ = body.append_child(&anchor);
-        anchor.click();
-        let _ = body.remove_child(&anchor);
-    }
-
-    let _ = Url::revoke_object_url(&url);
-}
-
 #[function_component(App)]
 fn app() -> Html {
     let logs = use_state(|| {
         vec![
-            "Cargo Build in the Carpool Lane v4 ready.".to_string(),
+            "Cargo Build in the Carpool Lane v3 ready.".to_string(),
             "Tap “Start Animated Build” to test your courage under mobile conditions.".to_string(),
         ]
     });
@@ -416,9 +268,6 @@ fn app() -> Html {
     let copied = use_state(|| false);
     let is_building = use_state(|| false);
     let build_token = use_state(|| 0u32);
-    let sound_enabled = use_state(|| true);
-    let certificate_flash = use_state(|| false);
-    let share_flash = use_state(|| false);
 
     let env_signal = use_state(|| "2 bars + faith".to_string());
     let env_battery = use_state(|| 17u32);
@@ -445,17 +294,11 @@ fn app() -> Html {
         })
     };
 
-    let on_toggle_sound = {
-        let sound_enabled = sound_enabled.clone();
-        Callback::from(move |_| {
-            sound_enabled.set(!*sound_enabled);
-        })
-    };
-
     let on_add_drama = {
         let logs = logs.clone();
         let excuse = excuse.clone();
         let motivation = motivation.clone();
+
         Callback::from(move |_| {
             let extras = [
                 "warning: child in back seat requests snack-driven refactor",
@@ -480,6 +323,7 @@ fn app() -> Html {
     let on_recharge = {
         let env_battery = env_battery.clone();
         let logs = logs.clone();
+
         Callback::from(move |_| {
             let boosted = (*env_battery + 18).min(100);
             env_battery.set(boosted);
@@ -505,7 +349,7 @@ fn app() -> Html {
         Callback::from(move |_| {
             let result_text = if let Some(result) = &*outcome {
                 format!(
-                    "Cargo Build in the Carpool Lane v4\n\
+                    "Cargo Build in the Carpool Lane v3\n\
                      Build #{}\n\
                      Verdict: {}\n\
                      Detail: {}\n\
@@ -530,7 +374,7 @@ fn app() -> Html {
                     *safari_resistance
                 )
             } else {
-                "Cargo Build in the Carpool Lane v4\nNo completed build report yet.".to_string()
+                "Cargo Build in the Carpool Lane v3\nNo completed build report yet.".to_string()
             };
 
             if let Some(clipboard) = window().map(|w| w.navigator().clipboard()) {
@@ -543,80 +387,6 @@ fn app() -> Html {
                 })
                 .forget();
             }
-        })
-    };
-
-    let on_download_certificate = {
-        let outcome = outcome.clone();
-        let build_count = build_count.clone();
-        let phase = phase.clone();
-        let progress = progress.clone();
-        let env_signal = env_signal.clone();
-        let env_battery = env_battery.clone();
-        let env_target = env_target.clone();
-        let env_mood = env_mood.clone();
-        let safari_resistance = safari_resistance.clone();
-        let certificate_flash = certificate_flash.clone();
-
-        Callback::from(move |_| {
-            let content = if let Some(result) = &*outcome {
-                format!(
-                    "CERTIFICATE OF IMPROBABLE COMPILATION\n\
-                     ====================================\n\n\
-                     This certifies that Build #{} of\n\
-                     Cargo Build in the Carpool Lane v4\n\
-                     was attempted under deeply mobile conditions.\n\n\
-                     Verdict: {}\n\
-                     Detail: {}\n\
-                     Badge: {}\n\
-                     Phase: {}\n\
-                     Progress: {}%\n\
-                     Signal: {}\n\
-                     Battery: {}%\n\
-                     Target: {}\n\
-                     Compiler Mood: {}\n\
-                     Safari Resistance: {}/100\n\n\
-                     Official observation:\n\
-                     The developer persisted despite battery anxiety,\n\
-                     browser skepticism, and ambient carpool-lane chaos.\n\n\
-                     Signed,\n\
-                     The Department of Unreasonable Optimism\n",
-                    *build_count,
-                    result.verdict,
-                    result.detail,
-                    result.badge,
-                    (*phase).clone(),
-                    *progress,
-                    (*env_signal).clone(),
-                    *env_battery,
-                    (*env_target).clone(),
-                    (*env_mood).clone(),
-                    *safari_resistance
-                )
-            } else {
-                "No build certificate available yet. Complete a build first.\n".to_string()
-            };
-
-            trigger_text_download("carpool-lane-build-certificate.txt", &content);
-            certificate_flash.set(true);
-
-            let certificate_flash_reset = certificate_flash.clone();
-            Timeout::new(1600, move || {
-                certificate_flash_reset.set(false);
-            })
-            .forget();
-        })
-    };
-
-    let on_generate_share_card = {
-        let share_flash = share_flash.clone();
-        Callback::from(move |_| {
-            share_flash.set(true);
-            let share_flash_reset = share_flash.clone();
-            Timeout::new(1600, move || {
-                share_flash_reset.set(false);
-            })
-            .forget();
         })
     };
 
@@ -634,12 +404,11 @@ fn app() -> Html {
         let safari_resistance = safari_resistance.clone();
         let copied = copied.clone();
         let is_building = is_building.clone();
-        let certificate_flash = certificate_flash.clone();
-        let share_flash = share_flash.clone();
+        let build_token = build_token.clone();
 
         Callback::from(move |_| {
             logs.set(vec![
-                "Cargo Build in the Carpool Lane v4 ready.".to_string(),
+                "Cargo Build in the Carpool Lane v3 ready.".to_string(),
                 "Tap “Start Animated Build” to test your courage under mobile conditions.".to_string(),
             ]);
             outcome.set(None);
@@ -654,8 +423,7 @@ fn app() -> Html {
             safari_resistance.set(61);
             copied.set(false);
             is_building.set(false);
-            certificate_flash.set(false);
-            share_flash.set(false);
+            build_token.set(*build_token + 1);
         })
     };
 
@@ -674,7 +442,6 @@ fn app() -> Html {
         let safari_resistance = safari_resistance.clone();
         let is_building = is_building.clone();
         let build_token = build_token.clone();
-        let sound_enabled = sound_enabled.clone();
 
         Callback::from(move |_| {
             if *is_building {
@@ -734,6 +501,8 @@ fn app() -> Html {
             phase.set("Bootstrapping questionable brilliance".to_string());
 
             let script = build_log_script(new_progress, &new_phase, drain, &new_outcome);
+            let script_len = script.len();
+
             logs.set(vec![
                 "INFO  preparing animated build sequence...".to_string(),
                 "INFO  conditions accepted. consequences pending.".to_string(),
@@ -749,7 +518,6 @@ fn app() -> Html {
                 let build_token_check = build_token.clone();
                 let phase_final = new_phase.clone();
                 let outcome_final = new_outcome.clone();
-                let sound_enabled = sound_enabled.clone();
 
                 Timeout::new((idx as u32) * 520 + 180, move || {
                     if *build_token_check != next_token {
@@ -757,27 +525,24 @@ fn app() -> Html {
                     }
 
                     let mut current = (*logs).clone();
-                    current.push(line);
+                    current.push(line.clone());
                     logs.set(current);
 
-                    let staged_progress = (((idx + 1) as f64 / 10.0) * new_progress as f64)
-                        .round()
-                        .clamp(0.0, 100.0) as u32;
+                    let denominator = script_len.max(1) as f64;
+                    let staged_progress =
+                        ((((idx + 1) as f64) / denominator) * new_progress as f64)
+                            .round()
+                            .clamp(0.0, 100.0) as u32;
+
                     progress.set(staged_progress);
+                    phase.set(phase_for_progress(staged_progress));
 
-                    let stage_phase = phase_for_progress(staged_progress);
-                    phase.set(stage_phase);
-
-                    if idx == 9 {
+                    if idx + 1 == script_len {
                         progress.set(new_progress);
-                        phase.set(phase_final);
+                        phase.set(phase_final.clone());
                         outcome.set(Some(outcome_final.clone()));
                         build_count.set(*build_count + 1);
                         is_building.set(false);
-
-                        if *sound_enabled {
-                            play_outcome_sound(&outcome_final.kind);
-                        }
                     }
                 })
                 .forget();
@@ -792,26 +557,19 @@ fn app() -> Html {
             OutcomeKind::Failure => "result-value result-danger",
         };
 
-        let banner_class = match result.kind {
-            OutcomeKind::Success => "verdict-banner success",
-            OutcomeKind::Warning => "verdict-banner warning",
-            OutcomeKind::Failure => "verdict-banner failure",
-        };
-
         html! {
             <>
-                <div class={banner_class}>
-                    <div class="verdict-kicker">{"Final Verdict"}</div>
-                    <div class={class.clone()}>{&result.verdict}</div>
-                    <div class="verdict-headline">{format!("{} • Build #{}", result.badge, *build_count)}</div>
-                    <div class="verdict-detail">{&result.detail}</div>
+                <div class="section-box">
+                    <div class="section-label">{"Latest Verdict"}</div>
+                    <div class={class}>{&result.verdict}</div>
+                    <div class="card-subtitle" style="margin-top:8px;">{&result.detail}</div>
                 </div>
 
                 <div class="section-box">
                     <div class="section-label">{"Shareable Build Badge"}</div>
                     <div class="result-value">{format!("{} • Build #{}", result.badge, *build_count)}</div>
                     <div class="card-subtitle" style="margin-top:8px;">
-                        {"Optimized for screenshots, demo reels, and highly specific LinkedIn humor."}
+                        {"Optimized for screenshots, demos, and very specific LinkedIn humor."}
                     </div>
                 </div>
             </>
@@ -865,35 +623,22 @@ fn app() -> Html {
         "No build report yet. Start a run to generate developer folklore.".to_string()
     };
 
-    let share_title = if let Some(result) = &*outcome {
-        format!("{} • {}", result.badge, result.verdict)
-    } else {
-        "Pre-Build Legend • Awaiting glorious chaos".to_string()
-    };
-
-    let share_phase = (*phase).clone();
-    let share_signal = (*env_signal).clone();
-    let share_battery = format!("{}%", *env_battery);
-    let share_browser = format!("{}/100", *safari_resistance);
-
     html! {
         <div class="app-shell">
             <section class="hero">
                 <div class="hero-top">
                     <div>
-                        <div class="eyebrow">{"🚗🦀 Viral Demo Build Edition, v4"}</div>
-                        <h1>{"Cargo Build in the Carpool Lane v4"}</h1>
+                        <div class="eyebrow">{"🚗🦀 Viral Demo Build Edition"}</div>
+                        <h1>{"Cargo Build in the Carpool Lane v3"}</h1>
                         <p>
-                            {"A polished fake compiler dashboard for deeply real developer energy: limited battery, questionable signal, mobile-browser drama, and the quiet refusal to give up. "}
-                            {"Now with theatrical verdicts, downloadable build certificates, a share-card preview, and iPhone-friendly generated WAV sound effects."}
+                            {"A polished fake compiler dashboard for deeply real developer energy: "}
+                            {"limited battery, questionable signal, mobile-browser drama, and the quiet refusal to give up. "}
+                            {"Built to feel screenshot-worthy, funny, and just plausible enough to hurt."}
                         </p>
                     </div>
 
                     <div class="hero-actions">
                         <button class="secondary" onclick={on_toggle_theme}>{theme_label}</button>
-                        <button class="secondary" onclick={on_toggle_sound}>
-                            {if *sound_enabled { "🔊 Sound On" } else { "🔇 Sound Off" }}
-                        </button>
                         <button class="secondary" onclick={on_copy_report}>
                             {if *copied { "✅ Copied" } else { "📋 Copy Build Report" }}
                         </button>
@@ -902,9 +647,9 @@ fn app() -> Html {
 
                 <div class="hero-tags">
                     <span class="tag">{"Animated terminal playback"}</span>
-                    <span class="tag">{"Generated WAV sound effects"}</span>
-                    <span class="tag">{"Downloadable build certificate"}</span>
-                    <span class="tag">{"Screenshot-ready share card"}</span>
+                    <span class="tag">{"One More Honest Build energy"}</span>
+                    <span class="tag">{"Rust iPhone Compiler lore"}</span>
+                    <span class="tag">{"Screenshot-ready UI"}</span>
                 </div>
             </section>
 
@@ -989,6 +734,7 @@ fn app() -> Html {
                                     <span class="card-subtitle" style="margin:0;">{"How likely the browser is to cooperate"}</span>
                                     <span class={safari_class}>{format!("{} / 100", *safari_resistance)}</span>
                                 </div>
+
                                 <div class="progress-wrap">
                                     <div class="progress-track">
                                         <div class="progress-fill" style={format!("width:{}%;", *safari_resistance)}></div>
@@ -1007,60 +753,13 @@ fn app() -> Html {
                                 {"Motivation for developers building under gloriously imperfect conditions."}
                             </p>
                         </div>
+
                         <div class="card-body">
                             <div class="motivation-quote">{format!("“{}”", (*motivation).clone())}</div>
 
                             <div class="section-box">
                                 <div class="section-label">{"Build Report Preview"}</div>
                                 <div class="report-box">{report_preview}</div>
-                            </div>
-
-                            <div class="controls">
-                                <button class="secondary" onclick={on_download_certificate}>
-                                    {if *certificate_flash { "🏆 Certificate Ready" } else { "📜 Download Build Certificate" }}
-                                </button>
-                                <button class="secondary" onclick={on_generate_share_card}>
-                                    {if *share_flash { "✨ Share Card Refreshed" } else { "🖼 Generate Share Card" }}
-                                </button>
-                            </div>
-
-                            <div class="share-preview">
-                                <div class="share-preview-top">
-                                    <div class="share-brand">{"MikeGyver Studio • Rust iPhone Compiler Lore"}</div>
-                                    <div class="share-brand">{"v4"}</div>
-                                </div>
-
-                                <div class="share-title">{share_title}</div>
-
-                                <div class="share-stats">
-                                    <div class="share-stat">
-                                        <div class="share-stat-label">{"Phase"}</div>
-                                        <div class="share-stat-value">{share_phase}</div>
-                                    </div>
-                                    <div class="share-stat">
-                                        <div class="share-stat-label">{"Signal"}</div>
-                                        <div class="share-stat-value">{share_signal}</div>
-                                    </div>
-                                    <div class="share-stat">
-                                        <div class="share-stat-label">{"Battery"}</div>
-                                        <div class="share-stat-value">{share_battery}</div>
-                                    </div>
-                                </div>
-
-                                <div class="share-stats">
-                                    <div class="share-stat">
-                                        <div class="share-stat-label">{"Safari Resistance"}</div>
-                                        <div class="share-stat-value">{share_browser}</div>
-                                    </div>
-                                    <div class="share-stat">
-                                        <div class="share-stat-label">{"Progress"}</div>
-                                        <div class="share-stat-value">{format!("{}%", *progress)}</div>
-                                    </div>
-                                    <div class="share-stat">
-                                        <div class="share-stat-label">{"Build Count"}</div>
-                                        <div class="share-stat-value">{*build_count}</div>
-                                    </div>
-                                </div>
                             </div>
                         </div>
                     </section>
@@ -1073,7 +772,7 @@ fn app() -> Html {
                             <span class="dot"></span>
                             <span class="dot"></span>
                         </div>
-                        <div class="terminal-title">{"carpool-lane-terminal-v4.log"}</div>
+                        <div class="terminal-title">{"carpool-lane-terminal-v3.log"}</div>
                     </div>
 
                     <div class="terminal-body">
@@ -1096,7 +795,7 @@ fn app() -> Html {
 
             <div class="footer-note">
                 {"Pairs nicely with "}
-                <span class="kbd">trunk serve</span>
+                <span class="kbd">{"trunk serve"}</span>
                 {" and the belief that weird constraints can still produce memorable software."}
             </div>
         </div>
