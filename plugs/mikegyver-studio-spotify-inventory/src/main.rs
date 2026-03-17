@@ -50,10 +50,8 @@ fn app() -> Html {
     let log_text = use_state(|| String::from("Ready.\n"));
     let has_loaded_remote = use_state(|| false);
 
-    // Keep FileReader alive
     let reader = use_state(|| None::<FileReader>);
 
-    // Helper: append to log
     let push_log = {
         let log_text = log_text.clone();
         move |line: &str| {
@@ -66,7 +64,6 @@ fn app() -> Html {
         }
     };
 
-    // Auto-load hosted JSON once on startup
     {
         let inventory = inventory.clone();
         let selected_index = selected_index.clone();
@@ -76,7 +73,8 @@ fn app() -> Html {
 
         use_effect_with((), move |_| {
             spawn_local(async move {
-                match Request::get(HOSTED_JSON_URL).send().await {
+                let url = hosted_json_url_busted();
+                match Request::get(&url).send().await {
                     Ok(response) => {
                         if response.ok() {
                             match response.text().await {
@@ -87,26 +85,18 @@ fn app() -> Html {
                                         let _ = LocalStorage::set(STORAGE_KEY, &inv);
                                         selected_index.set(None);
                                         draft.set(Song::default());
-                                        push_log(&format!(
-                                            "🌐 Loaded {count} song(s) from hosted JSON."
-                                        ));
+                                        push_log(&format!("🌐 Loaded {count} song(s) from hosted JSON."));
                                     }
                                     Err(e) => {
-                                        push_log(&format!(
-                                            "⚠️ Hosted JSON exists but could not be parsed: {e}"
-                                        ));
+                                        push_log(&format!("⚠️ Hosted JSON exists but could not be parsed: {e}"));
                                     }
                                 },
                                 Err(e) => {
-                                    push_log(&format!(
-                                        "⚠️ Could not read hosted JSON response text: {e:?}"
-                                    ));
+                                    push_log(&format!("⚠️ Could not read hosted JSON response text: {e:?}"));
                                 }
                             }
                         } else {
-                            push_log(
-                                "ℹ️ No hosted JSON found yet. Using LocalStorage or new inventory."
-                            );
+                            push_log("ℹ️ No hosted JSON found yet. Using LocalStorage or new inventory.");
                         }
                     }
                     Err(_) => {
@@ -121,8 +111,6 @@ fn app() -> Html {
         });
     }
 
-    // Autosave inventory to LocalStorage whenever inventory changes,
-    // but wait until startup remote-load attempt is complete
     {
         let inventory = inventory.clone();
         let push_log = push_log.clone();
@@ -138,7 +126,6 @@ fn app() -> Html {
         });
     }
 
-    // Select from list
     let on_select = {
         let inventory = inventory.clone();
         let selected_index = selected_index.clone();
@@ -153,7 +140,6 @@ fn app() -> Html {
         })
     };
 
-    // New
     let on_new = {
         let selected_index = selected_index.clone();
         let draft = draft.clone();
@@ -165,7 +151,6 @@ fn app() -> Html {
         })
     };
 
-    // Delete selected
     let on_delete = {
         let inventory = inventory.clone();
         let selected_index = selected_index.clone();
@@ -189,7 +174,6 @@ fn app() -> Html {
         })
     };
 
-    // Save (add or update)
     let on_save = {
         let inventory = inventory.clone();
         let selected_index = selected_index.clone();
@@ -230,7 +214,6 @@ fn app() -> Html {
         })
     };
 
-    // Export JSON download
     let on_export = {
         let inventory = inventory.clone();
         let push_log = push_log.clone();
@@ -244,9 +227,7 @@ fn app() -> Html {
                 Ok(json) => match download_text_file("spotify_inventory.json", &json) {
                     Ok(()) => {
                         push_log("⬇️ Exported spotify_inventory.json");
-                        push_log(
-                            "📁 Upload it via FTP to /mikegyver-studio-spotify-inventory/assets/spotify_inventory.json"
-                        );
+                        push_log("📁 Upload it via FTP to /mikegyver-studio-spotify-inventory/assets/spotify_inventory.json");
                     }
                     Err(e) => push_log(&format!("⚠️ Export failed: {e}")),
                 },
@@ -255,7 +236,6 @@ fn app() -> Html {
         })
     };
 
-    // Reload hosted JSON
     let on_reload_hosted = {
         let inventory = inventory.clone();
         let selected_index = selected_index.clone();
@@ -271,7 +251,8 @@ fn app() -> Html {
             push_log("🌐 Reloading hosted JSON...");
 
             spawn_local(async move {
-                match Request::get(HOSTED_JSON_URL).send().await {
+                let url = hosted_json_url_busted();
+                match Request::get(&url).send().await {
                     Ok(response) => {
                         if response.ok() {
                             match response.text().await {
@@ -282,20 +263,14 @@ fn app() -> Html {
                                         let _ = LocalStorage::set(STORAGE_KEY, &inv);
                                         selected_index.set(None);
                                         draft.set(Song::default());
-                                        push_log(&format!(
-                                            "✅ Reloaded {count} song(s) from hosted JSON."
-                                        ));
+                                        push_log(&format!("✅ Reloaded {count} song(s) from hosted JSON."));
                                     }
                                     Err(e) => {
-                                        push_log(&format!(
-                                            "⚠️ Hosted JSON parse error: {e}"
-                                        ));
+                                        push_log(&format!("⚠️ Hosted JSON parse error: {e}"));
                                     }
                                 },
                                 Err(e) => {
-                                    push_log(&format!(
-                                        "⚠️ Could not read hosted JSON response: {e:?}"
-                                    ));
+                                    push_log(&format!("⚠️ Could not read hosted JSON response: {e:?}"));
                                 }
                             }
                         } else {
@@ -310,7 +285,6 @@ fn app() -> Html {
         })
     };
 
-    // Import JSON file
     let on_import_change = {
         let reader = reader.clone();
         let inventory = inventory.clone();
@@ -371,7 +345,6 @@ fn app() -> Html {
         })
     };
 
-    // Clear everything
     let on_clear = {
         let inventory = inventory.clone();
         let selected_index = selected_index.clone();
@@ -613,8 +586,12 @@ fn load_from_storage() -> Inventory {
     LocalStorage::get::<Inventory>(STORAGE_KEY).unwrap_or_default()
 }
 
+fn hosted_json_url_busted() -> String {
+    format!("{}?v={}", HOSTED_JSON_URL, js_sys::Date::now())
+}
+
 fn download_text_file(filename: &str, content: &str) -> Result<(), String> {
-    let mut bag = BlobPropertyBag::new();
+    let bag = BlobPropertyBag::new();
     bag.set_type("application/json");
 
     let parts = js_sys::Array::new();
