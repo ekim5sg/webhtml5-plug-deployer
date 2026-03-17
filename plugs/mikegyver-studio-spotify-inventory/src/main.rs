@@ -1,13 +1,16 @@
 use gloo::console::log;
 use gloo_file::callbacks::FileReader;
 use gloo_file::File;
+use gloo_net::http::Request;
 use gloo_storage::{LocalStorage, Storage};
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::JsCast;
+use wasm_bindgen_futures::spawn_local;
 use web_sys::{Blob, BlobPropertyBag, HtmlInputElement, Url};
 use yew::prelude::*;
 
 const STORAGE_KEY: &str = "mg_spotify_inventory_v1";
+const HOSTED_JSON_URL: &str = "/mikegyver-studio-spotify-inventory/assets/spotify_inventory.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 struct Song {
@@ -45,8 +48,9 @@ fn app() -> Html {
     let selected_index = use_state(|| None::<usize>);
     let draft = use_state(Song::default);
     let log_text = use_state(|| String::from("Ready.\n"));
+    let has_loaded_remote = use_state(|| false);
 
-    // Keep FileReader alive (Yew pattern)
+    // Keep FileReader alive
     let reader = use_state(|| None::<FileReader>);
 
     // Helper: append to log
@@ -62,13 +66,73 @@ fn app() -> Html {
         }
     };
 
-    // Autosave inventory to LocalStorage whenever inventory changes
+    // Auto-load hosted JSON once on startup
+    {
+        let inventory = inventory.clone();
+        let selected_index = selected_index.clone();
+        let draft = draft.clone();
+        let push_log = push_log.clone();
+        let has_loaded_remote = has_loaded_remote.clone();
+
+        use_effect_with((), move |_| {
+            spawn_local(async move {
+                match Request::get(HOSTED_JSON_URL).send().await {
+                    Ok(response) => {
+                        if response.ok() {
+                            match response.text().await {
+                                Ok(text) => match serde_json::from_str::<Inventory>(&text) {
+                                    Ok(inv) => {
+                                        let count = inv.songs.len();
+                                        inventory.set(inv.clone());
+                                        let _ = LocalStorage::set(STORAGE_KEY, &inv);
+                                        selected_index.set(None);
+                                        draft.set(Song::default());
+                                        push_log(&format!(
+                                            "🌐 Loaded {count} song(s) from hosted JSON."
+                                        ));
+                                    }
+                                    Err(e) => {
+                                        push_log(&format!(
+                                            "⚠️ Hosted JSON exists but could not be parsed: {e}"
+                                        ));
+                                    }
+                                },
+                                Err(e) => {
+                                    push_log(&format!(
+                                        "⚠️ Could not read hosted JSON response text: {e:?}"
+                                    ));
+                                }
+                            }
+                        } else {
+                            push_log(
+                                "ℹ️ No hosted JSON found yet. Using LocalStorage or new inventory."
+                            );
+                        }
+                    }
+                    Err(_) => {
+                        push_log("ℹ️ Hosted JSON not available. Using LocalStorage or new inventory.");
+                    }
+                }
+
+                has_loaded_remote.set(true);
+            });
+
+            || ()
+        });
+    }
+
+    // Autosave inventory to LocalStorage whenever inventory changes,
+    // but wait until startup remote-load attempt is complete
     {
         let inventory = inventory.clone();
         let push_log = push_log.clone();
-        use_effect_with((*inventory).clone(), move |_| {
-            if let Err(e) = LocalStorage::set(STORAGE_KEY, &*inventory) {
-                push_log(&format!("⚠️ Failed to save to LocalStorage: {e:?}"));
+        let has_loaded_remote = has_loaded_remote.clone();
+
+        use_effect_with(((*inventory).clone(), *has_loaded_remote), move |_| {
+            if *has_loaded_remote {
+                if let Err(e) = LocalStorage::set(STORAGE_KEY, &*inventory) {
+                    push_log(&format!("⚠️ Failed to save to LocalStorage: {e:?}"));
+                }
             }
             || ()
         });
@@ -134,7 +198,6 @@ fn app() -> Html {
         Callback::from(move |_| {
             let mut s = (*draft).clone();
 
-            // Minimal cleanup
             s.title = s.title.trim().to_string();
             s.length_mmss = s.length_mmss.trim().to_string();
             s.cover_art_url = s.cover_art_url.trim().to_string();
@@ -160,7 +223,7 @@ fn app() -> Html {
                     push_log(&format!("✅ Added: {}", s.title));
 
                     if new_len == 1 {
-                        push_log("🧾 JSON is now ready. Click “Export JSON” to create the file.");
+                        push_log("🧾 JSON is now ready. Click Export JSON to create the file.");
                     }
                 }
             }
@@ -179,11 +242,71 @@ fn app() -> Html {
 
             match serde_json::to_string_pretty(&*inventory) {
                 Ok(json) => match download_text_file("spotify_inventory.json", &json) {
-                    Ok(()) => push_log("⬇️ Exported spotify_inventory.json"),
+                    Ok(()) => {
+                        push_log("⬇️ Exported spotify_inventory.json");
+                        push_log(
+                            "📁 Upload it via FTP to /mikegyver-studio-spotify-inventory/assets/spotify_inventory.json"
+                        );
+                    }
                     Err(e) => push_log(&format!("⚠️ Export failed: {e}")),
                 },
                 Err(e) => push_log(&format!("⚠️ Could not serialize JSON: {e}")),
             }
+        })
+    };
+
+    // Reload hosted JSON
+    let on_reload_hosted = {
+        let inventory = inventory.clone();
+        let selected_index = selected_index.clone();
+        let draft = draft.clone();
+        let push_log = push_log.clone();
+
+        Callback::from(move |_| {
+            let inventory = inventory.clone();
+            let selected_index = selected_index.clone();
+            let draft = draft.clone();
+            let push_log = push_log.clone();
+
+            push_log("🌐 Reloading hosted JSON...");
+
+            spawn_local(async move {
+                match Request::get(HOSTED_JSON_URL).send().await {
+                    Ok(response) => {
+                        if response.ok() {
+                            match response.text().await {
+                                Ok(text) => match serde_json::from_str::<Inventory>(&text) {
+                                    Ok(inv) => {
+                                        let count = inv.songs.len();
+                                        inventory.set(inv.clone());
+                                        let _ = LocalStorage::set(STORAGE_KEY, &inv);
+                                        selected_index.set(None);
+                                        draft.set(Song::default());
+                                        push_log(&format!(
+                                            "✅ Reloaded {count} song(s) from hosted JSON."
+                                        ));
+                                    }
+                                    Err(e) => {
+                                        push_log(&format!(
+                                            "⚠️ Hosted JSON parse error: {e}"
+                                        ));
+                                    }
+                                },
+                                Err(e) => {
+                                    push_log(&format!(
+                                        "⚠️ Could not read hosted JSON response: {e:?}"
+                                    ));
+                                }
+                            }
+                        } else {
+                            push_log("⚠️ Hosted JSON file was not found.");
+                        }
+                    }
+                    Err(e) => {
+                        push_log(&format!("⚠️ Failed to fetch hosted JSON: {e:?}"));
+                    }
+                }
+            });
         })
     };
 
@@ -233,7 +356,8 @@ fn app() -> Html {
                 Ok(text) => match serde_json::from_str::<Inventory>(&text) {
                     Ok(inv) => {
                         let count = inv.songs.len();
-                        inv_set.set(inv);
+                        inv_set.set(inv.clone());
+                        let _ = LocalStorage::set(STORAGE_KEY, &inv);
                         sel_set.set(None);
                         draft_set.set(Song::default());
                         push_log2(&format!("✅ Imported {count} song(s) from JSON."));
@@ -262,7 +386,6 @@ fn app() -> Html {
         })
     };
 
-    // Field handlers
     let on_change_title = bind_input(draft.clone(), |song, v| song.title = v);
     let on_change_cover = bind_input(draft.clone(), |song, v| song.cover_art_url = v);
     let on_change_len = bind_input(draft.clone(), |song, v| song.length_mmss = v);
@@ -293,22 +416,18 @@ fn app() -> Html {
     };
 
     html! {
-        <div style="
-            font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-            padding: 16px; max-width: 1100px; margin: 0 auto;
-        ">
-            <h1 style="margin: 0 0 12px 0;">{"Spotify Song Inventory"}</h1>
+        <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:16px;max-width:1100px;margin:0 auto;">
+            <h1 style="margin:0 0 12px 0;">{"Spotify Song Inventory"}</h1>
 
-            <div style="display: grid; grid-template-columns: 320px 1fr; gap: 16px;">
-                // Left: list
-                <div style="border: 1px solid #ddd; border-radius: 12px; padding: 12px;">
-                    <div style="display:flex; gap:8px; flex-wrap: wrap; margin-bottom: 10px;">
+            <div style="display:grid;grid-template-columns:320px 1fr;gap:16px;">
+                <div style="border:1px solid #ddd;border-radius:12px;padding:12px;">
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
                         <button onclick={on_new} style={btn()}>{"New"}</button>
                         <button onclick={on_save} style={btn_primary()}>{"Save"}</button>
                         <button onclick={on_delete} style={btn_danger()}>{"Delete"}</button>
                     </div>
 
-                    <div style="display:flex; gap:8px; flex-wrap: wrap; margin-bottom: 12px;">
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
                         {
                             if songs.is_empty() {
                                 html! { <button disabled=true style={btn_disabled()}>{"Export JSON"}</button> }
@@ -316,97 +435,99 @@ fn app() -> Html {
                                 html! { <button onclick={on_export} style={btn()}>{"Export JSON"}</button> }
                             }
                         }
-                        <label style="display:inline-flex; align-items:center; gap:8px;">
-                            <span style="font-size: 12px; opacity: 0.8;">{"Import JSON"}</span>
+                        <button onclick={on_reload_hosted} style={btn()}>
+                            {"Reload Hosted JSON"}
+                        </button>
+                        <label style="display:inline-flex;align-items:center;gap:8px;">
+                            <span style="font-size:12px;opacity:0.8;">{"Import JSON"}</span>
                             <input type="file" accept="application/json,.json" onchange={on_import_change} />
                         </label>
                         <button onclick={on_clear} style={btn()}>{"Clear"}</button>
                     </div>
 
-                    <div style="display:flex; justify-content: space-between; align-items: baseline;">
-                        <h3 style="margin: 0;">{"Songs"}</h3>
-                        <span style="font-size: 12px; opacity: 0.7;">{format!("{} total", songs.len())}</span>
+                    <div style="display:flex;justify-content:space-between;align-items:baseline;">
+                        <h3 style="margin:0;">{"Songs"}</h3>
+                        <span style="font-size:12px;opacity:0.7;">{format!("{} total", songs.len())}</span>
                     </div>
 
-                    <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 6px; max-height: 520px; overflow: auto;">
+                    <div style="margin-top:10px;display:flex;flex-direction:column;gap:6px;max-height:520px;overflow:auto;">
                         { for songs.iter().enumerate().map(|(i, s)| {
                             let is_sel = selected == Some(i);
                             let mut style = String::from(
-                                "text-align:left; padding:10px; border-radius:10px; border:1px solid #e5e5e5; cursor:pointer; background:#fff;"
+                                "text-align:left;padding:10px;border-radius:10px;border:1px solid #e5e5e5;cursor:pointer;background:#fff;"
                             );
                             if is_sel {
-                                style.push_str("border-color:#6aa6ff; box-shadow: 0 0 0 2px rgba(106,166,255,0.25);");
+                                style.push_str("border-color:#6aa6ff;box-shadow:0 0 0 2px rgba(106,166,255,0.25);");
                             }
                             let on_select = on_select.clone();
                             html! {
                                 <button style={style} onclick={Callback::from(move |_| on_select.emit(i))}>
-                                    <div style="font-weight: 700; font-size: 14px; margin-bottom: 2px;">{ s.title.clone() }</div>
-                                    <div style="font-size: 12px; opacity: 0.75;">{ format!("Length: {}", s.length_mmss) }</div>
+                                    <div style="font-weight:700;font-size:14px;margin-bottom:2px;">{ s.title.clone() }</div>
+                                    <div style="font-size:12px;opacity:0.75;">{ format!("Length: {}", s.length_mmss) }</div>
                                 </button>
                             }
                         }) }
                     </div>
                 </div>
 
-                // Right: editor + preview + log + JSON preview
-                <div style="display:flex; flex-direction: column; gap: 16px;">
-                    <div style="border: 1px solid #ddd; border-radius: 12px; padding: 12px;">
-                        <h3 style="margin: 0 0 10px 0;">{"Song Details"}</h3>
+                <div style="display:flex;flex-direction:column;gap:16px;">
+                    <div style="border:1px solid #ddd;border-radius:12px;padding:12px;">
+                        <h3 style="margin:0 0 10px 0;">{"Song Details"}</h3>
 
-                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
                             { field("Title", &draft_song.title, on_change_title, "Courage of the Last Light") }
                             { field("Length (MM:SS)", &draft_song.length_mmss, on_change_len, "3:42") }
                             { field("Cover Art URL", &draft_song.cover_art_url, on_change_cover, "https://...") }
                             { field("Spotify URL", &draft_song.spotify_url, on_change_spotify, "https://open.spotify.com/track/...") }
                         </div>
 
-                        <div style="margin-top: 10px;">
-                            <label style="display:block; font-size: 12px; opacity: 0.8; margin-bottom: 6px;">
+                        <div style="margin-top:10px;">
+                            <label style="display:block;font-size:12px;opacity:0.8;margin-bottom:6px;">
                                 {"Lyrics (optional)"}
                             </label>
                             <textarea
                                 value={draft_song.lyrics.clone()}
                                 oninput={on_change_lyrics}
                                 rows="8"
-                                style="width:100%; border:1px solid #e5e5e5; border-radius:10px; padding:10px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;"
+                                style="width:100%;border:1px solid #e5e5e5;border-radius:10px;padding:10px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono',monospace;"
                                 placeholder="Paste lyrics here..."
                             />
                         </div>
 
-                        <div style="margin-top: 12px;">
+                        <div style="margin-top:12px;">
                             { preview_card(&draft_song) }
                         </div>
                     </div>
 
-                    <div style="border: 1px solid #ddd; border-radius: 12px; padding: 12px;">
-                        <h3 style="margin: 0 0 10px 0;">{"Log"}</h3>
+                    <div style="border:1px solid #ddd;border-radius:12px;padding:12px;">
+                        <h3 style="margin:0 0 10px 0;">{"Log"}</h3>
                         <textarea
                             readonly=true
                             value={(*log_text).clone()}
                             rows="8"
-                            style="width:100%; border:1px solid #e5e5e5; border-radius:10px; padding:10px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace; background: #fafafa;"
+                            style="width:100%;border:1px solid #e5e5e5;border-radius:10px;padding:10px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono',monospace;background:#fafafa;"
                         />
 
-                        <div style="margin-top: 12px;">
-                            <h3 style="margin: 0 0 10px 0;">{"JSON Preview"}</h3>
+                        <div style="margin-top:12px;">
+                            <h3 style="margin:0 0 10px 0;">{"JSON Preview"}</h3>
                             {
                                 if songs.is_empty() {
-                                    html! { <div style="font-size: 12px; opacity: 0.75;">{"No entries yet — save your first song to generate JSON."}</div> }
+                                    html! { <div style="font-size:12px;opacity:0.75;">{"No entries yet — save your first song to generate JSON."}</div> }
                                 } else {
                                     html! {
                                         <textarea
                                             readonly=true
                                             value={json_preview}
                                             rows="10"
-                                            style="width:100%; border:1px solid #e5e5e5; border-radius:10px; padding:10px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace; background: #fafafa;"
+                                            style="width:100%;border:1px solid #e5e5e5;border-radius:10px;padding:10px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono',monospace;background:#fafafa;"
                                         />
                                     }
                                 }
                             }
                         </div>
 
-                        <div style="margin-top: 8px; font-size: 12px; opacity: 0.75;">
-                            {"JSON “file” is created when you click Export (download). Import restores from a saved JSON file. Auto-saves to LocalStorage too."}
+                        <div style="margin-top:8px;font-size:12px;opacity:0.75;">
+                            {"Hosted JSON path: /mikegyver-studio-spotify-inventory/assets/spotify_inventory.json"}
                         </div>
                     </div>
                 </div>
@@ -418,14 +539,14 @@ fn app() -> Html {
 fn field(label: &str, value: &str, oninput: Callback<InputEvent>, placeholder: &str) -> Html {
     html! {
         <div>
-            <label style="display:block; font-size: 12px; opacity: 0.8; margin-bottom: 6px;">
+            <label style="display:block;font-size:12px;opacity:0.8;margin-bottom:6px;">
                 { label }
             </label>
             <input
                 value={value.to_string()}
                 {oninput}
                 placeholder={placeholder.to_string()}
-                style="width:100%; border:1px solid #e5e5e5; border-radius:10px; padding:10px;"
+                style="width:100%;border:1px solid #e5e5e5;border-radius:10px;padding:10px;"
             />
         </div>
     }
@@ -436,6 +557,7 @@ fn bind_input(draft: UseStateHandle<Song>, mutator: fn(&mut Song, String)) -> Ca
         let input = e
             .target()
             .and_then(|t| t.dyn_into::<HtmlInputElement>().ok());
+
         if let Some(i) = input {
             let mut s = (*draft).clone();
             mutator(&mut s, i.value());
@@ -454,32 +576,32 @@ fn preview_card(song: &Song) -> Html {
     };
 
     html! {
-        <div style="display:flex; gap:12px; align-items: flex-start; border:1px solid #eee; border-radius: 12px; padding: 12px; width: 100%; max-width: 680px;">
-            <div style="width: 96px; height: 96px; border-radius: 12px; overflow:hidden; background: #f2f2f2; flex: 0 0 auto;">
+        <div style="display:flex;gap:12px;align-items:flex-start;border:1px solid #eee;border-radius:12px;padding:12px;width:100%;max-width:680px;">
+            <div style="width:96px;height:96px;border-radius:12px;overflow:hidden;background:#f2f2f2;flex:0 0 auto;">
                 {
                     if has_cover {
-                        html! { <img src={song.cover_art_url.clone()} style="width:100%; height:100%; object-fit: cover;" /> }
+                        html! { <img src={song.cover_art_url.clone()} style="width:100%;height:100%;object-fit:cover;" /> }
                     } else {
-                        html! { <div style="display:flex; align-items:center; justify-content:center; height:100%; font-size: 12px; opacity: 0.6;">{"No cover"}</div> }
+                        html! { <div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:12px;opacity:0.6;">{"No cover"}</div> }
                     }
                 }
             </div>
             <div style="flex:1;">
-                <div style="font-weight:800; font-size: 16px; margin-bottom: 2px;">
+                <div style="font-weight:800;font-size:16px;margin-bottom:2px;">
                     { title }
                 </div>
-                <div style="font-size: 13px; opacity: 0.8; margin-bottom: 6px;">
+                <div style="font-size:13px;opacity:0.8;margin-bottom:6px;">
                     { format!("Length: {}", song.length_mmss.trim()) }
                 </div>
                 {
                     if has_spotify {
                         html! {
-                            <a href={song.spotify_url.clone()} target="_blank" style="font-size: 13px;">
+                            <a href={song.spotify_url.clone()} target="_blank" style="font-size:13px;">
                                 {"Open in Spotify"}
                             </a>
                         }
                     } else {
-                        html! { <div style="font-size: 13px; opacity: 0.6;">{"No Spotify URL yet."}</div> }
+                        html! { <div style="font-size:13px;opacity:0.6;">{"No Spotify URL yet."}</div> }
                     }
                 }
             </div>
@@ -507,12 +629,13 @@ fn download_text_file(filename: &str, content: &str) -> Result<(), String> {
     let window = web_sys::window().ok_or("No window".to_string())?;
     let document = window.document().ok_or("No document".to_string())?;
 
-    // Create <a> and treat it as Element for set_attribute
     let a_el = document
         .create_element("a")
         .map_err(|_| "Could not create <a> element".to_string())?;
 
-    a_el.set_attribute("href", &url).map_err(|_| "Could not set href".to_string())?;
+    a_el
+        .set_attribute("href", &url)
+        .map_err(|_| "Could not set href".to_string())?;
     a_el
         .set_attribute("download", filename)
         .map_err(|_| "Could not set download".to_string())?;
@@ -524,14 +647,14 @@ fn download_text_file(filename: &str, content: &str) -> Result<(), String> {
     body.append_child(&a_el)
         .map_err(|_| "Could not append link".to_string())?;
 
-    // Click it (cast to HtmlAnchorElement to call click())
     let a: web_sys::HtmlAnchorElement = a_el
         .dyn_into::<web_sys::HtmlAnchorElement>()
         .map_err(|_| "Could not cast to HtmlAnchorElement".to_string())?;
 
     a.click();
-    // Remove from DOM
-    let a_el: web_sys::Element = a.dyn_into::<web_sys::Element>()
+
+    let a_el: web_sys::Element = a
+        .dyn_into::<web_sys::Element>()
         .map_err(|_| "Could not cast anchor back to Element".to_string())?;
     body.remove_child(&a_el).ok();
 
@@ -541,14 +664,17 @@ fn download_text_file(filename: &str, content: &str) -> Result<(), String> {
 }
 
 fn btn() -> String {
-    "padding:10px 12px; border-radius:10px; border:1px solid #ddd; background:#fff; cursor:pointer;".into()
+    "padding:10px 12px;border-radius:10px;border:1px solid #ddd;background:#fff;cursor:pointer;".into()
 }
+
 fn btn_primary() -> String {
-    "padding:10px 12px; border-radius:10px; border:1px solid #1b66ff; background:#1b66ff; color:#fff; cursor:pointer;".into()
+    "padding:10px 12px;border-radius:10px;border:1px solid #1b66ff;background:#1b66ff;color:#fff;cursor:pointer;".into()
 }
+
 fn btn_danger() -> String {
-    "padding:10px 12px; border-radius:10px; border:1px solid #d33; background:#fff; color:#d33; cursor:pointer;".into()
+    "padding:10px 12px;border-radius:10px;border:1px solid #d33;background:#fff;color:#d33;cursor:pointer;".into()
 }
+
 fn btn_disabled() -> String {
-    "padding:10px 12px; border-radius:10px; border:1px solid #ddd; background:#f3f3f3; color:#888; cursor:not-allowed;".into()
+    "padding:10px 12px;border-radius:10px;border:1px solid #ddd;background:#f3f3f3;color:#888;cursor:not-allowed;".into()
 }
