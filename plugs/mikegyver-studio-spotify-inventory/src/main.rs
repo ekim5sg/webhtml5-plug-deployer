@@ -389,11 +389,11 @@ fn app() -> Html {
     };
 
     html! {
-        <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:16px;max-width:1100px;margin:0 auto;">
-            <h1 style="margin:0 0 12px 0;">{"Spotify Song Inventory"}</h1>
+        <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:16px;max-width:1100px;margin:0 auto;color:#e8ecff;">
+            <h1 style="margin:0 0 12px 0;color:#ffffff;">{"Spotify Song Inventory"}</h1>
 
             <div style="display:grid;grid-template-columns:320px 1fr;gap:16px;">
-                <div style="border:1px solid #ddd;border-radius:12px;padding:12px;">
+                <div style="border:1px solid rgba(255,255,255,.10);border-radius:12px;padding:12px;background:rgba(255,255,255,.02);">
                     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
                         <button onclick={on_new} style={btn()}>{"New"}</button>
                         <button onclick={on_save} style={btn_primary()}>{"Save"}</button>
@@ -411,32 +411,32 @@ fn app() -> Html {
                         <button onclick={on_reload_hosted} style={btn()}>
                             {"Reload Hosted JSON"}
                         </button>
-                        <label style="display:inline-flex;align-items:center;gap:8px;">
-                            <span style="font-size:12px;opacity:0.8;">{"Import JSON"}</span>
+                        <label style="display:inline-flex;align-items:center;gap:8px;color:#aab3d6;">
+                            <span style="font-size:12px;opacity:0.9;">{"Import JSON"}</span>
                             <input type="file" accept="application/json,.json" onchange={on_import_change} />
                         </label>
                         <button onclick={on_clear} style={btn()}>{"Clear"}</button>
                     </div>
 
                     <div style="display:flex;justify-content:space-between;align-items:baseline;">
-                        <h3 style="margin:0;">{"Songs"}</h3>
-                        <span style="font-size:12px;opacity:0.7;">{format!("{} total", songs.len())}</span>
+                        <h3 style="margin:0;color:#ffffff;">{"Songs"}</h3>
+                        <span style="font-size:12px;opacity:0.8;color:#aab3d6;">{format!("{} total", songs.len())}</span>
                     </div>
 
                     <div style="margin-top:10px;display:flex;flex-direction:column;gap:6px;max-height:520px;overflow:auto;">
                         { for songs.iter().enumerate().map(|(i, s)| {
                             let is_sel = selected == Some(i);
                             let mut style = String::from(
-                                "text-align:left;padding:10px;border-radius:10px;border:1px solid #e5e5e5;cursor:pointer;background:#fff;"
+                                "text-align:left;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,.10);cursor:pointer;background:rgba(255,255,255,.05);color:#e8ecff;"
                             );
                             if is_sel {
-                                style.push_str("border-color:#6aa6ff;box-shadow:0 0 0 2px rgba(106,166,255,0.25);");
+                                style.push_str("border-color:#7c5cff;box-shadow:0 0 0 2px rgba(124,92,255,.28);background:rgba(124,92,255,.10);");
                             }
                             let on_select = on_select.clone();
                             html! {
                                 <button style={style} onclick={Callback::from(move |_| on_select.emit(i))}>
-                                    <div style="font-weight:700;font-size:14px;margin-bottom:2px;">{ s.title.clone() }</div>
-                                    <div style="font-size:12px;opacity:0.75;">{ format!("Length: {}", s.length_mmss) }</div>
+                                    <div style="font-weight:700;font-size:14px;margin-bottom:2px;color:#ffffff;">{ s.title.clone() }</div>
+                                    <div style="font-size:12px;opacity:0.85;color:#aab3d6;">{ format!("Length: {}", s.length_mmss) }</div>
                                 </button>
                             }
                         }) }
@@ -444,8 +444,8 @@ fn app() -> Html {
                 </div>
 
                 <div style="display:flex;flex-direction:column;gap:16px;">
-                    <div style="border:1px solid #ddd;border-radius:12px;padding:12px;">
-                        <h3 style="margin:0 0 10px 0;">{"Song Details"}</h3>
+                    <div style="border:1px solid rgba(255,255,255,.10);border-radius:12px;padding:12px;background:rgba(255,255,255,.02);">
+                        <h3 style="margin:0 0 10px 0;color:#ffffff;">{"Song Details"}</h3>
 
                         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
                             { field("Title", &draft_song.title, on_change_title, "Courage of the Last Light") }
@@ -455,14 +455,14 @@ fn app() -> Html {
                         </div>
 
                         <div style="margin-top:10px;">
-                            <label style="display:block;font-size:12px;opacity:0.8;margin-bottom:6px;">
+                            <label style="display:block;font-size:12px;opacity:0.9;margin-bottom:6px;color:#aab3d6;">
                                 {"Lyrics (optional)"}
                             </label>
                             <textarea
                                 value={draft_song.lyrics.clone()}
                                 oninput={on_change_lyrics}
                                 rows="8"
-                                style="width:100%;border:1px solid #e5e5e5;border-radius:10px;padding:10px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono',monospace;"
+                                style="width:100%;border:1px solid rgba(255,255,255,.14);border-radius:10px;padding:10px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono',monospace;background:rgba(255,255,255,.06);color:#e8ecff;"
                                 placeholder="Paste lyrics here..."
                             />
                         </div>
@@ -472,34 +472,34 @@ fn app() -> Html {
                         </div>
                     </div>
 
-                    <div style="border:1px solid #ddd;border-radius:12px;padding:12px;">
-                        <h3 style="margin:0 0 10px 0;">{"Log"}</h3>
+                    <div style="border:1px solid rgba(255,255,255,.10);border-radius:12px;padding:12px;background:rgba(255,255,255,.02);">
+                        <h3 style="margin:0 0 10px 0;color:#ffffff;">{"Log"}</h3>
                         <textarea
                             readonly=true
                             value={(*log_text).clone()}
                             rows="8"
-                            style="width:100%;border:1px solid #e5e5e5;border-radius:10px;padding:10px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono',monospace;background:#fafafa;"
+                            style="width:100%;border:1px solid rgba(255,255,255,.14);border-radius:10px;padding:10px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono',monospace;background:rgba(255,255,255,.06);color:#e8ecff;"
                         />
 
                         <div style="margin-top:12px;">
-                            <h3 style="margin:0 0 10px 0;">{"JSON Preview"}</h3>
+                            <h3 style="margin:0 0 10px 0;color:#ffffff;">{"JSON Preview"}</h3>
                             {
                                 if songs.is_empty() {
-                                    html! { <div style="font-size:12px;opacity:0.75;">{"No entries yet — save your first song to generate JSON."}</div> }
+                                    html! { <div style="font-size:12px;opacity:0.85;color:#aab3d6;">{"No entries yet — save your first song to generate JSON."}</div> }
                                 } else {
                                     html! {
                                         <textarea
                                             readonly=true
                                             value={json_preview}
                                             rows="10"
-                                            style="width:100%;border:1px solid #e5e5e5;border-radius:10px;padding:10px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono',monospace;background:#fafafa;"
+                                            style="width:100%;border:1px solid rgba(255,255,255,.14);border-radius:10px;padding:10px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono',monospace;background:rgba(255,255,255,.06);color:#e8ecff;"
                                         />
                                     }
                                 }
                             }
                         </div>
 
-                        <div style="margin-top:8px;font-size:12px;opacity:0.75;">
+                        <div style="margin-top:8px;font-size:12px;opacity:0.85;color:#aab3d6;">
                             {"Hosted JSON path: /mikegyver-studio-spotify-inventory/assets/spotify_inventory.json"}
                         </div>
                     </div>
@@ -512,14 +512,14 @@ fn app() -> Html {
 fn field(label: &str, value: &str, oninput: Callback<InputEvent>, placeholder: &str) -> Html {
     html! {
         <div>
-            <label style="display:block;font-size:12px;opacity:0.8;margin-bottom:6px;">
+            <label style="display:block;font-size:12px;opacity:0.9;margin-bottom:6px;color:#aab3d6;">
                 { label }
             </label>
             <input
                 value={value.to_string()}
                 {oninput}
                 placeholder={placeholder.to_string()}
-                style="width:100%;border:1px solid #e5e5e5;border-radius:10px;padding:10px;"
+                style="width:100%;border:1px solid rgba(255,255,255,.14);border-radius:10px;padding:10px;background:rgba(255,255,255,.06);color:#e8ecff;"
             />
         </div>
     }
@@ -549,32 +549,32 @@ fn preview_card(song: &Song) -> Html {
     };
 
     html! {
-        <div style="display:flex;gap:12px;align-items:flex-start;border:1px solid #eee;border-radius:12px;padding:12px;width:100%;max-width:680px;">
-            <div style="width:96px;height:96px;border-radius:12px;overflow:hidden;background:#f2f2f2;flex:0 0 auto;">
+        <div style="display:flex;gap:12px;align-items:flex-start;border:1px solid rgba(255,255,255,.10);border-radius:12px;padding:12px;width:100%;max-width:680px;background:rgba(255,255,255,.03);">
+            <div style="width:96px;height:96px;border-radius:12px;overflow:hidden;background:rgba(255,255,255,.06);flex:0 0 auto;">
                 {
                     if has_cover {
                         html! { <img src={song.cover_art_url.clone()} style="width:100%;height:100%;object-fit:cover;" /> }
                     } else {
-                        html! { <div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:12px;opacity:0.6;">{"No cover"}</div> }
+                        html! { <div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:12px;color:#aab3d6;opacity:0.8;">{"No cover"}</div> }
                     }
                 }
             </div>
             <div style="flex:1;">
-                <div style="font-weight:800;font-size:16px;margin-bottom:2px;">
+                <div style="font-weight:800;font-size:16px;margin-bottom:2px;color:#ffffff;">
                     { title }
                 </div>
-                <div style="font-size:13px;opacity:0.8;margin-bottom:6px;">
+                <div style="font-size:13px;opacity:0.85;margin-bottom:6px;color:#aab3d6;">
                     { format!("Length: {}", song.length_mmss.trim()) }
                 </div>
                 {
                     if has_spotify {
                         html! {
-                            <a href={song.spotify_url.clone()} target="_blank" style="font-size:13px;">
+                            <a href={song.spotify_url.clone()} target="_blank" style="font-size:13px;color:#b9c7ff;">
                                 {"Open in Spotify"}
                             </a>
                         }
                     } else {
-                        html! { <div style="font-size:13px;opacity:0.6;">{"No Spotify URL yet."}</div> }
+                        html! { <div style="font-size:13px;opacity:0.75;color:#aab3d6;">{"No Spotify URL yet."}</div> }
                     }
                 }
             </div>
@@ -641,17 +641,17 @@ fn download_text_file(filename: &str, content: &str) -> Result<(), String> {
 }
 
 fn btn() -> String {
-    "padding:10px 12px;border-radius:10px;border:1px solid #ddd;background:#fff;cursor:pointer;".into()
+    "padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);color:#e8ecff;cursor:pointer;".into()
 }
 
 fn btn_primary() -> String {
-    "padding:10px 12px;border-radius:10px;border:1px solid #1b66ff;background:#1b66ff;color:#fff;cursor:pointer;".into()
+    "padding:10px 12px;border-radius:10px;border:1px solid #4f7cff;background:#3d63ff;color:#ffffff;cursor:pointer;".into()
 }
 
 fn btn_danger() -> String {
-    "padding:10px 12px;border-radius:10px;border:1px solid #d33;background:#fff;color:#d33;cursor:pointer;".into()
+    "padding:10px 12px;border-radius:10px;border:1px solid #ff6b6b;background:rgba(255,107,107,.10);color:#ffd7d7;cursor:pointer;".into()
 }
 
 fn btn_disabled() -> String {
-    "padding:10px 12px;border-radius:10px;border:1px solid #ddd;background:#f3f3f3;color:#888;cursor:not-allowed;".into()
+    "padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.04);color:#7f89ad;cursor:not-allowed;".into()
 }
