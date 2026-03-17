@@ -585,7 +585,7 @@ fn load_from_storage() -> Inventory {
 }
 
 fn download_text_file(filename: &str, content: &str) -> Result<(), String> {
-    let mut bag = BlobPropertyBag::new();
+    let bag = BlobPropertyBag::new();
     bag.set_type("application/json");
 
     let parts = js_sys::Array::new();
