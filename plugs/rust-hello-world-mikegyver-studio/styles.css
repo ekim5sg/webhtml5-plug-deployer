@@ -1,0 +1,231 @@
+:root {
+  --bg: #0b1020;
+  --bg2: #10182d;
+  --panel: rgba(18, 28, 52, 0.82);
+  --panel-border: rgba(120, 170, 255, 0.22);
+  --text: #eef4ff;
+  --muted: #a9bbda;
+  --gold: #f2c14e;
+  --blue: #66b3ff;
+  --cyan: #79f0ff;
+  --shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background:
+    radial-gradient(circle at top left, rgba(86, 144, 255, 0.20), transparent 28%),
+    radial-gradient(circle at bottom right, rgba(121, 240, 255, 0.12), transparent 24%),
+    linear-gradient(180deg, #08101f 0%, #0b1020 35%, #0f1730 100%);
+  color: var(--text);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+body {
+  overflow-x: hidden;
+}
+
+a {
+  color: inherit;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+.page {
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.page::before,
+.page::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.page::before {
+  background:
+    linear-gradient(120deg, transparent 0%, rgba(255,255,255,0.03) 45%, transparent 55%),
+    linear-gradient(300deg, transparent 0%, rgba(255,255,255,0.02) 48%, transparent 56%);
+  opacity: 0.8;
+}
+
+.page::after {
+  background-image:
+    radial-gradient(circle, rgba(255,255,255,0.7) 0.7px, transparent 0.8px);
+  background-size: 80px 80px;
+  opacity: 0.08;
+}
+
+.card {
+  position: relative;
+  width: min(920px, 100%);
+  background: linear-gradient(180deg, rgba(17, 26, 47, 0.90), rgba(10, 17, 34, 0.94));
+  border: 1px solid var(--panel-border);
+  border-radius: 28px;
+  padding: 28px 22px;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(10px);
+  overflow: hidden;
+}
+
+.card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent);
+  transform: translateX(-100%);
+  animation: shine 7s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes shine {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+.topline {
+  display: inline-block;
+  margin-bottom: 12px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(102, 179, 255, 0.10);
+  border: 1px solid rgba(102, 179, 255, 0.22);
+  color: var(--cyan);
+  font-size: 0.9rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.title {
+  margin: 0;
+  font-size: clamp(2rem, 7vw, 4.3rem);
+  line-height: 1.05;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.title .accent {
+  color: var(--gold);
+}
+
+.subtitle {
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: clamp(1rem, 3vw, 1.2rem);
+  line-height: 1.6;
+  max-width: 760px;
+}
+
+.console {
+  margin-top: 28px;
+  background: rgba(4, 8, 18, 0.90);
+  border: 1px solid rgba(102, 179, 255, 0.18);
+  border-radius: 20px;
+  overflow: hidden;
+}
+
+.console-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px;
+  background: linear-gradient(180deg, rgba(24, 35, 63, 0.9), rgba(15, 24, 45, 0.9));
+  border-bottom: 1px solid rgba(102, 179, 255, 0.12);
+}
+
+.dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+}
+
+.dot.red {
+  background: #ff5f57;
+}
+
+.dot.yellow {
+  background: #febc2e;
+}
+
+.dot.green {
+  background: #28c840;
+}
+
+.console-title {
+  margin-left: 6px;
+  font-size: 0.95rem;
+  color: var(--muted);
+}
+
+.console-body {
+  padding: 18px 18px 22px;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: clamp(0.95rem, 2.6vw, 1.08rem);
+  line-height: 1.8;
+  color: #dff3ff;
+}
+
+.prompt {
+  color: var(--blue);
+}
+
+.output {
+  color: #bfffc9;
+}
+
+.signature {
+  margin-top: 24px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.badge {
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: rgba(242, 193, 78, 0.10);
+  border: 1px solid rgba(242, 193, 78, 0.22);
+  color: #ffe39b;
+  font-size: 0.95rem;
+}
+
+.footer-note {
+  margin-top: 20px;
+  color: #8ea3c5;
+  font-size: 0.92rem;
+}
+
+@media (max-width: 640px) {
+  .page {
+    padding: 16px;
+  }
+
+  .card {
+    padding: 22px 16px;
+    border-radius: 22px;
+  }
+
+  .console-body {
+    padding: 16px;
+  }
+
+  .signature {
+    flex-direction: column;
+  }
+}
