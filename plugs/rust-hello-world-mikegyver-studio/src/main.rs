@@ -1,5 +1,7 @@
 use gloo_net::http::Request;
+use js_sys::{Reflect};
 use serde::Deserialize;
+use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
 
@@ -32,10 +34,12 @@ fn app() -> Html {
                         }
                         Err(err) => {
                             load_error.set(Some(format!("Could not parse message.json: {err}")));
+                            current_message.set("From Rust and MikeGyver Studio".to_string());
                         }
                     },
                     Err(err) => {
                         load_error.set(Some(format!("Could not load message.json: {err}")));
+                        current_message.set("From Rust and MikeGyver Studio".to_string());
                     }
                 }
 
@@ -48,9 +52,15 @@ fn app() -> Html {
 
     let oninput = {
         let current_message = current_message.clone();
+
         Callback::from(move |e: InputEvent| {
-            let input: web_sys::HtmlInputElement = e.target_unchecked_into();
-            current_message.set(input.value());
+            if let Some(target) = e.target() {
+                if let Ok(value) = Reflect::get(&target, &JsValue::from_str("value")) {
+                    if let Some(text) = value.as_string() {
+                        current_message.set(text);
+                    }
+                }
+            }
         })
     };
 
@@ -94,12 +104,14 @@ fn app() -> Html {
                                 <span class="prompt">{ "$ loading message.json..." }</span>
                             </div>
                         } else if let Some(err) = &*load_error {
-                            <div>
-                                <span class="output">{ "Hello World, From Rust and MikeGyver Studio" }</span>
-                            </div>
-                            <div style="margin-top: 12px; color: #ffb3b3;">
-                                { err.clone() }
-                            </div>
+                            <>
+                                <div>
+                                    <span class="output">{ "Hello World, From Rust and MikeGyver Studio" }</span>
+                                </div>
+                                <div style="margin-top: 12px; color: #ffb3b3;">
+                                    { err.clone() }
+                                </div>
+                            </>
                         } else {
                             <>
                                 <div>
@@ -127,7 +139,7 @@ fn app() -> Html {
                         value={(*current_message).clone()}
                         oninput={oninput}
                         placeholder="From Rust and MikeGyver Studio"
-                        disabled = {*is_loading}
+                        disabled={*is_loading}
                     />
 
                     <div class="signature">
