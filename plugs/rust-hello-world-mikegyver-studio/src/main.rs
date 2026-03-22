@@ -1,9 +1,9 @@
 use gloo_net::http::Request;
-use js_sys::{Reflect};
 use serde::Deserialize;
-use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::spawn_local;
+use web_sys::HtmlInputElement;
 use yew::prelude::*;
+use yew::TargetCast;
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 struct MessageData {
@@ -13,7 +13,7 @@ struct MessageData {
 #[function_component(App)]
 fn app() -> Html {
     let loaded_message = use_state(|| None::<String>);
-    let current_message = use_state(String::new);
+    let current_message = use_state(|| "From Rust and MikeGyver Studio".to_string());
     let is_loading = use_state(|| true);
     let load_error = use_state(|| None::<String>);
 
@@ -34,12 +34,10 @@ fn app() -> Html {
                         }
                         Err(err) => {
                             load_error.set(Some(format!("Could not parse message.json: {err}")));
-                            current_message.set("From Rust and MikeGyver Studio".to_string());
                         }
                     },
                     Err(err) => {
                         load_error.set(Some(format!("Could not load message.json: {err}")));
-                        current_message.set("From Rust and MikeGyver Studio".to_string());
                     }
                 }
 
@@ -54,13 +52,8 @@ fn app() -> Html {
         let current_message = current_message.clone();
 
         Callback::from(move |e: InputEvent| {
-            if let Some(target) = e.target() {
-                if let Ok(value) = Reflect::get(&target, &JsValue::from_str("value")) {
-                    if let Some(text) = value.as_string() {
-                        current_message.set(text);
-                    }
-                }
-            }
+            let input: HtmlInputElement = e.target_unchecked_into();
+            current_message.set(input.value());
         })
     };
 
@@ -71,6 +64,8 @@ fn app() -> Html {
         Callback::from(move |_| {
             if let Some(original) = (*loaded_message).clone() {
                 current_message.set(original);
+            } else {
+                current_message.set("From Rust and MikeGyver Studio".to_string());
             }
         })
     };
@@ -106,7 +101,9 @@ fn app() -> Html {
                         } else if let Some(err) = &*load_error {
                             <>
                                 <div>
-                                    <span class="output">{ "Hello World, From Rust and MikeGyver Studio" }</span>
+                                    <span class="output">
+                                        { format!("Hello World, {}", (*current_message).clone()) }
+                                    </span>
                                 </div>
                                 <div style="margin-top: 12px; color: #ffb3b3;">
                                     { err.clone() }
