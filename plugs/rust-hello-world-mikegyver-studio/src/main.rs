@@ -1,21 +1,83 @@
+use gloo_net::http::Request;
+use serde::Deserialize;
+use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+struct MessageData {
+    message: String,
+}
 
 #[function_component(App)]
 fn app() -> Html {
+    let loaded_message = use_state(|| None::<String>);
+    let current_message = use_state(String::new);
+    let is_loading = use_state(|| true);
+    let load_error = use_state(|| None::<String>);
+
+    {
+        let loaded_message = loaded_message.clone();
+        let current_message = current_message.clone();
+        let is_loading = is_loading.clone();
+        let load_error = load_error.clone();
+
+        use_effect_with((), move |_| {
+            spawn_local(async move {
+                match Request::get("message.json").send().await {
+                    Ok(response) => match response.json::<MessageData>().await {
+                        Ok(data) => {
+                            current_message.set(data.message.clone());
+                            loaded_message.set(Some(data.message));
+                            load_error.set(None);
+                        }
+                        Err(err) => {
+                            load_error.set(Some(format!("Could not parse message.json: {err}")));
+                        }
+                    },
+                    Err(err) => {
+                        load_error.set(Some(format!("Could not load message.json: {err}")));
+                    }
+                }
+
+                is_loading.set(false);
+            });
+
+            || ()
+        });
+    }
+
+    let oninput = {
+        let current_message = current_message.clone();
+        Callback::from(move |e: InputEvent| {
+            let input: web_sys::HtmlInputElement = e.target_unchecked_into();
+            current_message.set(input.value());
+        })
+    };
+
+    let reset_to_original = {
+        let loaded_message = loaded_message.clone();
+        let current_message = current_message.clone();
+
+        Callback::from(move |_| {
+            if let Some(original) = (*loaded_message).clone() {
+                current_message.set(original);
+            }
+        })
+    };
+
     html! {
         <main class="page">
             <section class="card">
                 <div class="topline">{ "Rust • Yew • WebAssembly" }</div>
 
                 <h1 class="title">
-                    { "Hello World," }<br />
-                    <span class="accent">{ "From Rust" }</span>
-                    { " and " }
-                    <span class="accent">{ "MikeGyver Studio" }</span>
+                    { "Hello World," }
+                    <br />
+                    <span class="accent">{ (*current_message).clone() }</span>
                 </h1>
 
                 <p class="subtitle">
-                    { "A simple Yew WASM starter app compiled by your GitHub worker and ready for your Rust iPhone Compiler workflow." }
+                    { "This demo loads the second part of the greeting from a JSON file. Edit it below to see how Rust + Yew can react instantly in the browser." }
                 </p>
 
                 <div class="console">
@@ -23,23 +85,62 @@ fn app() -> Html {
                         <span class="dot red"></span>
                         <span class="dot yellow"></span>
                         <span class="dot green"></span>
-                        <span class="console-title">{ "terminal output" }</span>
+                        <span class="console-title">{ "interactive message demo" }</span>
                     </div>
 
                     <div class="console-body">
-                        <div><span class="prompt">{ "$ cargo run" }</span></div>
-                        <div><span class="output">{ "Hello World, From Rust and MikeGyver Studio!" }</span></div>
+                        if *is_loading {
+                            <div>
+                                <span class="prompt">{ "$ loading message.json..." }</span>
+                            </div>
+                        } else if let Some(err) = &*load_error {
+                            <div>
+                                <span class="output">{ "Hello World, From Rust and MikeGyver Studio" }</span>
+                            </div>
+                            <div style="margin-top: 12px; color: #ffb3b3;">
+                                { err.clone() }
+                            </div>
+                        } else {
+                            <>
+                                <div>
+                                    <span class="prompt">{ "$ message from JSON:" }</span>
+                                </div>
+                                <div>
+                                    <span class="output">
+                                        { format!("Hello World, {}", (*current_message).clone()) }
+                                    </span>
+                                </div>
+                            </>
+                        }
                     </div>
                 </div>
 
-                <div class="signature">
-                    <span class="badge">{ "Built with Rust" }</span>
-                    <span class="badge">{ "Rendered with Yew" }</span>
-                    <span class="badge">{ "Powered by MikeGyver Studio" }</span>
+                <div class="editor-panel">
+                    <label class="editor-label" for="message-input">
+                        { "Change only the second part of the greeting:" }
+                    </label>
+
+                    <input
+                        id="message-input"
+                        class="editor-input"
+                        type="text"
+                        value={(*current_message).clone()}
+                        oninput={oninput}
+                        placeholder="From Rust and MikeGyver Studio"
+                        disabled = {*is_loading}
+                    />
+
+                    <div class="signature">
+                        <button class="action-button" onclick={reset_to_original} disabled={*is_loading}>
+                            { "Reset to JSON value" }
+                        </button>
+                        <span class="badge">{ "Refresh restores original JSON message" }</span>
+                        <span class="badge">{ "Hello World stays fixed" }</span>
+                    </div>
                 </div>
 
                 <p class="footer-note">
-                    { "This is a clean starter you can extend into a richer landing page, animated console, or code-demo showcase later." }
+                    { "This gives learners a simple way to experience Rust reactivity without changing compiled code. Edit the text, refresh the page, and the original JSON-driven message returns." }
                 </p>
             </section>
         </main>
