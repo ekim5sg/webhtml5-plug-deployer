@@ -229,3 +229,44 @@ a {
     flex-direction: column;
   }
 }
+.editor-panel {
+  margin-top: 28px;
+}
+
+.editor-label {
+  display: block;
+  margin-bottom: 10px;
+  color: #cfe0ff;
+  font-size: 0.98rem;
+}
+
+.editor-input {
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(120, 170, 255, 0.25);
+  background: rgba(6, 11, 24, 0.92);
+  color: #eef4ff;
+  font-size: 1rem;
+  outline: none;
+}
+
+.editor-input:focus {
+  border-color: rgba(121, 240, 255, 0.65);
+  box-shadow: 0 0 0 3px rgba(121, 240, 255, 0.12);
+}
+
+.action-button {
+  padding: 10px 16px;
+  border: 1px solid rgba(242, 193, 78, 0.28);
+  background: rgba(242, 193, 78, 0.12);
+  color: #ffe39b;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+
+.action-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
