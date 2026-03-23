@@ -4,7 +4,7 @@ use wasm_bindgen_futures::spawn_local;
 use web_sys::{HtmlInputElement, HtmlTextAreaElement};
 use yew::prelude::*;
 
-const API_URL: &str = "https://YOUR-WORKER.your-subdomain.workers.dev/api/content-pack";
+const API_URL: &str = "https://carpool-content-pack.mikegyver.workers.dev/api/content-pack";
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 struct ContentPackRequest {
