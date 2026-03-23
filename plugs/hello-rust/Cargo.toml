@@ -1,0 +1,11 @@
+[package]
+name = "hello_rust"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+yew = { version = "0.21", features = ["csr"] }
+gloo-net = "0.6"
+wasm-bindgen-futures = "0.4"
+serde = { version = "1", features = ["derive"] }
+web-sys = { version = "0.3", features = ["HtmlInputElement"] }
