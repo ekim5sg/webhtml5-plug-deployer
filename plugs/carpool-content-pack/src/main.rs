@@ -98,11 +98,11 @@ fn app() -> Html {
                     }
                 };
 
-                let response = Request::post(API_URL)
+                let request_builder = Request::post(API_URL)
                     .header("Content-Type", "application/json")
                     .body(body);
 
-                let response = match response {
+                let response = match request_builder {
                     Ok(req) => req.send().await,
                     Err(e) => {
                         loading.set(false);
@@ -122,7 +122,10 @@ fn app() -> Html {
 
                 if !response.ok() {
                     let status = response.status();
-                    let text = response.text().await.unwrap_or_else(|_| "Unknown server error".to_string());
+                    let text = response
+                        .text()
+                        .await
+                        .unwrap_or_else(|_| "Unknown server error".to_string());
                     loading.set(false);
                     error.set(Some(format!("Server error ({status}): {text}")));
                     return;
@@ -157,30 +160,32 @@ fn app() -> Html {
         })
     };
 
-    let make_copy_callback = |text: String, label: &'static str, copied_message: UseStateHandle<Option<String>>| {
-        Callback::from(move |_| {
-            let text = text.clone();
-            let copied_message = copied_message.clone();
+    let make_copy_callback =
+        |text: String, label: &'static str, copied_message: UseStateHandle<Option<String>>| {
+            Callback::from(move |_| {
+                let text = text.clone();
+                let copied_message = copied_message.clone();
 
-            spawn_local(async move {
-                let maybe_window = web_sys::window();
-                if let Some(window) = maybe_window {
-                    let clipboard = window.navigator().clipboard();
-                    match clipboard.write_text(&text) {
-                        Ok(promise) => {
-                            let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
-                            copied_message.set(Some(format!("{label} copied.")));
+                spawn_local(async move {
+                    let maybe_window = web_sys::window();
+                    if let Some(window) = maybe_window {
+                        let clipboard = window.navigator().clipboard();
+                        let promise = clipboard.write_text(&text);
+
+                        match wasm_bindgen_futures::JsFuture::from(promise).await {
+                            Ok(_) => {
+                                copied_message.set(Some(format!("{label} copied.")));
+                            }
+                            Err(_) => {
+                                copied_message.set(Some(format!("Could not copy {label}.")));
+                            }
                         }
-                        Err(_) => {
-                            copied_message.set(Some(format!("Could not copy {label}.")));
-                        }
+                    } else {
+                        copied_message.set(Some("Clipboard unavailable.".to_string()));
                     }
-                } else {
-                    copied_message.set(Some("Clipboard unavailable.".to_string()));
-                }
-            });
-        })
-    };
+                });
+            })
+        };
 
     html! {
         <main class="shell">
