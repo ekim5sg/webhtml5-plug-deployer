@@ -363,9 +363,9 @@ fn app() -> Html {
                 if in_wake_window(next.wake_start_hour, next.wake_end_hour) && due {
                     if notifications_granted() || next.notifications_enabled {
                         if behind {
-                            maybe_send_notification("SteadySip — behind pace. Sip 8–16 oz.");
+                            maybe_send_notification("Steady Sip — behind pace. Sip 8–16 oz.");
                         } else {
-                            maybe_send_notification("SteadySip — time for a quick water check.");
+                            maybe_send_notification("Steady Sip — time for a quick water check.");
                         }
                     }
 
@@ -567,7 +567,7 @@ fn app() -> Html {
                 <div class="brand">{"MikeGyver Studio"}</div>
                 <div class="title-row">
                     <div>
-                        <h1 class="title">{"SteadySip"}</h1>
+                        <h1 class="title">{"Steady Sip"}</h1>
                         <div class="subtitle">
                             {"A calm hydration companion built for consistency, not panic. Default daily target: 96 oz."}
                         </div>
