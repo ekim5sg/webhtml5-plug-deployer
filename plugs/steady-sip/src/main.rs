@@ -1,11 +1,14 @@
 use gloo::storage::{LocalStorage, Storage};
 use gloo::timers::callback::Interval;
-use js_sys::Date;
+use js_sys::{Array, Date, Uint8Array};
 use serde::{Deserialize, Serialize};
-use web_sys::{HtmlInputElement, Notification};
+use wasm_bindgen::JsValue;
+use web_sys::{
+    Blob, BlobPropertyBag, HtmlAudioElement, HtmlInputElement, Notification, Url,
+};
 use yew::prelude::*;
 
-const STORAGE_KEY: &str = "steadysip_state_v1";
+const STORAGE_KEY: &str = "steadysip_state_v2";
 const DEFAULT_GOAL_OZ: u32 = 96;
 const DEFAULT_INTERVAL_MIN: u32 = 45;
 
@@ -45,6 +48,8 @@ struct AppState {
     entries: Vec<IntakeEntry>,
     symptoms: Symptoms,
     notifications_enabled: bool,
+    sound_enabled: bool,
+    audio_unlocked: bool,
     wake_start_hour: u32,
     wake_end_hour: u32,
     last_reminder_ms: f64,
@@ -60,6 +65,8 @@ impl Default for AppState {
             entries: vec![],
             symptoms: Symptoms::default(),
             notifications_enabled: false,
+            sound_enabled: false,
+            audio_unlocked: false,
             wake_start_hour: 7,
             wake_end_hour: 22,
             last_reminder_ms: 0.0,
@@ -143,16 +150,146 @@ fn can_notify() -> bool {
 
 fn maybe_send_notification(title: &str, body: &str) {
     if Notification::permission() == "granted" {
-        let mut opts = web_sys::NotificationOptions::new();
-        opts.body(body);
+        let opts = web_sys::NotificationOptions::new();
+        opts.set_body(body);
         let _ = Notification::new_with_options(title, &opts);
     }
+}
+
+fn le_u16(v: u16) -> [u8; 2] {
+    [(v & 0xFF) as u8, ((v >> 8) & 0xFF) as u8]
+}
+
+fn le_u32(v: u32) -> [u8; 4] {
+    [
+        (v & 0xFF) as u8,
+        ((v >> 8) & 0xFF) as u8,
+        ((v >> 16) & 0xFF) as u8,
+        ((v >> 24) & 0xFF) as u8,
+    ]
+}
+
+fn make_sine_wav(sample_rate: u32, freq_hz: f32, duration_ms: u32, volume: f32) -> Vec<u8> {
+    let channels: u16 = 1;
+    let bits_per_sample: u16 = 16;
+    let bytes_per_sample = (bits_per_sample / 8) as u32;
+    let num_samples = (sample_rate as u64 * duration_ms as u64 / 1000) as u32;
+    let data_size = num_samples * channels as u32 * bytes_per_sample;
+    let byte_rate = sample_rate * channels as u32 * bytes_per_sample;
+    let block_align = channels * (bits_per_sample / 8);
+
+    let mut wav = Vec::with_capacity((44 + data_size) as usize);
+
+    wav.extend_from_slice(b"RIFF");
+    wav.extend_from_slice(&le_u32(36 + data_size));
+    wav.extend_from_slice(b"WAVE");
+
+    wav.extend_from_slice(b"fmt ");
+    wav.extend_from_slice(&le_u32(16));
+    wav.extend_from_slice(&le_u16(1));
+    wav.extend_from_slice(&le_u16(channels));
+    wav.extend_from_slice(&le_u32(sample_rate));
+    wav.extend_from_slice(&le_u32(byte_rate));
+    wav.extend_from_slice(&le_u16(block_align));
+    wav.extend_from_slice(&le_u16(bits_per_sample));
+
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&le_u32(data_size));
+
+    let two_pi = std::f32::consts::PI * 2.0;
+    let attack_samples = (sample_rate / 100) as u32;
+    let release_samples = (sample_rate / 6) as u32;
+
+    for i in 0..num_samples {
+        let t = i as f32 / sample_rate as f32;
+
+        let env = if i < attack_samples {
+            i as f32 / attack_samples.max(1) as f32
+        } else if i > num_samples.saturating_sub(release_samples) {
+            let remain = num_samples.saturating_sub(i);
+            remain as f32 / release_samples.max(1) as f32
+        } else {
+            1.0
+        };
+
+        let sample = (two_pi * freq_hz * t).sin() * volume * env;
+        let s = (sample * i16::MAX as f32) as i16;
+        wav.extend_from_slice(&s.to_le_bytes());
+    }
+
+    wav
+}
+
+fn make_double_chime_wav() -> Vec<u8> {
+    let a = make_sine_wav(22_050, 880.0, 160, 0.23);
+    let silence = vec![0u8; 22_050 / 12 * 2];
+    let b = make_sine_wav(22_050, 1174.66, 180, 0.20);
+
+    let mut pcm_a = a[44..].to_vec();
+    let pcm_b = &b[44..];
+    pcm_a.extend_from_slice(&silence);
+    pcm_a.extend_from_slice(pcm_b);
+
+    let channels: u16 = 1;
+    let bits_per_sample: u16 = 16;
+    let bytes_per_sample = (bits_per_sample / 8) as u32;
+    let sample_rate = 22_050u32;
+    let data_size = pcm_a.len() as u32;
+    let byte_rate = sample_rate * channels as u32 * bytes_per_sample;
+    let block_align = channels * (bits_per_sample / 8);
+
+    let mut wav = Vec::with_capacity(44 + pcm_a.len());
+    wav.extend_from_slice(b"RIFF");
+    wav.extend_from_slice(&le_u32(36 + data_size));
+    wav.extend_from_slice(b"WAVE");
+
+    wav.extend_from_slice(b"fmt ");
+    wav.extend_from_slice(&le_u32(16));
+    wav.extend_from_slice(&le_u16(1));
+    wav.extend_from_slice(&le_u16(channels));
+    wav.extend_from_slice(&le_u32(sample_rate));
+    wav.extend_from_slice(&le_u32(byte_rate));
+    wav.extend_from_slice(&le_u16(block_align));
+    wav.extend_from_slice(&le_u16(bits_per_sample));
+
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&le_u32(data_size));
+    wav.extend_from_slice(&pcm_a);
+
+    wav
+}
+
+fn play_wav_bytes(bytes: &[u8]) {
+    let uint8 = Uint8Array::new_with_length(bytes.len() as u32);
+    uint8.copy_from(bytes);
+
+    let parts = Array::new();
+    parts.push(&uint8.into());
+
+    let bag = BlobPropertyBag::new();
+    bag.set_type("audio/wav");
+
+    let blob = Blob::new_with_u8_array_sequence_and_options(&parts, &bag).unwrap();
+    let url = Url::create_object_url_with_blob(&blob).unwrap();
+
+    if let Ok(audio) = HtmlAudioElement::new_with_src(&url) {
+        audio.set_preload("auto");
+        let _ = audio.play();
+    }
+
+    let _ = Url::revoke_object_url(&url);
+}
+
+fn play_reminder_chime() {
+    let wav = make_double_chime_wav();
+    play_wav_bytes(&wav);
 }
 
 #[function_component(App)]
 fn app() -> Html {
     let state = use_state(load_state);
-    let _ticker = {
+
+    {
         let state = state.clone();
         use_effect_with((), move |_| {
             let interval = Interval::new(60_000, move || {
@@ -173,17 +310,20 @@ fn app() -> Html {
                     next.wake_end_hour,
                 );
 
-                if next.notifications_enabled
-                    && in_wake_window(next.wake_start_hour, next.wake_end_hour)
-                    && due
-                {
-                    let body = if behind {
-                        "You’re behind pace. Sip now: 8–16 oz would be a strong move."
-                    } else {
-                        "Time for a water check. A quick 8–12 oz sip keeps the day steady."
-                    };
+                if in_wake_window(next.wake_start_hour, next.wake_end_hour) && due {
+                    if next.notifications_enabled {
+                        let body = if behind {
+                            "You’re behind pace. Sip now: 8–16 oz would be a strong move."
+                        } else {
+                            "Time for a water check. A quick 8–12 oz sip keeps the day steady."
+                        };
+                        maybe_send_notification("SteadySip", body);
+                    }
 
-                    maybe_send_notification("SteadySip", body);
+                    if next.sound_enabled && next.audio_unlocked {
+                        play_reminder_chime();
+                    }
+
                     next.last_reminder_ms = now_ms();
                     save_state(&next);
                     state.set(next);
@@ -191,8 +331,8 @@ fn app() -> Html {
             });
 
             move || drop(interval)
-        })
-    };
+        });
+    }
 
     let total_pct = percent(state.total_oz, state.daily_goal_oz);
     let pace_now = pace_target_by_now(
@@ -278,6 +418,22 @@ fn app() -> Html {
             state.set(next);
         })
     };
+
+    let enable_sound = {
+        let state = state.clone();
+        Callback::from(move |_| {
+            let mut next = (*state).clone();
+            next.sound_enabled = true;
+            next.audio_unlocked = true;
+            play_reminder_chime();
+            save_state(&next);
+            state.set(next);
+        })
+    };
+
+    let test_sound = Callback::from(move |_| {
+        play_reminder_chime();
+    });
 
     let set_goal = {
         let state = state.clone();
@@ -446,8 +602,22 @@ fn app() -> Html {
                                 {"Enable Reminders"}
                             </button>
 
+                            <button class="btn good" onclick={enable_sound}>
+                                {
+                                    if state.audio_unlocked {
+                                        "Chime Enabled"
+                                    } else {
+                                        "Enable Audible Chime"
+                                    }
+                                }
+                            </button>
+
+                            <button class="btn warn" onclick={test_sound}>
+                                {"Test Chime"}
+                            </button>
+
                             <div class="small muted">
-                                {"Reminder permission works best when the app is kept open or installed to the Home Screen. True background push is a later upgrade."}
+                                {"On iPhone, tap “Enable Audible Chime” once to unlock audio playback for this app session and future reminders."}
                             </div>
                         </div>
                     </section>
@@ -560,7 +730,7 @@ fn app() -> Html {
                                 html! {
                                     <>
                                         {for state.entries.iter().map(|entry| {
-                                            let t = Date::new(&wasm_bindgen::JsValue::from_f64(entry.timestamp_ms));
+                                            let t = Date::new(&JsValue::from_f64(entry.timestamp_ms));
                                             let hh = t.get_hours();
                                             let mm = t.get_minutes();
                                             html! {
