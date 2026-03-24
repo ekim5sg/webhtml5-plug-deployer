@@ -479,24 +479,53 @@ fn score_candidate(text: &str, target_words: usize, style: &str) -> usize {
     let word_count = count_words_str(text);
 
     let hook_terms = [
-        "but", "and yet", "suddenly", "then", "because", "until", "one day",
-        "every second", "what happened", "the moment", "didn't", "never", "first",
-        "finally", "before", "after", "mystery", "secret", "danger", "question",
+        "but",
+        "and yet",
+        "suddenly",
+        "then",
+        "because",
+        "until",
+        "one day",
+        "every second",
+        "what happened",
+        "the moment",
+        "didn't",
+        "never",
+        "first",
+        "finally",
+        "before",
+        "after",
+        "mystery",
+        "secret",
+        "danger",
+        "question",
     ];
 
     let emotion_terms = [
-        "hope", "fear", "love", "courage", "loss", "wonder", "dream", "heart",
-        "believe", "afraid", "joy", "pain", "grace", "light", "dark",
+        "hope", "fear", "love", "courage", "loss", "wonder", "dream", "heart", "believe",
+        "afraid", "joy", "pain", "grace", "light", "dark",
     ];
 
     let cinematic_terms = [
-        "moon", "sky", "light", "shadow", "door", "wind", "stars", "city",
-        "library", "house", "machine", "echo", "silence", "voice", "fire",
+        "moon", "sky", "light", "shadow", "door", "wind", "stars", "city", "library",
+        "house", "machine", "echo", "silence", "voice", "fire",
     ];
 
     let informative_terms = [
-        "during", "when", "why", "how", "mission", "computer", "because", "history",
-        "lesson", "truth", "meant", "decision", "problem", "answer",
+        "during",
+        "when",
+        "why",
+        "how",
+        "mission",
+        "computer",
+        "because",
+        "history",
+        "lesson",
+        "truth",
+        "meant",
+        "decision",
+        "problem",
+        "answer",
     ];
 
     let mut score = 0usize;
@@ -682,7 +711,7 @@ fn copy_to_clipboard(text: &str) {
 
 fn download_text_file(filename: &str, content: &str, mime_type: &str) {
     let mut bag = BlobPropertyBag::new();
-    bag.type_(mime_type);
+    bag.set_type(mime_type);
 
     let parts = {
         let a = Array::new();
