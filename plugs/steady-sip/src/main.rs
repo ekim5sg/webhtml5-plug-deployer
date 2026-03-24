@@ -2,6 +2,7 @@ use gloo::storage::{LocalStorage, Storage};
 use gloo::timers::callback::Interval;
 use js_sys::{Array, Date, Uint8Array};
 use serde::{Deserialize, Serialize};
+use std::cell::RefCell;
 use wasm_bindgen::JsValue;
 use web_sys::{
     Blob, BlobPropertyBag, HtmlAudioElement, HtmlInputElement, Notification,
@@ -9,9 +10,14 @@ use web_sys::{
 };
 use yew::prelude::*;
 
-const STORAGE_KEY: &str = "steadysip_state_v3";
+const STORAGE_KEY: &str = "steadysip_state_v4";
 const DEFAULT_GOAL_OZ: u32 = 96;
 const DEFAULT_INTERVAL_MIN: u32 = 45;
+
+thread_local! {
+    static ACTIVE_AUDIO: RefCell<Option<HtmlAudioElement>> = RefCell::new(None);
+    static ACTIVE_AUDIO_URL: RefCell<Option<String>> = RefCell::new(None);
+}
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 struct IntakeEntry {
@@ -286,12 +292,40 @@ fn play_wav_bytes(bytes: &[u8]) {
         Err(_) => return,
     };
 
-    if let Ok(audio) = HtmlAudioElement::new_with_src(&url) {
-        audio.set_preload("auto");
-        let _ = audio.play();
-    }
+    let audio = match HtmlAudioElement::new_with_src(&url) {
+        Ok(a) => a,
+        Err(_) => {
+            let _ = Url::revoke_object_url(&url);
+            return;
+        }
+    };
 
-    let _ = Url::revoke_object_url(&url);
+    audio.set_preload("auto");
+    audio.set_autoplay(false);
+    audio.set_loop(false);
+
+    ACTIVE_AUDIO.with(|slot| {
+        if let Some(old) = slot.borrow_mut().take() {
+            let _ = old.pause();
+        }
+    });
+
+    ACTIVE_AUDIO_URL.with(|slot| {
+        if let Some(old_url) = slot.borrow_mut().take() {
+            let _ = Url::revoke_object_url(&old_url);
+        }
+    });
+
+    ACTIVE_AUDIO.with(|slot| {
+        *slot.borrow_mut() = Some(audio.clone());
+    });
+
+    ACTIVE_AUDIO_URL.with(|slot| {
+        *slot.borrow_mut() = Some(url.clone());
+    });
+
+    audio.load();
+    let _ = audio.play();
 }
 
 fn play_reminder_chime() {
@@ -445,9 +479,10 @@ fn app() -> Html {
             let mut next = (*state).clone();
             next.sound_enabled = true;
             next.audio_unlocked = true;
-            play_reminder_chime();
             save_state(&next);
             state.set(next);
+
+            play_reminder_chime();
         })
     };
 
@@ -532,7 +567,7 @@ fn app() -> Html {
                 <div class="brand">{"MikeGyver Studio"}</div>
                 <div class="title-row">
                     <div>
-                        <h1 class="title">{"Steady Sip"}</h1>
+                        <h1 class="title">{"SteadySip"}</h1>
                         <div class="subtitle">
                             {"A calm hydration companion built for consistency, not panic. Default daily target: 96 oz."}
                         </div>
@@ -662,7 +697,7 @@ fn app() -> Html {
                             </button>
 
                             <div class="small muted">
-                                {"On iPhone, tap “Enable Audible Chime” once to unlock audio playback for this app session and future reminders."}
+                                {"On iPhone, tap “Enable Audible Chime” once to unlock audio playback for this session."}
                             </div>
                         </div>
                     </section>
