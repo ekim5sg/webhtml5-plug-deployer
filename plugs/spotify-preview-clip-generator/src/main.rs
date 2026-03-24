@@ -710,7 +710,7 @@ fn copy_to_clipboard(text: &str) {
 }
 
 fn download_text_file(filename: &str, content: &str, mime_type: &str) {
-    let mut bag = BlobPropertyBag::new();
+    let bag = BlobPropertyBag::new();
     bag.set_type(mime_type);
 
     let parts = {
