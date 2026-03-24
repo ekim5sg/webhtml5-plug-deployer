@@ -532,7 +532,7 @@ fn app() -> Html {
                 <div class="brand">{"MikeGyver Studio"}</div>
                 <div class="title-row">
                     <div>
-                        <h1 class="title">{"SteadySip"}</h1>
+                        <h1 class="title">{"Steady Sip"}</h1>
                         <div class="subtitle">
                             {"A calm hydration companion built for consistency, not panic. Default daily target: 96 oz."}
                         </div>
