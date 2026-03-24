@@ -4,11 +4,12 @@ use js_sys::{Array, Date, Uint8Array};
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::JsValue;
 use web_sys::{
-    Blob, BlobPropertyBag, HtmlAudioElement, HtmlInputElement, Notification, Url,
+    Blob, BlobPropertyBag, HtmlAudioElement, HtmlInputElement, Notification,
+    NotificationPermission, Url,
 };
 use yew::prelude::*;
 
-const STORAGE_KEY: &str = "steadysip_state_v2";
+const STORAGE_KEY: &str = "steadysip_state_v3";
 const DEFAULT_GOAL_OZ: u32 = 96;
 const DEFAULT_INTERVAL_MIN: u32 = 45;
 
@@ -119,15 +120,18 @@ fn pace_target_by_now(goal_oz: u32, start_hour: u32, end_hour: u32) -> u32 {
     }
 
     let hour = current_hour_local();
+
     if hour <= start_hour {
         return 0;
     }
+
     if hour >= end_hour {
         return goal_oz;
     }
 
     let elapsed = hour - start_hour;
     let span = end_hour - start_hour;
+
     ((goal_oz as f64) * (elapsed as f64 / span as f64)).round() as u32
 }
 
@@ -145,14 +149,16 @@ fn in_wake_window(start_hour: u32, end_hour: u32) -> bool {
 }
 
 fn can_notify() -> bool {
-    Notification::permission() != "denied"
+    Notification::permission() != NotificationPermission::Denied
 }
 
-fn maybe_send_notification(title: &str, body: &str) {
-    if Notification::permission() == "granted" {
-        let opts = web_sys::NotificationOptions::new();
-        opts.set_body(body);
-        let _ = Notification::new_with_options(title, &opts);
+fn notifications_granted() -> bool {
+    Notification::permission() == NotificationPermission::Granted
+}
+
+fn maybe_send_notification(title: &str) {
+    if notifications_granted() {
+        let _ = Notification::new(title);
     }
 }
 
@@ -222,23 +228,24 @@ fn make_sine_wav(sample_rate: u32, freq_hz: f32, duration_ms: u32, volume: f32) 
 
 fn make_double_chime_wav() -> Vec<u8> {
     let a = make_sine_wav(22_050, 880.0, 160, 0.23);
-    let silence = vec![0u8; 22_050 / 12 * 2];
     let b = make_sine_wav(22_050, 1174.66, 180, 0.20);
 
-    let mut pcm_a = a[44..].to_vec();
-    let pcm_b = &b[44..];
-    pcm_a.extend_from_slice(&silence);
-    pcm_a.extend_from_slice(pcm_b);
+    let silence_bytes = vec![0u8; (22_050 / 12 * 2) as usize];
+
+    let mut pcm = a[44..].to_vec();
+    pcm.extend_from_slice(&silence_bytes);
+    pcm.extend_from_slice(&b[44..]);
 
     let channels: u16 = 1;
     let bits_per_sample: u16 = 16;
     let bytes_per_sample = (bits_per_sample / 8) as u32;
     let sample_rate = 22_050u32;
-    let data_size = pcm_a.len() as u32;
+    let data_size = pcm.len() as u32;
     let byte_rate = sample_rate * channels as u32 * bytes_per_sample;
     let block_align = channels * (bits_per_sample / 8);
 
-    let mut wav = Vec::with_capacity(44 + pcm_a.len());
+    let mut wav = Vec::with_capacity(44 + pcm.len());
+
     wav.extend_from_slice(b"RIFF");
     wav.extend_from_slice(&le_u32(36 + data_size));
     wav.extend_from_slice(b"WAVE");
@@ -254,7 +261,7 @@ fn make_double_chime_wav() -> Vec<u8> {
 
     wav.extend_from_slice(b"data");
     wav.extend_from_slice(&le_u32(data_size));
-    wav.extend_from_slice(&pcm_a);
+    wav.extend_from_slice(&pcm);
 
     wav
 }
@@ -269,8 +276,15 @@ fn play_wav_bytes(bytes: &[u8]) {
     let bag = BlobPropertyBag::new();
     bag.set_type("audio/wav");
 
-    let blob = Blob::new_with_u8_array_sequence_and_options(&parts, &bag).unwrap();
-    let url = Url::create_object_url_with_blob(&blob).unwrap();
+    let blob = match Blob::new_with_u8_array_sequence_and_options(&parts, &bag) {
+        Ok(b) => b,
+        Err(_) => return,
+    };
+
+    let url = match Url::create_object_url_with_blob(&blob) {
+        Ok(u) => u,
+        Err(_) => return,
+    };
 
     if let Ok(audio) = HtmlAudioElement::new_with_src(&url) {
         audio.set_preload("auto");
@@ -304,20 +318,21 @@ fn app() -> Html {
 
                 let interval_ms = (next.reminder_interval_min as f64) * 60_000.0;
                 let due = now_ms() - next.last_reminder_ms >= interval_ms;
-                let behind = next.total_oz + 8 < pace_target_by_now(
-                    next.daily_goal_oz,
-                    next.wake_start_hour,
-                    next.wake_end_hour,
-                );
+
+                let behind = next.total_oz + 8
+                    < pace_target_by_now(
+                        next.daily_goal_oz,
+                        next.wake_start_hour,
+                        next.wake_end_hour,
+                    );
 
                 if in_wake_window(next.wake_start_hour, next.wake_end_hour) && due {
-                    if next.notifications_enabled {
-                        let body = if behind {
-                            "You’re behind pace. Sip now: 8–16 oz would be a strong move."
+                    if notifications_granted() || next.notifications_enabled {
+                        if behind {
+                            maybe_send_notification("SteadySip — behind pace. Sip 8–16 oz.");
                         } else {
-                            "Time for a water check. A quick 8–12 oz sip keeps the day steady."
-                        };
-                        maybe_send_notification("SteadySip", body);
+                            maybe_send_notification("SteadySip — time for a quick water check.");
+                        }
                     }
 
                     if next.sound_enabled && next.audio_unlocked {
@@ -351,7 +366,10 @@ fn app() -> Html {
     } else if state.total_oz < pace_now {
         html! {
             <div class="banner warn">
-                {format!("You’re behind your pace target by {} oz. A 12–16 oz catch-up sip would help.", pace_now.saturating_sub(state.total_oz))}
+                {format!(
+                    "You’re behind your pace target by {} oz. A 12–16 oz catch-up sip would help.",
+                    pace_now.saturating_sub(state.total_oz)
+                )}
             </div>
         }
     } else {
@@ -410,10 +428,12 @@ fn app() -> Html {
         let state = state.clone();
         Callback::from(move |_| {
             let mut next = (*state).clone();
+
             if can_notify() {
                 let _ = Notification::request_permission();
                 next.notifications_enabled = true;
             }
+
             save_state(&next);
             state.set(next);
         })
@@ -491,6 +511,7 @@ fn app() -> Html {
         let state = state.clone();
         Callback::from(move |name: String| {
             let mut next = (*state).clone();
+
             match name.as_str() {
                 "dizziness" => next.symptoms.dizziness = !next.symptoms.dizziness,
                 "dry_mouth" => next.symptoms.dry_mouth = !next.symptoms.dry_mouth,
@@ -499,6 +520,7 @@ fn app() -> Html {
                 "near_faint" => next.symptoms.near_faint = !next.symptoms.near_faint,
                 _ => {}
             }
+
             save_state(&next);
             state.set(next);
         })
@@ -533,7 +555,10 @@ fn app() -> Html {
                             <span>{format!("{} oz left", remaining)}</span>
                         </div>
                         <div class="progress-bar">
-                            <div class="progress-fill" style={format!("width: {}%;", total_pct.min(100))}></div>
+                            <div
+                                class="progress-fill"
+                                style={format!("width: {}%;", total_pct.min(100))}
+                            ></div>
                         </div>
                     </div>
 
@@ -579,22 +604,42 @@ fn app() -> Html {
                         <div class="stack">
                             <div>
                                 <div class="label">{"Daily Goal (oz)"}</div>
-                                <input class="input" type="number" value={state.daily_goal_oz.to_string()} oninput={set_goal} />
+                                <input
+                                    class="input"
+                                    type="number"
+                                    value={state.daily_goal_oz.to_string()}
+                                    oninput={set_goal}
+                                />
                             </div>
 
                             <div>
                                 <div class="label">{"Reminder Interval (minutes)"}</div>
-                                <input class="input" type="number" value={state.reminder_interval_min.to_string()} oninput={set_interval} />
+                                <input
+                                    class="input"
+                                    type="number"
+                                    value={state.reminder_interval_min.to_string()}
+                                    oninput={set_interval}
+                                />
                             </div>
 
                             <div class="row">
                                 <div style="flex:1; min-width: 120px;">
                                     <div class="label">{"Wake Start Hour"}</div>
-                                    <input class="input" type="number" value={state.wake_start_hour.to_string()} oninput={set_wake_start} />
+                                    <input
+                                        class="input"
+                                        type="number"
+                                        value={state.wake_start_hour.to_string()}
+                                        oninput={set_wake_start}
+                                    />
                                 </div>
                                 <div style="flex:1; min-width: 120px;">
                                     <div class="label">{"Wake End Hour"}</div>
-                                    <input class="input" type="number" value={state.wake_end_hour.to_string()} oninput={set_wake_end} />
+                                    <input
+                                        class="input"
+                                        type="number"
+                                        value={state.wake_end_hour.to_string()}
+                                        oninput={set_wake_end}
+                                    />
                                 </div>
                             </div>
 
@@ -653,6 +698,7 @@ fn app() -> Html {
             <div class="grid" style="margin-top:16px;">
                 <section class="card">
                     <h3>{"Symptom Check"}</h3>
+
                     <div class="check-grid">
                         <label class="check-card">
                             <input
@@ -725,7 +771,9 @@ fn app() -> Html {
                     <div class="history-list">
                         {
                             if state.entries.is_empty() {
-                                html! { <div class="muted">{"No entries yet today."}</div> }
+                                html! {
+                                    <div class="muted">{"No entries yet today."}</div>
+                                }
                             } else {
                                 html! {
                                     <>
@@ -733,6 +781,7 @@ fn app() -> Html {
                                             let t = Date::new(&JsValue::from_f64(entry.timestamp_ms));
                                             let hh = t.get_hours();
                                             let mm = t.get_minutes();
+
                                             html! {
                                                 <div class="history-item">
                                                     <span>{format!("+{} oz", entry.ounces)}</span>
