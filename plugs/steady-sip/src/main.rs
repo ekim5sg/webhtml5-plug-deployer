@@ -10,7 +10,7 @@ use web_sys::{
 };
 use yew::prelude::*;
 
-const STORAGE_KEY: &str = "steadysip_state_v4";
+const STORAGE_KEY: &str = "steadysip_state_v5";
 const DEFAULT_GOAL_OZ: u32 = 96;
 const DEFAULT_INTERVAL_MIN: u32 = 45;
 
@@ -118,6 +118,14 @@ fn load_state() -> AppState {
 
 fn save_state(state: &AppState) {
     let _ = LocalStorage::set(STORAGE_KEY, state);
+}
+
+fn load_current_or_default() -> AppState {
+    let mut state = load_state();
+    if state.day_key != today_key() {
+        state = AppState::default();
+    }
+    state
 }
 
 fn pace_target_by_now(goal_oz: u32, start_hour: u32, end_hour: u32) -> u32 {
@@ -341,14 +349,7 @@ fn app() -> Html {
         let state = state.clone();
         use_effect_with((), move |_| {
             let interval = Interval::new(60_000, move || {
-                let mut next = (*state).clone();
-
-                if next.day_key != today_key() {
-                    next = AppState::default();
-                    save_state(&next);
-                    state.set(next);
-                    return;
-                }
+                let mut next = load_current_or_default();
 
                 let interval_ms = (next.reminder_interval_min as f64) * 60_000.0;
                 let due = now_ms() - next.last_reminder_ms >= interval_ms;
@@ -363,9 +364,9 @@ fn app() -> Html {
                 if in_wake_window(next.wake_start_hour, next.wake_end_hour) && due {
                     if notifications_granted() || next.notifications_enabled {
                         if behind {
-                            maybe_send_notification("Steady Sip — behind pace. Sip 8–16 oz.");
+                            maybe_send_notification("SteadySip — behind pace. Sip 8–16 oz.");
                         } else {
-                            maybe_send_notification("Steady Sip — time for a quick water check.");
+                            maybe_send_notification("SteadySip — time for a quick water check.");
                         }
                     }
 
@@ -417,7 +418,8 @@ fn app() -> Html {
     let add_oz = {
         let state = state.clone();
         Callback::from(move |oz: u32| {
-            let mut next = (*state).clone();
+            let mut next = load_current_or_default();
+
             next.total_oz = next.total_oz.saturating_add(oz);
             next.entries.insert(
                 0,
@@ -426,6 +428,7 @@ fn app() -> Html {
                     ounces: oz,
                 },
             );
+
             save_state(&next);
             state.set(next);
         })
@@ -434,7 +437,8 @@ fn app() -> Html {
     let undo_last = {
         let state = state.clone();
         Callback::from(move |_| {
-            let mut next = (*state).clone();
+            let mut next = load_current_or_default();
+
             if let Some(last) = next.entries.first().cloned() {
                 next.total_oz = next.total_oz.saturating_sub(last.ounces);
                 next.entries.remove(0);
@@ -447,7 +451,7 @@ fn app() -> Html {
     let reset_day = {
         let state = state.clone();
         Callback::from(move |_| {
-            let mut next = (*state).clone();
+            let mut next = load_current_or_default();
             next.day_key = today_key();
             next.total_oz = 0;
             next.entries.clear();
@@ -461,7 +465,7 @@ fn app() -> Html {
     let request_notifications = {
         let state = state.clone();
         Callback::from(move |_| {
-            let mut next = (*state).clone();
+            let mut next = load_current_or_default();
 
             if can_notify() {
                 let _ = Notification::request_permission();
@@ -476,7 +480,7 @@ fn app() -> Html {
     let enable_sound = {
         let state = state.clone();
         Callback::from(move |_| {
-            let mut next = (*state).clone();
+            let mut next = load_current_or_default();
             next.sound_enabled = true;
             next.audio_unlocked = true;
             save_state(&next);
@@ -495,7 +499,7 @@ fn app() -> Html {
         Callback::from(move |e: InputEvent| {
             let input: HtmlInputElement = e.target_unchecked_into();
             if let Ok(v) = input.value().parse::<u32>() {
-                let mut next = (*state).clone();
+                let mut next = load_current_or_default();
                 next.daily_goal_oz = v.clamp(32, 200);
                 save_state(&next);
                 state.set(next);
@@ -508,7 +512,7 @@ fn app() -> Html {
         Callback::from(move |e: InputEvent| {
             let input: HtmlInputElement = e.target_unchecked_into();
             if let Ok(v) = input.value().parse::<u32>() {
-                let mut next = (*state).clone();
+                let mut next = load_current_or_default();
                 next.reminder_interval_min = v.clamp(15, 180);
                 save_state(&next);
                 state.set(next);
@@ -521,7 +525,7 @@ fn app() -> Html {
         Callback::from(move |e: InputEvent| {
             let input: HtmlInputElement = e.target_unchecked_into();
             if let Ok(v) = input.value().parse::<u32>() {
-                let mut next = (*state).clone();
+                let mut next = load_current_or_default();
                 next.wake_start_hour = v.clamp(0, 23);
                 save_state(&next);
                 state.set(next);
@@ -534,7 +538,7 @@ fn app() -> Html {
         Callback::from(move |e: InputEvent| {
             let input: HtmlInputElement = e.target_unchecked_into();
             if let Ok(v) = input.value().parse::<u32>() {
-                let mut next = (*state).clone();
+                let mut next = load_current_or_default();
                 next.wake_end_hour = v.clamp(1, 23);
                 save_state(&next);
                 state.set(next);
@@ -545,7 +549,7 @@ fn app() -> Html {
     let toggle_symptom = {
         let state = state.clone();
         Callback::from(move |name: String| {
-            let mut next = (*state).clone();
+            let mut next = load_current_or_default();
 
             match name.as_str() {
                 "dizziness" => next.symptoms.dizziness = !next.symptoms.dizziness,
@@ -567,7 +571,7 @@ fn app() -> Html {
                 <div class="brand">{"MikeGyver Studio"}</div>
                 <div class="title-row">
                     <div>
-                        <h1 class="title">{"Steady Sip"}</h1>
+                        <h1 class="title">{"SteadySip"}</h1>
                         <div class="subtitle">
                             {"A calm hydration companion built for consistency, not panic. Default daily target: 96 oz."}
                         </div>
