@@ -10,7 +10,7 @@ use web_sys::{
 };
 use yew::prelude::*;
 
-const STORAGE_KEY: &str = "steadysip_state_v5";
+const STORAGE_KEY: &str = "steadysip_state_v6";
 const DEFAULT_GOAL_OZ: u32 = 96;
 const DEFAULT_INTERVAL_MIN: u32 = 45;
 
@@ -241,8 +241,8 @@ fn make_sine_wav(sample_rate: u32, freq_hz: f32, duration_ms: u32, volume: f32) 
 }
 
 fn make_double_chime_wav() -> Vec<u8> {
-    let a = make_sine_wav(22_050, 880.0, 160, 0.23);
-    let b = make_sine_wav(22_050, 1174.66, 180, 0.20);
+    let a = make_sine_wav(22_050, 880.0, 160, 0.38);
+    let b = make_sine_wav(22_050, 1174.66, 180, 0.34);
 
     let silence_bytes = vec![0u8; (22_050 / 12 * 2) as usize];
 
@@ -311,6 +311,7 @@ fn play_wav_bytes(bytes: &[u8]) {
     audio.set_preload("auto");
     audio.set_autoplay(false);
     audio.set_loop(false);
+    audio.set_volume(1.0);
 
     ACTIVE_AUDIO.with(|slot| {
         if let Some(old) = slot.borrow_mut().take() {
@@ -364,9 +365,9 @@ fn app() -> Html {
                 if in_wake_window(next.wake_start_hour, next.wake_end_hour) && due {
                     if notifications_granted() || next.notifications_enabled {
                         if behind {
-                            maybe_send_notification("SteadySip — behind pace. Sip 8–16 oz.");
+                            maybe_send_notification("Steady Sip — behind pace. Sip 8–16 oz.");
                         } else {
-                            maybe_send_notification("SteadySip — time for a quick water check.");
+                            maybe_send_notification("Steady Sip — time for a quick water check.");
                         }
                     }
 
