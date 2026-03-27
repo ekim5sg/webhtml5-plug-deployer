@@ -10,7 +10,7 @@ use web_sys::{
 };
 use yew::prelude::*;
 
-const STORAGE_KEY: &str = "steadysip_state_v6";
+const STORAGE_KEY: &str = "steady_sip_state_v6";
 const DEFAULT_GOAL_OZ: u32 = 96;
 const DEFAULT_INTERVAL_MIN: u32 = 45;
 
@@ -572,7 +572,7 @@ fn app() -> Html {
                 <div class="brand">{"MikeGyver Studio"}</div>
                 <div class="title-row">
                     <div>
-                        <h1 class="title">{"SteadySip"}</h1>
+                        <h1 class="title">{"Steady Sip"}</h1>
                         <div class="subtitle">
                             {"A calm hydration companion built for consistency, not panic. Default daily target: 96 oz."}
                         </div>
