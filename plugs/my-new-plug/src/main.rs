@@ -1,651 +1,845 @@
-use gloo::console::log;
-use gloo_file::callbacks::FileReader;
-use gloo_file::File;
-use gloo_net::http::Request;
-use gloo_storage::{LocalStorage, Storage};
+use gloo::storage::{LocalStorage, Storage};
+use gloo::timers::callback::Interval;
+use js_sys::{Array, Date, Uint8Array};
 use serde::{Deserialize, Serialize};
-use wasm_bindgen::JsCast;
-use wasm_bindgen_futures::spawn_local;
-use web_sys::{Blob, BlobPropertyBag, HtmlInputElement, Url};
+use std::cell::RefCell;
+use wasm_bindgen::JsValue;
+use web_sys::{
+    Blob, BlobPropertyBag, HtmlAudioElement, HtmlInputElement, Notification,
+    NotificationPermission, Url,
+};
 use yew::prelude::*;
 
-const STORAGE_KEY: &str = "mg_spotify_inventory_v1";
-const HOSTED_JSON_URL: &str = "/mikegyver-studio-spotify-inventory/assets/spotify_inventory.json";
+const STORAGE_KEY: &str = "steady_sip_state_v6";
+const DEFAULT_GOAL_OZ: u32 = 96;
+const DEFAULT_INTERVAL_MIN: u32 = 45;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-struct Song {
-    title: String,
-    cover_art_url: String,
-    lyrics: String,
-    length_mmss: String,
-    spotify_url: String,
+thread_local! {
+    static ACTIVE_AUDIO: RefCell<Option<HtmlAudioElement>> = RefCell::new(None);
+    static ACTIVE_AUDIO_URL: RefCell<Option<String>> = RefCell::new(None);
 }
 
-impl Default for Song {
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+struct IntakeEntry {
+    timestamp_ms: f64,
+    ounces: u32,
+}
+
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+struct Symptoms {
+    dizziness: bool,
+    dry_mouth: bool,
+    dark_urine: bool,
+    racing_pulse: bool,
+    near_faint: bool,
+}
+
+impl Default for Symptoms {
     fn default() -> Self {
         Self {
-            title: "".into(),
-            cover_art_url: "".into(),
-            lyrics: "".into(),
-            length_mmss: "3:00".into(),
-            spotify_url: "".into(),
+            dizziness: false,
+            dry_mouth: false,
+            dark_urine: false,
+            racing_pulse: false,
+            near_faint: false,
         }
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
-struct Inventory {
-    songs: Vec<Song>,
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+struct AppState {
+    day_key: String,
+    daily_goal_oz: u32,
+    reminder_interval_min: u32,
+    total_oz: u32,
+    entries: Vec<IntakeEntry>,
+    symptoms: Symptoms,
+    notifications_enabled: bool,
+    sound_enabled: bool,
+    audio_unlocked: bool,
+    wake_start_hour: u32,
+    wake_end_hour: u32,
+    last_reminder_ms: f64,
 }
 
-fn main() {
-    yew::Renderer::<App>::new().render();
+impl Default for AppState {
+    fn default() -> Self {
+        Self {
+            day_key: today_key(),
+            daily_goal_oz: DEFAULT_GOAL_OZ,
+            reminder_interval_min: DEFAULT_INTERVAL_MIN,
+            total_oz: 0,
+            entries: vec![],
+            symptoms: Symptoms::default(),
+            notifications_enabled: false,
+            sound_enabled: false,
+            audio_unlocked: false,
+            wake_start_hour: 7,
+            wake_end_hour: 22,
+            last_reminder_ms: 0.0,
+        }
+    }
+}
+
+fn today_key() -> String {
+    let d = Date::new_0();
+    format!(
+        "{:04}-{:02}-{:02}",
+        d.get_full_year(),
+        d.get_month() + 1,
+        d.get_date()
+    )
+}
+
+fn now_ms() -> f64 {
+    Date::new_0().get_time()
+}
+
+fn current_hour_local() -> u32 {
+    Date::new_0().get_hours() as u32
+}
+
+fn load_state() -> AppState {
+    match LocalStorage::get::<AppState>(STORAGE_KEY) {
+        Ok(mut state) => {
+            if state.day_key != today_key() {
+                state.day_key = today_key();
+                state.total_oz = 0;
+                state.entries.clear();
+                state.symptoms = Symptoms::default();
+                state.last_reminder_ms = 0.0;
+                save_state(&state);
+            }
+            state
+        }
+        Err(_) => AppState::default(),
+    }
+}
+
+fn save_state(state: &AppState) {
+    let _ = LocalStorage::set(STORAGE_KEY, state);
+}
+
+fn load_current_or_default() -> AppState {
+    let mut state = load_state();
+    if state.day_key != today_key() {
+        state = AppState::default();
+    }
+    state
+}
+
+fn pace_target_by_now(goal_oz: u32, start_hour: u32, end_hour: u32) -> u32 {
+    if end_hour <= start_hour {
+        return 0;
+    }
+
+    let hour = current_hour_local();
+
+    if hour <= start_hour {
+        return 0;
+    }
+
+    if hour >= end_hour {
+        return goal_oz;
+    }
+
+    let elapsed = hour - start_hour;
+    let span = end_hour - start_hour;
+
+    ((goal_oz as f64) * (elapsed as f64 / span as f64)).round() as u32
+}
+
+fn percent(total: u32, goal: u32) -> u32 {
+    if goal == 0 {
+        0
+    } else {
+        (((total as f64 / goal as f64) * 100.0).round() as u32).min(999)
+    }
+}
+
+fn in_wake_window(start_hour: u32, end_hour: u32) -> bool {
+    let h = current_hour_local();
+    h >= start_hour && h < end_hour
+}
+
+fn can_notify() -> bool {
+    Notification::permission() != NotificationPermission::Denied
+}
+
+fn notifications_granted() -> bool {
+    Notification::permission() == NotificationPermission::Granted
+}
+
+fn maybe_send_notification(title: &str) {
+    if notifications_granted() {
+        let _ = Notification::new(title);
+    }
+}
+
+fn le_u16(v: u16) -> [u8; 2] {
+    [(v & 0xFF) as u8, ((v >> 8) & 0xFF) as u8]
+}
+
+fn le_u32(v: u32) -> [u8; 4] {
+    [
+        (v & 0xFF) as u8,
+        ((v >> 8) & 0xFF) as u8,
+        ((v >> 16) & 0xFF) as u8,
+        ((v >> 24) & 0xFF) as u8,
+    ]
+}
+
+fn make_sine_wav(sample_rate: u32, freq_hz: f32, duration_ms: u32, volume: f32) -> Vec<u8> {
+    let channels: u16 = 1;
+    let bits_per_sample: u16 = 16;
+    let bytes_per_sample = (bits_per_sample / 8) as u32;
+    let num_samples = (sample_rate as u64 * duration_ms as u64 / 1000) as u32;
+    let data_size = num_samples * channels as u32 * bytes_per_sample;
+    let byte_rate = sample_rate * channels as u32 * bytes_per_sample;
+    let block_align = channels * (bits_per_sample / 8);
+
+    let mut wav = Vec::with_capacity((44 + data_size) as usize);
+
+    wav.extend_from_slice(b"RIFF");
+    wav.extend_from_slice(&le_u32(36 + data_size));
+    wav.extend_from_slice(b"WAVE");
+
+    wav.extend_from_slice(b"fmt ");
+    wav.extend_from_slice(&le_u32(16));
+    wav.extend_from_slice(&le_u16(1));
+    wav.extend_from_slice(&le_u16(channels));
+    wav.extend_from_slice(&le_u32(sample_rate));
+    wav.extend_from_slice(&le_u32(byte_rate));
+    wav.extend_from_slice(&le_u16(block_align));
+    wav.extend_from_slice(&le_u16(bits_per_sample));
+
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&le_u32(data_size));
+
+    let two_pi = std::f32::consts::PI * 2.0;
+    let attack_samples = (sample_rate / 100) as u32;
+    let release_samples = (sample_rate / 6) as u32;
+
+    for i in 0..num_samples {
+        let t = i as f32 / sample_rate as f32;
+
+        let env = if i < attack_samples {
+            i as f32 / attack_samples.max(1) as f32
+        } else if i > num_samples.saturating_sub(release_samples) {
+            let remain = num_samples.saturating_sub(i);
+            remain as f32 / release_samples.max(1) as f32
+        } else {
+            1.0
+        };
+
+        let sample = (two_pi * freq_hz * t).sin() * volume * env;
+        let s = (sample * i16::MAX as f32) as i16;
+        wav.extend_from_slice(&s.to_le_bytes());
+    }
+
+    wav
+}
+
+fn make_double_chime_wav() -> Vec<u8> {
+    let a = make_sine_wav(22_050, 880.0, 160, 0.38);
+    let b = make_sine_wav(22_050, 1174.66, 180, 0.34);
+
+    let silence_bytes = vec![0u8; (22_050 / 12 * 2) as usize];
+
+    let mut pcm = a[44..].to_vec();
+    pcm.extend_from_slice(&silence_bytes);
+    pcm.extend_from_slice(&b[44..]);
+
+    let channels: u16 = 1;
+    let bits_per_sample: u16 = 16;
+    let bytes_per_sample = (bits_per_sample / 8) as u32;
+    let sample_rate = 22_050u32;
+    let data_size = pcm.len() as u32;
+    let byte_rate = sample_rate * channels as u32 * bytes_per_sample;
+    let block_align = channels * (bits_per_sample / 8);
+
+    let mut wav = Vec::with_capacity(44 + pcm.len());
+
+    wav.extend_from_slice(b"RIFF");
+    wav.extend_from_slice(&le_u32(36 + data_size));
+    wav.extend_from_slice(b"WAVE");
+
+    wav.extend_from_slice(b"fmt ");
+    wav.extend_from_slice(&le_u32(16));
+    wav.extend_from_slice(&le_u16(1));
+    wav.extend_from_slice(&le_u16(channels));
+    wav.extend_from_slice(&le_u32(sample_rate));
+    wav.extend_from_slice(&le_u32(byte_rate));
+    wav.extend_from_slice(&le_u16(block_align));
+    wav.extend_from_slice(&le_u16(bits_per_sample));
+
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&le_u32(data_size));
+    wav.extend_from_slice(&pcm);
+
+    wav
+}
+
+fn play_wav_bytes(bytes: &[u8]) {
+    let uint8 = Uint8Array::new_with_length(bytes.len() as u32);
+    uint8.copy_from(bytes);
+
+    let parts = Array::new();
+    parts.push(&uint8.into());
+
+    let bag = BlobPropertyBag::new();
+    bag.set_type("audio/wav");
+
+    let blob = match Blob::new_with_u8_array_sequence_and_options(&parts, &bag) {
+        Ok(b) => b,
+        Err(_) => return,
+    };
+
+    let url = match Url::create_object_url_with_blob(&blob) {
+        Ok(u) => u,
+        Err(_) => return,
+    };
+
+    let audio = match HtmlAudioElement::new_with_src(&url) {
+        Ok(a) => a,
+        Err(_) => {
+            let _ = Url::revoke_object_url(&url);
+            return;
+        }
+    };
+
+    audio.set_preload("auto");
+    audio.set_autoplay(false);
+    audio.set_loop(false);
+    audio.set_volume(1.0);
+
+    ACTIVE_AUDIO.with(|slot| {
+        if let Some(old) = slot.borrow_mut().take() {
+            let _ = old.pause();
+        }
+    });
+
+    ACTIVE_AUDIO_URL.with(|slot| {
+        if let Some(old_url) = slot.borrow_mut().take() {
+            let _ = Url::revoke_object_url(&old_url);
+        }
+    });
+
+    ACTIVE_AUDIO.with(|slot| {
+        *slot.borrow_mut() = Some(audio.clone());
+    });
+
+    ACTIVE_AUDIO_URL.with(|slot| {
+        *slot.borrow_mut() = Some(url.clone());
+    });
+
+    audio.load();
+    let _ = audio.play();
+}
+
+fn play_reminder_chime() {
+    let wav = make_double_chime_wav();
+    play_wav_bytes(&wav);
 }
 
 #[function_component(App)]
 fn app() -> Html {
-    let inventory = use_state(load_from_storage);
-    let selected_index = use_state(|| None::<usize>);
-    let draft = use_state(Song::default);
-    let log_text = use_state(|| String::from("Ready.\n"));
-    let has_loaded_remote = use_state(|| false);
-
-    let reader = use_state(|| None::<FileReader>);
-
-    let push_log = {
-        let log_text = log_text.clone();
-        move |line: &str| {
-            let mut next = (*log_text).clone();
-            next.push_str(line);
-            if !line.ends_with('\n') {
-                next.push('\n');
-            }
-            log_text.set(next);
-        }
-    };
+    let state = use_state(load_state);
 
     {
-        let inventory = inventory.clone();
-        let selected_index = selected_index.clone();
-        let draft = draft.clone();
-        let push_log = push_log.clone();
-        let has_loaded_remote = has_loaded_remote.clone();
-
+        let state = state.clone();
         use_effect_with((), move |_| {
-            spawn_local(async move {
-                match Request::get(HOSTED_JSON_URL).send().await {
-                    Ok(response) => {
-                        if response.ok() {
-                            match response.text().await {
-                                Ok(text) => match serde_json::from_str::<Inventory>(&text) {
-                                    Ok(inv) => {
-                                        let count = inv.songs.len();
-                                        inventory.set(inv.clone());
-                                        let _ = LocalStorage::set(STORAGE_KEY, &inv);
-                                        selected_index.set(None);
-                                        draft.set(Song::default());
-                                        push_log(&format!("🌐 Loaded {count} song(s) from hosted JSON."));
-                                    }
-                                    Err(e) => {
-                                        push_log(&format!("⚠️ Hosted JSON exists but could not be parsed: {e}"));
-                                    }
-                                },
-                                Err(e) => {
-                                    push_log(&format!("⚠️ Could not read hosted JSON response text: {e:?}"));
-                                }
-                            }
+            let interval = Interval::new(60_000, move || {
+                let mut next = load_current_or_default();
+
+                let interval_ms = (next.reminder_interval_min as f64) * 60_000.0;
+                let due = now_ms() - next.last_reminder_ms >= interval_ms;
+
+                let behind = next.total_oz + 8
+                    < pace_target_by_now(
+                        next.daily_goal_oz,
+                        next.wake_start_hour,
+                        next.wake_end_hour,
+                    );
+
+                if in_wake_window(next.wake_start_hour, next.wake_end_hour) && due {
+                    if notifications_granted() || next.notifications_enabled {
+                        if behind {
+                            maybe_send_notification("Steady Sip — behind pace. Sip 8–16 oz.");
                         } else {
-                            push_log("ℹ️ No hosted JSON found yet. Using LocalStorage or new inventory.");
+                            maybe_send_notification("Steady Sip — time for a quick water check.");
                         }
                     }
-                    Err(_) => {
-                        push_log("ℹ️ Hosted JSON not available. Using LocalStorage or new inventory.");
-                    }
-                }
 
-                has_loaded_remote.set(true);
+                    if next.sound_enabled && next.audio_unlocked {
+                        play_reminder_chime();
+                    }
+
+                    next.last_reminder_ms = now_ms();
+                    save_state(&next);
+                    state.set(next);
+                }
             });
 
-            || ()
+            move || drop(interval)
         });
     }
 
-    {
-        let inventory = inventory.clone();
-        let push_log = push_log.clone();
-        let has_loaded_remote = has_loaded_remote.clone();
+    let total_pct = percent(state.total_oz, state.daily_goal_oz);
+    let pace_now = pace_target_by_now(
+        state.daily_goal_oz,
+        state.wake_start_hour,
+        state.wake_end_hour,
+    );
+    let remaining = state.daily_goal_oz.saturating_sub(state.total_oz);
 
-        use_effect_with(((*inventory).clone(), *has_loaded_remote), move |_| {
-            if *has_loaded_remote {
-                if let Err(e) = LocalStorage::set(STORAGE_KEY, &*inventory) {
-                    push_log(&format!("⚠️ Failed to save to LocalStorage: {e:?}"));
-                }
-            }
-            || ()
-        });
-    }
-
-    let on_select = {
-        let inventory = inventory.clone();
-        let selected_index = selected_index.clone();
-        let draft = draft.clone();
-        let push_log = push_log.clone();
-        Callback::from(move |idx: usize| {
-            selected_index.set(Some(idx));
-            if let Some(song) = inventory.songs.get(idx) {
-                draft.set(song.clone());
-                push_log(&format!("Selected: {}", song.title));
-            }
-        })
-    };
-
-    let on_new = {
-        let selected_index = selected_index.clone();
-        let draft = draft.clone();
-        let push_log = push_log.clone();
-        Callback::from(move |_| {
-            selected_index.set(None);
-            draft.set(Song::default());
-            push_log("New draft started.");
-        })
-    };
-
-    let on_delete = {
-        let inventory = inventory.clone();
-        let selected_index = selected_index.clone();
-        let draft = draft.clone();
-        let push_log = push_log.clone();
-        Callback::from(move |_| {
-            if let Some(i) = *selected_index {
-                let mut next = (*inventory).clone();
-                if i < next.songs.len() {
-                    let removed = next.songs.remove(i);
-                    inventory.set(next);
-                    selected_index.set(None);
-                    draft.set(Song::default());
-                    push_log(&format!("🗑️ Deleted: {}", removed.title));
-                } else {
-                    push_log("⚠️ Selected index out of range.");
-                }
-            } else {
-                push_log("Nothing selected to delete.");
-            }
-        })
-    };
-
-    let on_save = {
-        let inventory = inventory.clone();
-        let selected_index = selected_index.clone();
-        let draft = draft.clone();
-        let push_log = push_log.clone();
-        Callback::from(move |_| {
-            let mut s = (*draft).clone();
-
-            s.title = s.title.trim().to_string();
-            s.length_mmss = s.length_mmss.trim().to_string();
-            s.cover_art_url = s.cover_art_url.trim().to_string();
-            s.spotify_url = s.spotify_url.trim().to_string();
-
-            if s.title.is_empty() {
-                push_log("⚠️ Title is required.");
-                return;
-            }
-
-            let mut next = (*inventory).clone();
-            match *selected_index {
-                Some(i) if i < next.songs.len() => {
-                    next.songs[i] = s.clone();
-                    inventory.set(next);
-                    push_log(&format!("✅ Updated: {}", s.title));
-                }
-                _ => {
-                    next.songs.push(s.clone());
-                    let new_len = next.songs.len();
-                    inventory.set(next);
-                    selected_index.set(Some(new_len - 1));
-                    push_log(&format!("✅ Added: {}", s.title));
-
-                    if new_len == 1 {
-                        push_log("🧾 JSON is now ready. Click Export JSON to create the file.");
-                    }
-                }
-            }
-        })
-    };
-
-    let on_export = {
-        let inventory = inventory.clone();
-        let push_log = push_log.clone();
-        Callback::from(move |_| {
-            if inventory.songs.is_empty() {
-                push_log("⚠️ Add at least one entry before exporting JSON.");
-                return;
-            }
-
-            match serde_json::to_string_pretty(&*inventory) {
-                Ok(json) => match download_text_file("spotify_inventory.json", &json) {
-                    Ok(()) => {
-                        push_log("⬇️ Exported spotify_inventory.json");
-                        push_log("📁 Upload it via FTP to /mikegyver-studio-spotify-inventory/assets/spotify_inventory.json");
-                    }
-                    Err(e) => push_log(&format!("⚠️ Export failed: {e}")),
-                },
-                Err(e) => push_log(&format!("⚠️ Could not serialize JSON: {e}")),
-            }
-        })
-    };
-
-    let on_reload_hosted = {
-        let inventory = inventory.clone();
-        let selected_index = selected_index.clone();
-        let draft = draft.clone();
-        let push_log = push_log.clone();
-
-        Callback::from(move |_| {
-            let inventory = inventory.clone();
-            let selected_index = selected_index.clone();
-            let draft = draft.clone();
-            let push_log = push_log.clone();
-
-            push_log("🌐 Reloading hosted JSON...");
-
-            spawn_local(async move {
-                match Request::get(HOSTED_JSON_URL).send().await {
-                    Ok(response) => {
-                        if response.ok() {
-                            match response.text().await {
-                                Ok(text) => match serde_json::from_str::<Inventory>(&text) {
-                                    Ok(inv) => {
-                                        let count = inv.songs.len();
-                                        inventory.set(inv.clone());
-                                        let _ = LocalStorage::set(STORAGE_KEY, &inv);
-                                        selected_index.set(None);
-                                        draft.set(Song::default());
-                                        push_log(&format!("✅ Reloaded {count} song(s) from hosted JSON."));
-                                    }
-                                    Err(e) => {
-                                        push_log(&format!("⚠️ Hosted JSON parse error: {e}"));
-                                    }
-                                },
-                                Err(e) => {
-                                    push_log(&format!("⚠️ Could not read hosted JSON response: {e:?}"));
-                                }
-                            }
-                        } else {
-                            push_log("⚠️ Hosted JSON file was not found.");
-                        }
-                    }
-                    Err(e) => {
-                        push_log(&format!("⚠️ Failed to fetch hosted JSON: {e:?}"));
-                    }
-                }
-            });
-        })
-    };
-
-    let on_import_change = {
-        let reader = reader.clone();
-        let inventory = inventory.clone();
-        let selected_index = selected_index.clone();
-        let draft = draft.clone();
-        let push_log = push_log.clone();
-
-        Callback::from(move |e: Event| {
-            let input: HtmlInputElement = match e
-                .target()
-                .and_then(|t| t.dyn_into::<HtmlInputElement>().ok())
-            {
-                Some(i) => i,
-                None => {
-                    push_log("⚠️ Could not access file input.");
-                    return;
-                }
-            };
-
-            let files = match input.files() {
-                Some(f) => f,
-                None => {
-                    push_log("No file selected.");
-                    return;
-                }
-            };
-
-            if files.length() == 0 {
-                push_log("No file selected.");
-                return;
-            }
-
-            let file = files.get(0).unwrap();
-            let file = File::from(file);
-            push_log(&format!("📥 Reading file: {}", file.name()));
-
-            let inv_set = inventory.clone();
-            let sel_set = selected_index.clone();
-            let draft_set = draft.clone();
-            let push_log2 = push_log.clone();
-
-            let task = gloo_file::callbacks::read_as_text(&file, move |res| match res {
-                Ok(text) => match serde_json::from_str::<Inventory>(&text) {
-                    Ok(inv) => {
-                        let count = inv.songs.len();
-                        inv_set.set(inv.clone());
-                        let _ = LocalStorage::set(STORAGE_KEY, &inv);
-                        sel_set.set(None);
-                        draft_set.set(Song::default());
-                        push_log2(&format!("✅ Imported {count} song(s) from JSON."));
-                    }
-                    Err(e) => push_log2(&format!("⚠️ JSON parse error: {e}")),
-                },
-                Err(e) => push_log2(&format!("⚠️ File read error: {e:?}")),
-            });
-
-            reader.set(Some(task));
-        })
-    };
-
-    let on_clear = {
-        let inventory = inventory.clone();
-        let selected_index = selected_index.clone();
-        let draft = draft.clone();
-        let push_log = push_log.clone();
-        Callback::from(move |_| {
-            let _ = LocalStorage::delete(STORAGE_KEY);
-            inventory.set(Inventory::default());
-            selected_index.set(None);
-            draft.set(Song::default());
-            push_log("🧹 Cleared inventory + LocalStorage.");
-        })
-    };
-
-    let on_change_title = bind_input(draft.clone(), |song, v| song.title = v);
-    let on_change_cover = bind_input(draft.clone(), |song, v| song.cover_art_url = v);
-    let on_change_len = bind_input(draft.clone(), |song, v| song.length_mmss = v);
-    let on_change_spotify = bind_input(draft.clone(), |song, v| song.spotify_url = v);
-
-    let on_change_lyrics = {
-        let draft = draft.clone();
-        Callback::from(move |e: InputEvent| {
-            let target = e
-                .target()
-                .and_then(|t| t.dyn_into::<web_sys::HtmlTextAreaElement>().ok());
-            if let Some(t) = target {
-                let mut s = (*draft).clone();
-                s.lyrics = t.value();
-                draft.set(s);
-            }
-        })
-    };
-
-    let songs = inventory.songs.clone();
-    let selected = *selected_index;
-    let draft_song = (*draft).clone();
-
-    let json_preview = if songs.is_empty() {
-        String::new()
-    } else {
-        serde_json::to_string_pretty(&*inventory).unwrap_or_else(|_| "{}".into())
-    };
-
-    html! {
-        <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:16px;max-width:1100px;margin:0 auto;">
-            <h1 style="margin:0 0 12px 0;">{"Spotify Song Inventory"}</h1>
-
-            <div style="display:grid;grid-template-columns:320px 1fr;gap:16px;">
-                <div style="border:1px solid #ddd;border-radius:12px;padding:12px;">
-                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
-                        <button onclick={on_new} style={btn()}>{"New"}</button>
-                        <button onclick={on_save} style={btn_primary()}>{"Save"}</button>
-                        <button onclick={on_delete} style={btn_danger()}>{"Delete"}</button>
-                    </div>
-
-                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
-                        {
-                            if songs.is_empty() {
-                                html! { <button disabled=true style={btn_disabled()}>{"Export JSON"}</button> }
-                            } else {
-                                html! { <button onclick={on_export} style={btn()}>{"Export JSON"}</button> }
-                            }
-                        }
-                        <button onclick={on_reload_hosted} style={btn()}>
-                            {"Reload Hosted JSON"}
-                        </button>
-                        <label style="display:inline-flex;align-items:center;gap:8px;">
-                            <span style="font-size:12px;opacity:0.8;">{"Import JSON"}</span>
-                            <input type="file" accept="application/json,.json" onchange={on_import_change} />
-                        </label>
-                        <button onclick={on_clear} style={btn()}>{"Clear"}</button>
-                    </div>
-
-                    <div style="display:flex;justify-content:space-between;align-items:baseline;">
-                        <h3 style="margin:0;">{"Songs"}</h3>
-                        <span style="font-size:12px;opacity:0.7;">{format!("{} total", songs.len())}</span>
-                    </div>
-
-                    <div style="margin-top:10px;display:flex;flex-direction:column;gap:6px;max-height:520px;overflow:auto;">
-                        { for songs.iter().enumerate().map(|(i, s)| {
-                            let is_sel = selected == Some(i);
-                            let mut style = String::from(
-                                "text-align:left;padding:10px;border-radius:10px;border:1px solid #e5e5e5;cursor:pointer;background:#fff;"
-                            );
-                            if is_sel {
-                                style.push_str("border-color:#6aa6ff;box-shadow:0 0 0 2px rgba(106,166,255,0.25);");
-                            }
-                            let on_select = on_select.clone();
-                            html! {
-                                <button style={style} onclick={Callback::from(move |_| on_select.emit(i))}>
-                                    <div style="font-weight:700;font-size:14px;margin-bottom:2px;">{ s.title.clone() }</div>
-                                    <div style="font-size:12px;opacity:0.75;">{ format!("Length: {}", s.length_mmss) }</div>
-                                </button>
-                            }
-                        }) }
-                    </div>
-                </div>
-
-                <div style="display:flex;flex-direction:column;gap:16px;">
-                    <div style="border:1px solid #ddd;border-radius:12px;padding:12px;">
-                        <h3 style="margin:0 0 10px 0;">{"Song Details"}</h3>
-
-                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-                            { field("Title", &draft_song.title, on_change_title, "Courage of the Last Light") }
-                            { field("Length (MM:SS)", &draft_song.length_mmss, on_change_len, "3:42") }
-                            { field("Cover Art URL", &draft_song.cover_art_url, on_change_cover, "https://...") }
-                            { field("Spotify URL", &draft_song.spotify_url, on_change_spotify, "https://open.spotify.com/track/...") }
-                        </div>
-
-                        <div style="margin-top:10px;">
-                            <label style="display:block;font-size:12px;opacity:0.8;margin-bottom:6px;">
-                                {"Lyrics (optional)"}
-                            </label>
-                            <textarea
-                                value={draft_song.lyrics.clone()}
-                                oninput={on_change_lyrics}
-                                rows="8"
-                                style="width:100%;border:1px solid #e5e5e5;border-radius:10px;padding:10px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono',monospace;"
-                                placeholder="Paste lyrics here..."
-                            />
-                        </div>
-
-                        <div style="margin-top:12px;">
-                            { preview_card(&draft_song) }
-                        </div>
-                    </div>
-
-                    <div style="border:1px solid #ddd;border-radius:12px;padding:12px;">
-                        <h3 style="margin:0 0 10px 0;">{"Log"}</h3>
-                        <textarea
-                            readonly=true
-                            value={(*log_text).clone()}
-                            rows="8"
-                            style="width:100%;border:1px solid #e5e5e5;border-radius:10px;padding:10px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono',monospace;background:#fafafa;"
-                        />
-
-                        <div style="margin-top:12px;">
-                            <h3 style="margin:0 0 10px 0;">{"JSON Preview"}</h3>
-                            {
-                                if songs.is_empty() {
-                                    html! { <div style="font-size:12px;opacity:0.75;">{"No entries yet — save your first song to generate JSON."}</div> }
-                                } else {
-                                    html! {
-                                        <textarea
-                                            readonly=true
-                                            value={json_preview}
-                                            rows="10"
-                                            style="width:100%;border:1px solid #e5e5e5;border-radius:10px;padding:10px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono',monospace;background:#fafafa;"
-                                        />
-                                    }
-                                }
-                            }
-                        </div>
-
-                        <div style="margin-top:8px;font-size:12px;opacity:0.75;">
-                            {"Hosted JSON path: /mikegyver-studio-spotify-inventory/assets/spotify_inventory.json"}
-                        </div>
-                    </div>
-                </div>
+    let status_banner = if state.symptoms.near_faint || state.symptoms.racing_pulse {
+        html! {
+            <div class="banner danger">
+                {"Today is not a “push through it” day. Sit or lie down if you feel faint, hydrate, and follow your clinician’s guidance. Seek medical care for worsening symptoms."}
             </div>
-        </div>
-    }
-}
-
-fn field(label: &str, value: &str, oninput: Callback<InputEvent>, placeholder: &str) -> Html {
-    html! {
-        <div>
-            <label style="display:block;font-size:12px;opacity:0.8;margin-bottom:6px;">
-                { label }
-            </label>
-            <input
-                value={value.to_string()}
-                {oninput}
-                placeholder={placeholder.to_string()}
-                style="width:100%;border:1px solid #e5e5e5;border-radius:10px;padding:10px;"
-            />
-        </div>
-    }
-}
-
-fn bind_input(draft: UseStateHandle<Song>, mutator: fn(&mut Song, String)) -> Callback<InputEvent> {
-    Callback::from(move |e: InputEvent| {
-        let input = e
-            .target()
-            .and_then(|t| t.dyn_into::<HtmlInputElement>().ok());
-
-        if let Some(i) = input {
-            let mut s = (*draft).clone();
-            mutator(&mut s, i.value());
-            draft.set(s);
         }
-    })
-}
-
-fn preview_card(song: &Song) -> Html {
-    let has_cover = !song.cover_art_url.trim().is_empty();
-    let has_spotify = !song.spotify_url.trim().is_empty();
-    let title = if song.title.trim().is_empty() {
-        "Untitled"
+    } else if state.total_oz < pace_now {
+        html! {
+            <div class="banner warn">
+                {format!(
+                    "You’re behind your pace target by {} oz. A 12–16 oz catch-up sip would help.",
+                    pace_now.saturating_sub(state.total_oz)
+                )}
+            </div>
+        }
     } else {
-        song.title.trim()
+        html! {
+            <div class="banner good">
+                {"You’re on pace. Keep stacking small wins instead of waiting until you feel thirsty."}
+            </div>
+        }
+    };
+
+    let add_oz = {
+        let state = state.clone();
+        Callback::from(move |oz: u32| {
+            let mut next = load_current_or_default();
+
+            next.total_oz = next.total_oz.saturating_add(oz);
+            next.entries.insert(
+                0,
+                IntakeEntry {
+                    timestamp_ms: now_ms(),
+                    ounces: oz,
+                },
+            );
+
+            save_state(&next);
+            state.set(next);
+        })
+    };
+
+    let undo_last = {
+        let state = state.clone();
+        Callback::from(move |_| {
+            let mut next = load_current_or_default();
+
+            if let Some(last) = next.entries.first().cloned() {
+                next.total_oz = next.total_oz.saturating_sub(last.ounces);
+                next.entries.remove(0);
+                save_state(&next);
+                state.set(next);
+            }
+        })
+    };
+
+    let reset_day = {
+        let state = state.clone();
+        Callback::from(move |_| {
+            let mut next = load_current_or_default();
+            next.day_key = today_key();
+            next.total_oz = 0;
+            next.entries.clear();
+            next.symptoms = Symptoms::default();
+            next.last_reminder_ms = 0.0;
+            save_state(&next);
+            state.set(next);
+        })
+    };
+
+    let request_notifications = {
+        let state = state.clone();
+        Callback::from(move |_| {
+            let mut next = load_current_or_default();
+
+            if can_notify() {
+                let _ = Notification::request_permission();
+                next.notifications_enabled = true;
+            }
+
+            save_state(&next);
+            state.set(next);
+        })
+    };
+
+    let enable_sound = {
+        let state = state.clone();
+        Callback::from(move |_| {
+            let mut next = load_current_or_default();
+            next.sound_enabled = true;
+            next.audio_unlocked = true;
+            save_state(&next);
+            state.set(next);
+
+            play_reminder_chime();
+        })
+    };
+
+    let test_sound = Callback::from(move |_| {
+        play_reminder_chime();
+    });
+
+    let set_goal = {
+        let state = state.clone();
+        Callback::from(move |e: InputEvent| {
+            let input: HtmlInputElement = e.target_unchecked_into();
+            if let Ok(v) = input.value().parse::<u32>() {
+                let mut next = load_current_or_default();
+                next.daily_goal_oz = v.clamp(32, 200);
+                save_state(&next);
+                state.set(next);
+            }
+        })
+    };
+
+    let set_interval = {
+        let state = state.clone();
+        Callback::from(move |e: InputEvent| {
+            let input: HtmlInputElement = e.target_unchecked_into();
+            if let Ok(v) = input.value().parse::<u32>() {
+                let mut next = load_current_or_default();
+                next.reminder_interval_min = v.clamp(15, 180);
+                save_state(&next);
+                state.set(next);
+            }
+        })
+    };
+
+    let set_wake_start = {
+        let state = state.clone();
+        Callback::from(move |e: InputEvent| {
+            let input: HtmlInputElement = e.target_unchecked_into();
+            if let Ok(v) = input.value().parse::<u32>() {
+                let mut next = load_current_or_default();
+                next.wake_start_hour = v.clamp(0, 23);
+                save_state(&next);
+                state.set(next);
+            }
+        })
+    };
+
+    let set_wake_end = {
+        let state = state.clone();
+        Callback::from(move |e: InputEvent| {
+            let input: HtmlInputElement = e.target_unchecked_into();
+            if let Ok(v) = input.value().parse::<u32>() {
+                let mut next = load_current_or_default();
+                next.wake_end_hour = v.clamp(1, 23);
+                save_state(&next);
+                state.set(next);
+            }
+        })
+    };
+
+    let toggle_symptom = {
+        let state = state.clone();
+        Callback::from(move |name: String| {
+            let mut next = load_current_or_default();
+
+            match name.as_str() {
+                "dizziness" => next.symptoms.dizziness = !next.symptoms.dizziness,
+                "dry_mouth" => next.symptoms.dry_mouth = !next.symptoms.dry_mouth,
+                "dark_urine" => next.symptoms.dark_urine = !next.symptoms.dark_urine,
+                "racing_pulse" => next.symptoms.racing_pulse = !next.symptoms.racing_pulse,
+                "near_faint" => next.symptoms.near_faint = !next.symptoms.near_faint,
+                _ => {}
+            }
+
+            save_state(&next);
+            state.set(next);
+        })
     };
 
     html! {
-        <div style="display:flex;gap:12px;align-items:flex-start;border:1px solid #eee;border-radius:12px;padding:12px;width:100%;max-width:680px;">
-            <div style="width:96px;height:96px;border-radius:12px;overflow:hidden;background:#f2f2f2;flex:0 0 auto;">
-                {
-                    if has_cover {
-                        html! { <img src={song.cover_art_url.clone()} style="width:100%;height:100%;object-fit:cover;" /> }
-                    } else {
-                        html! { <div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:12px;opacity:0.6;">{"No cover"}</div> }
-                    }
-                }
+        <main class="app-shell">
+            <header class="topbar">
+                <div class="brand">{"MikeGyver Studio"}</div>
+                <div class="title-row">
+                    <div>
+                        <h1 class="title">{"Steady Sip"}</h1>
+                        <div class="subtitle">
+                            {"A calm hydration companion built for consistency, not panic. Default daily target: 96 oz."}
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            <div class="grid">
+                <section class="card">
+                    <h2>{"Today"}</h2>
+
+                    <div class="hero-amount">
+                        <div class="big">{state.total_oz}</div>
+                        <div class="unit">{format!("oz of {} oz", state.daily_goal_oz)}</div>
+                    </div>
+
+                    <div class="progress-wrap">
+                        <div class="progress-meta">
+                            <span>{format!("{}% complete", total_pct.min(100))}</span>
+                            <span>{format!("{} oz left", remaining)}</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div
+                                class="progress-fill"
+                                style={format!("width: {}%;", total_pct.min(100))}
+                            ></div>
+                        </div>
+                    </div>
+
+                    <div class="quick-actions">
+                        <button class="btn primary" onclick={{
+                            let add_oz = add_oz.clone();
+                            Callback::from(move |_| add_oz.emit(8))
+                        }}>{"Add 8 oz"}</button>
+
+                        <button class="btn primary" onclick={{
+                            let add_oz = add_oz.clone();
+                            Callback::from(move |_| add_oz.emit(12))
+                        }}>{"Add 12 oz"}</button>
+
+                        <button class="btn primary" onclick={{
+                            let add_oz = add_oz.clone();
+                            Callback::from(move |_| add_oz.emit(16))
+                        }}>{"Add 16 oz"}</button>
+
+                        <button class="btn good" onclick={{
+                            let add_oz = add_oz.clone();
+                            Callback::from(move |_| add_oz.emit(20))
+                        }}>{"Add 20 oz"}</button>
+                    </div>
+
+                    <div class="row" style="margin-top: 12px;">
+                        <button class="btn warn" onclick={undo_last}>{"Undo Last"}</button>
+                        <button class="btn danger" onclick={reset_day}>{"Reset Day"}</button>
+                    </div>
+
+                    <hr class="sep" />
+                    {status_banner}
+
+                    <div class="footer-note">
+                        {"This app is a habit tool. It is not a substitute for urgent care, ER follow-up, or physician guidance after dehydration, low blood pressure, rapid pulse, or fainting."}
+                    </div>
+                </section>
+
+                <aside class="stack">
+                    <section class="card">
+                        <h3>{"Settings"}</h3>
+
+                        <div class="stack">
+                            <div>
+                                <div class="label">{"Daily Goal (oz)"}</div>
+                                <input
+                                    class="input"
+                                    type="number"
+                                    value={state.daily_goal_oz.to_string()}
+                                    oninput={set_goal}
+                                />
+                            </div>
+
+                            <div>
+                                <div class="label">{"Reminder Interval (minutes)"}</div>
+                                <input
+                                    class="input"
+                                    type="number"
+                                    value={state.reminder_interval_min.to_string()}
+                                    oninput={set_interval}
+                                />
+                            </div>
+
+                            <div class="row">
+                                <div style="flex:1; min-width: 120px;">
+                                    <div class="label">{"Wake Start Hour"}</div>
+                                    <input
+                                        class="input"
+                                        type="number"
+                                        value={state.wake_start_hour.to_string()}
+                                        oninput={set_wake_start}
+                                    />
+                                </div>
+                                <div style="flex:1; min-width: 120px;">
+                                    <div class="label">{"Wake End Hour"}</div>
+                                    <input
+                                        class="input"
+                                        type="number"
+                                        value={state.wake_end_hour.to_string()}
+                                        oninput={set_wake_end}
+                                    />
+                                </div>
+                            </div>
+
+                            <button class="btn primary" onclick={request_notifications}>
+                                {"Enable Reminders"}
+                            </button>
+
+                            <button class="btn good" onclick={enable_sound}>
+                                {
+                                    if state.audio_unlocked {
+                                        "Chime Enabled"
+                                    } else {
+                                        "Enable Audible Chime"
+                                    }
+                                }
+                            </button>
+
+                            <button class="btn warn" onclick={test_sound}>
+                                {"Test Chime"}
+                            </button>
+
+                            <div class="small muted">
+                                {"On iPhone, tap “Enable Audible Chime” once to unlock audio playback for this session."}
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="card">
+                        <h3>{"Pace"}</h3>
+                        <div class="kpi">
+                            <div class="kpi-box">
+                                <div class="kpi-label">{"Pace target now"}</div>
+                                <div class="kpi-value">{format!("{} oz", pace_now)}</div>
+                            </div>
+                            <div class="kpi-box">
+                                <div class="kpi-label">{"Behind / ahead"}</div>
+                                <div class="kpi-value">
+                                    {
+                                        if state.total_oz >= pace_now {
+                                            format!("+{} oz", state.total_oz - pace_now)
+                                        } else {
+                                            format!("-{} oz", pace_now - state.total_oz)
+                                        }
+                                    }
+                                </div>
+                            </div>
+                            <div class="kpi-box">
+                                <div class="kpi-label">{"Goal left"}</div>
+                                <div class="kpi-value">{format!("{} oz", remaining)}</div>
+                            </div>
+                        </div>
+                    </section>
+                </aside>
             </div>
-            <div style="flex:1;">
-                <div style="font-weight:800;font-size:16px;margin-bottom:2px;">
-                    { title }
-                </div>
-                <div style="font-size:13px;opacity:0.8;margin-bottom:6px;">
-                    { format!("Length: {}", song.length_mmss.trim()) }
-                </div>
-                {
-                    if has_spotify {
-                        html! {
-                            <a href={song.spotify_url.clone()} target="_blank" style="font-size:13px;">
-                                {"Open in Spotify"}
-                            </a>
+
+            <div class="grid" style="margin-top:16px;">
+                <section class="card">
+                    <h3>{"Symptom Check"}</h3>
+
+                    <div class="check-grid">
+                        <label class="check-card">
+                            <input
+                                type="checkbox"
+                                checked={state.symptoms.dizziness}
+                                onchange={{
+                                    let toggle_symptom = toggle_symptom.clone();
+                                    Callback::from(move |_| toggle_symptom.emit("dizziness".to_string()))
+                                }}
+                            />
+                            <span>{"Dizziness / lightheaded"}</span>
+                        </label>
+
+                        <label class="check-card">
+                            <input
+                                type="checkbox"
+                                checked={state.symptoms.dry_mouth}
+                                onchange={{
+                                    let toggle_symptom = toggle_symptom.clone();
+                                    Callback::from(move |_| toggle_symptom.emit("dry_mouth".to_string()))
+                                }}
+                            />
+                            <span>{"Dry mouth"}</span>
+                        </label>
+
+                        <label class="check-card">
+                            <input
+                                type="checkbox"
+                                checked={state.symptoms.dark_urine}
+                                onchange={{
+                                    let toggle_symptom = toggle_symptom.clone();
+                                    Callback::from(move |_| toggle_symptom.emit("dark_urine".to_string()))
+                                }}
+                            />
+                            <span>{"Dark urine"}</span>
+                        </label>
+
+                        <label class="check-card">
+                            <input
+                                type="checkbox"
+                                checked={state.symptoms.racing_pulse}
+                                onchange={{
+                                    let toggle_symptom = toggle_symptom.clone();
+                                    Callback::from(move |_| toggle_symptom.emit("racing_pulse".to_string()))
+                                }}
+                            />
+                            <span>{"Racing pulse"}</span>
+                        </label>
+
+                        <label class="check-card">
+                            <input
+                                type="checkbox"
+                                checked={state.symptoms.near_faint}
+                                onchange={{
+                                    let toggle_symptom = toggle_symptom.clone();
+                                    Callback::from(move |_| toggle_symptom.emit("near_faint".to_string()))
+                                }}
+                            />
+                            <span>{"Near-faint / faint feeling"}</span>
+                        </label>
+                    </div>
+
+                    <div class="footer-note">
+                        {"Adult dehydration symptoms commonly include thirst, dark urine, dizziness/lightheadedness, fatigue, and dry mouth. Fainting, rapid pulse, or worsening symptoms deserve medical attention."}
+                    </div>
+                </section>
+
+                <section class="card">
+                    <h3>{"Today’s Log"}</h3>
+                    <div class="history-list">
+                        {
+                            if state.entries.is_empty() {
+                                html! {
+                                    <div class="muted">{"No entries yet today."}</div>
+                                }
+                            } else {
+                                html! {
+                                    <>
+                                        {for state.entries.iter().map(|entry| {
+                                            let t = Date::new(&JsValue::from_f64(entry.timestamp_ms));
+                                            let hh = t.get_hours();
+                                            let mm = t.get_minutes();
+
+                                            html! {
+                                                <div class="history-item">
+                                                    <span>{format!("+{} oz", entry.ounces)}</span>
+                                                    <span class="muted">{format!("{:02}:{:02}", hh, mm)}</span>
+                                                </div>
+                                            }
+                                        })}
+                                    </>
+                                }
+                            }
                         }
-                    } else {
-                        html! { <div style="font-size:13px;opacity:0.6;">{"No Spotify URL yet."}</div> }
-                    }
-                }
+                    </div>
+                </section>
             </div>
-        </div>
+        </main>
     }
 }
 
-fn load_from_storage() -> Inventory {
-    LocalStorage::get::<Inventory>(STORAGE_KEY).unwrap_or_default()
-}
-
-fn download_text_file(filename: &str, content: &str) -> Result<(), String> {
-    let bag = BlobPropertyBag::new();
-    bag.set_type("application/json");
-
-    let parts = js_sys::Array::new();
-    parts.push(&wasm_bindgen::JsValue::from_str(content));
-
-    let blob = Blob::new_with_str_sequence_and_options(&parts, &bag)
-        .map_err(|_| "Could not create Blob".to_string())?;
-
-    let url = Url::create_object_url_with_blob(&blob)
-        .map_err(|_| "Could not create object URL".to_string())?;
-
-    let window = web_sys::window().ok_or("No window".to_string())?;
-    let document = window.document().ok_or("No document".to_string())?;
-
-    let a_el = document
-        .create_element("a")
-        .map_err(|_| "Could not create <a> element".to_string())?;
-
-    a_el
-        .set_attribute("href", &url)
-        .map_err(|_| "Could not set href".to_string())?;
-    a_el
-        .set_attribute("download", filename)
-        .map_err(|_| "Could not set download".to_string())?;
-    a_el
-        .set_attribute("style", "display:none")
-        .map_err(|_| "Could not set style".to_string())?;
-
-    let body = document.body().ok_or("No body".to_string())?;
-    body.append_child(&a_el)
-        .map_err(|_| "Could not append link".to_string())?;
-
-    let a: web_sys::HtmlAnchorElement = a_el
-        .dyn_into::<web_sys::HtmlAnchorElement>()
-        .map_err(|_| "Could not cast to HtmlAnchorElement".to_string())?;
-
-    a.click();
-
-    let a_el: web_sys::Element = a
-        .dyn_into::<web_sys::Element>()
-        .map_err(|_| "Could not cast anchor back to Element".to_string())?;
-    body.remove_child(&a_el).ok();
-
-    Url::revoke_object_url(&url).ok();
-    log!(format!("Downloaded file: {filename}"));
-    Ok(())
-}
-
-fn btn() -> String {
-    "padding:10px 12px;border-radius:10px;border:1px solid #ddd;background:#fff;cursor:pointer;".into()
-}
-
-fn btn_primary() -> String {
-    "padding:10px 12px;border-radius:10px;border:1px solid #1b66ff;background:#1b66ff;color:#fff;cursor:pointer;".into()
-}
-
-fn btn_danger() -> String {
-    "padding:10px 12px;border-radius:10px;border:1px solid #d33;background:#fff;color:#d33;cursor:pointer;".into()
-}
-
-fn btn_disabled() -> String {
-    "padding:10px 12px;border-radius:10px;border:1px solid #ddd;background:#f3f3f3;color:#888;cursor:not-allowed;".into()
+fn main() {
+    yew::Renderer::<App>::new().render();
 }
