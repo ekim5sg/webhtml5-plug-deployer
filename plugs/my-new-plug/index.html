@@ -1,29 +1,15 @@
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <meta name="color-scheme" content="dark" />
   <meta name="theme-color" content="#0b1020" />
-  <title>My New Plug</title>
+  <title>Steady Sip</title>
   <link data-trunk rel="css" href="styles.css" />
-</head> <!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Spotify Song Inventory (Yew)</title>
-  </head>
-  <body>
-    <div id="app"></div>
-    <script type="module">
-      import init from "/mikegyver-studio-spotify-inventory/assets/spotify_inventory.json";
-      init();
-    </script>
-  </body>
-</html>
-
+</head>
 <body id="top">
   <div id="app"></div>
-  <link data-trunk rel="rust" />
+  <link data-trunk rel="rust" data-wasm-opt="z" />
 </body>
 </html>
