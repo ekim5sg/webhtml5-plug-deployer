@@ -181,6 +181,7 @@ fn app() -> Html {
     let badge_state = use_state(BadgeState::load);
     let config = use_state(|| None::<MissionConfig>);
     let load_error = use_state(|| None::<String>);
+    let is_loading = use_state(|| true);
 
     {
         let now = now.clone();
@@ -196,20 +197,27 @@ fn app() -> Html {
     {
         let config = config.clone();
         let load_error = load_error.clone();
+        let is_loading = is_loading.clone();
 
         use_effect_with((), move |_| {
             spawn_local(async move {
                 match Request::get(MILESTONES_URL).send().await {
                     Ok(response) => match response.json::<MissionConfig>().await {
-                        Ok(parsed) => config.set(Some(parsed)),
+                        Ok(parsed) => {
+                            config.set(Some(parsed));
+                            load_error.set(None);
+                            is_loading.set(false);
+                        }
                         Err(err) => {
                             load_error.set(Some(format!("JSON parse error: {err}")));
                             config.set(Some(fallback_config()));
+                            is_loading.set(false);
                         }
                     },
                     Err(err) => {
                         load_error.set(Some(format!("Fetch error: {err}")));
                         config.set(Some(fallback_config()));
+                        is_loading.set(false);
                     }
                 }
             });
@@ -220,7 +228,12 @@ fn app() -> Html {
 
     let current_config = (*config).clone().unwrap_or_else(fallback_config);
 
-    let phases = current_config.phases.clone();
+    let phases = if current_config.phases.is_empty() {
+        fallback_config().phases
+    } else {
+        current_config.phases.clone()
+    };
+
     let launch_ms = parse_ms(&current_config.launch_iso);
     let met_ms = (*now - launch_ms).max(0.0);
     let idx = phase_index(&phases, *now);
@@ -324,6 +337,19 @@ fn app() -> Html {
                     </button>
                 </div>
             </section>
+
+            {
+                if *is_loading {
+                    html! {
+                        <section class="card" style="margin-top:18px;">
+                            <div class="label">{ "Mission Config" }</div>
+                            <div class="small-text">{ "Loading mission config..." }</div>
+                        </section>
+                    }
+                } else {
+                    html! {}
+                }
+            }
 
             <section class="top-grid">
                 <div class="card">
@@ -450,7 +476,11 @@ fn app() -> Html {
                 }
                 {
                     if let Some(err) = (*load_error).clone() {
-                        html! { <div class="small-text" style="margin-top:8px;">{ format!("Using fallback config because: {}", err) }</div> }
+                        html! {
+                            <div class="small-text" style="margin-top:8px;">
+                                { format!("Using fallback config because: {}", err) }
+                            </div>
+                        }
                     } else {
                         html! {}
                     }
