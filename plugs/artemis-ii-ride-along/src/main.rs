@@ -1,8 +1,10 @@
 use gloo::storage::{LocalStorage, Storage};
 use gloo::timers::callback::Interval;
+use gloo_net::http::Request;
 use js_sys::Date;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::JsValue;
+use wasm_bindgen_futures::spawn_local;
 use web_sys::{window, HtmlAudioElement};
 use yew::prelude::*;
 
@@ -10,69 +12,24 @@ const APP_TITLE: &str = "Artemis II: Ride Along 🚀";
 const BRAND: &str = "MikeGyver Studio";
 const SHARE_URL: &str = "https://www.webhtml5.info/artemis-ii-ride-along/";
 const BADGE_KEY: &str = "artemis_ii_badges_v1";
-const LAUNCH_ISO: &str = "2026-04-01T23:24:00Z";
+const MILESTONES_URL: &str = "assets/data/milestones.json";
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Deserialize, Serialize, Debug)]
 struct Phase {
-    name: &'static str,
-    iso: &'static str,
-    narrative: &'static str,
-    kid_text: &'static str,
-    location: &'static str,
-    note: &'static str,
+    name: String,
+    iso: String,
+    narrative: String,
+    kid_text: String,
+    location: String,
+    note: String,
 }
 
-fn mission_phases() -> Vec<Phase> {
-    vec![
-        Phase {
-            name: "Launch",
-            iso: "2026-04-01T23:24:00Z",
-            narrative: "The Space Launch System roared off the pad and Orion began humanity’s next crewed journey beyond low Earth orbit. Artemis II did not just leave Earth — it reopened a path that had been quiet since Apollo.",
-            kid_text: "Launch is the giant push off the starting line. The rocket gives Orion enough power to climb away from Earth.",
-            location: "Leaving Earth",
-            note: "SLS and Orion lift off from Kennedy Space Center.",
-        },
-        Phase {
-            name: "Orbit Checkout",
-            iso: "2026-04-02T02:24:00Z",
-            narrative: "Now in orbit, the crew and mission teams verify the spacecraft’s health, systems, power, communications, and readiness for the much bigger step ahead.",
-            kid_text: "Think of this like checking your backpack before the big field trip bus leaves town.",
-            location: "Earth Orbit",
-            note: "Crew and ground teams verify the spacecraft before heading outward.",
-        },
-        Phase {
-            name: "Trans-Lunar Injection",
-            iso: "2026-04-02T05:24:00Z",
-            narrative: "This is the commitment burn. Orion fires at just the right time to stop circling Earth and begin the long arc toward the Moon.",
-            kid_text: "TLI is like taking the perfect slingshot shot so you leave the playground and head for the next world.",
-            location: "Departing Earth",
-            note: "The TLI burn sends Orion out of Earth orbit and onto its lunar path.",
-        },
-        Phase {
-            name: "Deep Space Coast",
-            iso: "2026-04-02T08:24:00Z",
-            narrative: "With Earth shrinking behind them, the crew enters the quiet, precise work of translunar flight. Navigation, communication, life support, and trajectory all matter here. This is where exploration becomes discipline.",
-            kid_text: "They are not just flying fast — they are staying on the right invisible road in space.",
-            location: "Deep Space",
-            note: "Orion coasts between Earth and Moon while teams watch trajectory and systems.",
-        },
-        Phase {
-            name: "Lunar Flyby",
-            iso: "2026-04-04T23:24:00Z",
-            narrative: "At lunar flyby, Orion uses the Moon’s gravity and its own precise path to sweep around the far side and prove the systems, navigation, and human readiness needed for the missions that follow.",
-            kid_text: "The spacecraft swings around the Moon instead of landing — like rounding a cone on a giant racetrack.",
-            location: "Near Moon",
-            note: "Artemis II loops around the Moon and sets up for the journey home.",
-        },
-        Phase {
-            name: "Return Burn",
-            iso: "2026-04-07T23:24:00Z",
-            narrative: "Home is the target now. Reentry planning, spacecraft health, and trajectory control all lead toward the fiery return through Earth’s atmosphere.",
-            kid_text: "Coming home from the Moon still takes teamwork, math, and careful flying.",
-            location: "Heading Home",
-            note: "The mission transitions from lunar return to Earth approach.",
-        },
-    ]
+#[derive(Clone, PartialEq, Deserialize, Serialize, Debug)]
+struct MissionConfig {
+    mission_name: String,
+    launch_iso: String,
+    source_note: Option<String>,
+    phases: Vec<Phase>,
 }
 
 #[derive(Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -80,6 +37,7 @@ struct BadgeState {
     launch_witness: bool,
     deep_space_rider: bool,
     moon_flyby_crew: bool,
+    splashdown_seen: bool,
 }
 
 impl BadgeState {
@@ -92,6 +50,72 @@ impl BadgeState {
     }
 }
 
+fn fallback_config() -> MissionConfig {
+    MissionConfig {
+        mission_name: "Artemis II".to_string(),
+        launch_iso: "2026-04-01T22:35:00Z".to_string(),
+        source_note: Some("Fallback mission config".to_string()),
+        phases: vec![
+            Phase {
+                name: "Launch".to_string(),
+                iso: "2026-04-01T22:35:00Z".to_string(),
+                narrative: "The Space Launch System thundered off the pad and Orion began NASA’s first crewed journey beyond low Earth orbit since Apollo.".to_string(),
+                kid_text: "Launch is the giant push off the starting line.".to_string(),
+                location: "Leaving Earth".to_string(),
+                note: "SLS and Orion lift off from Kennedy Space Center.".to_string(),
+            },
+            Phase {
+                name: "Orbit Checkout".to_string(),
+                iso: "2026-04-02T01:35:00Z".to_string(),
+                narrative: "Now in orbit, the crew and mission teams verify spacecraft health and readiness.".to_string(),
+                kid_text: "This is like checking your backpack before the big trip.".to_string(),
+                location: "Earth Orbit".to_string(),
+                note: "Crew and flight controllers verify Orion systems in Earth orbit.".to_string(),
+            },
+            Phase {
+                name: "Trans-Lunar Injection".to_string(),
+                iso: "2026-04-02T04:35:00Z".to_string(),
+                narrative: "This is the commitment burn that sends Orion toward the Moon.".to_string(),
+                kid_text: "This is the slingshot that sends the spacecraft toward the Moon.".to_string(),
+                location: "Departing Earth".to_string(),
+                note: "The TLI burn sends Orion onto its lunar path.".to_string(),
+            },
+            Phase {
+                name: "Deep Space Coast".to_string(),
+                iso: "2026-04-02T07:35:00Z".to_string(),
+                narrative: "Orion coasts through deep space as teams monitor the journey.".to_string(),
+                kid_text: "They stay on the right invisible road through space.".to_string(),
+                location: "Deep Space".to_string(),
+                note: "Orion coasts between Earth and Moon.".to_string(),
+            },
+            Phase {
+                name: "Lunar Flyby".to_string(),
+                iso: "2026-04-04T22:35:00Z".to_string(),
+                narrative: "Orion loops around the Moon and begins setting up for the return.".to_string(),
+                kid_text: "The spacecraft loops around the Moon instead of landing.".to_string(),
+                location: "Near Moon".to_string(),
+                note: "Artemis II loops around the Moon and starts the journey home.".to_string(),
+            },
+            Phase {
+                name: "Return Burn".to_string(),
+                iso: "2026-04-08T22:35:00Z".to_string(),
+                narrative: "The mission transitions to Earth return operations.".to_string(),
+                kid_text: "Going home still takes careful teamwork.".to_string(),
+                location: "Heading Home".to_string(),
+                note: "The mission transitions from lunar return to Earth approach.".to_string(),
+            },
+            Phase {
+                name: "Splashdown".to_string(),
+                iso: "2026-04-11T22:35:00Z".to_string(),
+                narrative: "Orion returns to Earth and splashes down to complete the mission.".to_string(),
+                kid_text: "The mission ends with a splash in the ocean.".to_string(),
+                location: "Earth Return".to_string(),
+                note: "Orion splashes down to complete the mission.".to_string(),
+            },
+        ],
+    }
+}
+
 fn parse_ms(iso: &str) -> f64 {
     Date::new(&JsValue::from_str(iso)).get_time()
 }
@@ -100,7 +124,7 @@ fn now_ms() -> f64 {
     Date::new_0().get_time()
 }
 
-fn format_duration(ms: f64) -> String {
+fn format_met(ms: f64) -> String {
     if ms <= 0.0 {
         return "T-00:00:00".to_string();
     }
@@ -126,7 +150,7 @@ fn phase_index(phases: &[Phase], now: f64) -> usize {
     let mut current = 0usize;
 
     for (idx, phase) in phases.iter().enumerate() {
-        if now >= parse_ms(phase.iso) {
+        if now >= parse_ms(&phase.iso) {
             current = idx;
         }
     }
@@ -155,6 +179,8 @@ fn app() -> Html {
     let share_copied = use_state(|| false);
     let audio_enabled = use_state(|| false);
     let badge_state = use_state(BadgeState::load);
+    let config = use_state(|| None::<MissionConfig>);
+    let load_error = use_state(|| None::<String>);
 
     {
         let now = now.clone();
@@ -167,28 +193,69 @@ fn app() -> Html {
         });
     }
 
-    let phases = mission_phases();
-    let launch_ms = parse_ms(LAUNCH_ISO);
+    {
+        let config = config.clone();
+        let load_error = load_error.clone();
+
+        use_effect_with((), move |_| {
+            spawn_local(async move {
+                match Request::get(MILESTONES_URL).send().await {
+                    Ok(response) => match response.json::<MissionConfig>().await {
+                        Ok(parsed) => config.set(Some(parsed)),
+                        Err(err) => {
+                            load_error.set(Some(format!("JSON parse error: {err}")));
+                            config.set(Some(fallback_config()));
+                        }
+                    },
+                    Err(err) => {
+                        load_error.set(Some(format!("Fetch error: {err}")));
+                        config.set(Some(fallback_config()));
+                    }
+                }
+            });
+
+            || {}
+        });
+    }
+
+    let current_config = (*config).clone().unwrap_or_else(fallback_config);
+
+    let phases = current_config.phases.clone();
+    let launch_ms = parse_ms(&current_config.launch_iso);
     let met_ms = (*now - launch_ms).max(0.0);
     let idx = phase_index(&phases, *now);
     let active = phases[idx].clone();
 
     {
         let badge_state = badge_state.clone();
+        let phases_for_badges = phases.clone();
         let now_value = *now;
 
-        use_effect_with(now_value, move |_| {
+        use_effect_with((now_value, phases_for_badges.clone()), move |_| {
             let mut next = (*badge_state).clone();
-            let phases = mission_phases();
 
-            if now_value >= parse_ms(phases[0].iso) {
-                next.launch_witness = true;
+            if let Some(phase) = phases_for_badges.get(0) {
+                if now_value >= parse_ms(&phase.iso) {
+                    next.launch_witness = true;
+                }
             }
-            if now_value >= parse_ms(phases[3].iso) {
-                next.deep_space_rider = true;
+
+            if let Some(phase) = phases_for_badges.iter().find(|p| p.name == "Deep Space Coast") {
+                if now_value >= parse_ms(&phase.iso) {
+                    next.deep_space_rider = true;
+                }
             }
-            if now_value >= parse_ms(phases[4].iso) {
-                next.moon_flyby_crew = true;
+
+            if let Some(phase) = phases_for_badges.iter().find(|p| p.name == "Lunar Flyby") {
+                if now_value >= parse_ms(&phase.iso) {
+                    next.moon_flyby_crew = true;
+                }
+            }
+
+            if let Some(phase) = phases_for_badges.iter().find(|p| p.name == "Splashdown") {
+                if now_value >= parse_ms(&phase.iso) {
+                    next.splashdown_seen = true;
+                }
             }
 
             if next != *badge_state {
@@ -203,7 +270,7 @@ fn app() -> Html {
     let next_phase = phases.get(idx + 1).cloned();
     let next_phase_countdown = next_phase
         .as_ref()
-        .map(|p| format_countdown((parse_ms(p.iso) - *now).max(0.0)));
+        .map(|p| format_countdown((parse_ms(&p.iso) - *now).max(0.0)));
 
     let toggle_kid = {
         let kid_mode = kid_mode.clone();
@@ -222,7 +289,7 @@ fn app() -> Html {
 
     let on_share = {
         let share_copied = share_copied.clone();
-        let met = format_duration(met_ms);
+        let met = format_met(met_ms);
 
         Callback::from(move |_| {
             let text = format!(
@@ -240,7 +307,7 @@ fn app() -> Html {
                 <div class="brand">{ BRAND }</div>
                 <h1>{ APP_TITLE }</h1>
                 <p>
-                    { "A cinematic mission companion following Artemis II from launch to lunar flyby and home again — with real mission elapsed time, story mode, kid-friendly STEM, and milestone tracking." }
+                    { "A cinematic mission companion following Artemis II from launch to lunar flyby and home again — with live mission elapsed time, story mode, kid-friendly STEM, and milestone tracking from JSON." }
                 </p>
 
                 <div class="controls">
@@ -261,20 +328,20 @@ fn app() -> Html {
             <section class="top-grid">
                 <div class="card">
                     <div class="label">{ "Mission Elapsed Time" }</div>
-                    <div class="met">{ format_duration(met_ms) }</div>
+                    <div class="met">{ format_met(met_ms) }</div>
                     <div class="met-sub">
-                        { format!("Launch reference: {}", LAUNCH_ISO) }
+                        { format!("Launch reference: {}", current_config.launch_iso) }
                     </div>
                     <div class="status-pill">
                         <span>{ "Current location:" }</span>
-                        <strong>{ active.location }</strong>
+                        <strong>{ active.location.clone() }</strong>
                     </div>
                 </div>
 
                 <div class="card">
                     <div class="label">{ "Current Phase" }</div>
-                    <div class="phase-name">{ active.name }</div>
-                    <div class="phase-description">{ active.note }</div>
+                    <div class="phase-name">{ active.name.clone() }</div>
+                    <div class="phase-description">{ active.note.clone() }</div>
 
                     {
                         if let Some(next) = next_phase {
@@ -282,13 +349,7 @@ fn app() -> Html {
                                 <>
                                     <div class="label" style="margin-top:16px;">{ "Next Event" }</div>
                                     <div class="small-text">
-                                        {
-                                            format!(
-                                                "{} in {}",
-                                                next.name,
-                                                next_phase_countdown.unwrap_or_else(|| "00:00:00".to_string())
-                                            )
-                                        }
+                                        { format!("{} in {}", next.name, next_phase_countdown.unwrap_or_else(|| "00:00:00".to_string())) }
                                     </div>
                                 </>
                             }
@@ -306,7 +367,7 @@ fn app() -> Html {
             <section class="bottom-grid">
                 <div class="card">
                     <div class="label">{ "Story Mode" }</div>
-                    <div class="story-text">{ active.narrative }</div>
+                    <div class="story-text">{ active.narrative.clone() }</div>
                 </div>
 
                 <div class="card">
@@ -316,9 +377,9 @@ fn app() -> Html {
                     <div class="kid-text">
                         {
                             if *kid_mode {
-                                active.kid_text
+                                active.kid_text.clone()
                             } else {
-                                "Toggle Kid Mode to switch the mission explainer into a younger-reader STEM voice."
+                                "Toggle Kid Mode to switch the mission explainer into a younger-reader STEM voice.".to_string()
                             }
                         }
                     </div>
@@ -336,6 +397,9 @@ fn app() -> Html {
                         <div class={classes!("badge", badge_state.moon_flyby_crew.then_some("unlocked"))}>
                             { "Moon Flyby Crew" }
                         </div>
+                        <div class={classes!("badge", badge_state.splashdown_seen.then_some("unlocked"))}>
+                            { "Splashdown Seen" }
+                        </div>
                     </div>
                     <div class="share-text" style="margin-top:14px;">
                         { "Badges are saved locally so returning visitors can keep their mission progress." }
@@ -348,7 +412,7 @@ fn app() -> Html {
                 <div class="timeline">
                     {
                         phases.iter().enumerate().map(|(phase_idx, phase)| {
-                            let phase_ms = parse_ms(phase.iso);
+                            let phase_ms = parse_ms(&phase.iso);
 
                             let class_name = if *now >= phase_ms {
                                 if phase_idx == idx {
@@ -363,15 +427,34 @@ fn app() -> Html {
                             html! {
                                 <div class={class_name}>
                                     <div class="timeline-top">
-                                        <div class="timeline-title">{ phase.name }</div>
-                                        <div class="timeline-time">{ phase.iso }</div>
+                                        <div class="timeline-title">{ phase.name.clone() }</div>
+                                        <div class="timeline-time">{ phase.iso.clone() }</div>
                                     </div>
-                                    <div class="timeline-note">{ phase.note }</div>
+                                    <div class="timeline-note">{ phase.note.clone() }</div>
                                 </div>
                             }
                         }).collect::<Html>()
                     }
                 </div>
+            </section>
+
+            <section class="card" style="margin-top:18px;">
+                <div class="label">{ "Config Source" }</div>
+                <div class="small-text">{ format!("Loaded from: {}", MILESTONES_URL) }</div>
+                {
+                    if let Some(note) = current_config.source_note.clone() {
+                        html! { <div class="small-text" style="margin-top:8px;">{ note }</div> }
+                    } else {
+                        html! {}
+                    }
+                }
+                {
+                    if let Some(err) = (*load_error).clone() {
+                        html! { <div class="small-text" style="margin-top:8px;">{ format!("Using fallback config because: {}", err) }</div> }
+                    } else {
+                        html! {}
+                    }
+                }
             </section>
 
             <div class="footer-brand">{ "MikeGyver Studio" }</div>
