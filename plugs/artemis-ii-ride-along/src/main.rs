@@ -1,6 +1,8 @@
 use gloo::storage::{LocalStorage, Storage};
 use gloo::timers::callback::Interval;
 use js_sys::Date;
+use serde::{Deserialize, Serialize};
+use wasm_bindgen::JsValue;
 use web_sys::{window, HtmlAudioElement};
 use yew::prelude::*;
 
@@ -73,7 +75,7 @@ fn mission_phases() -> Vec<Phase> {
     ]
 }
 
-#[derive(Clone, PartialEq, Default)]
+#[derive(Clone, PartialEq, Default, Serialize, Deserialize)]
 struct BadgeState {
     launch_witness: bool,
     deep_space_rider: bool,
@@ -90,18 +92,8 @@ impl BadgeState {
     }
 }
 
-impl serde::Serialize for BadgeState {}
-impl<'de> serde::Deserialize<'de> for BadgeState {
-    fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        Ok(BadgeState::default())
-    }
-}
-
 fn parse_ms(iso: &str) -> f64 {
-    Date::new(&wasm_bindgen::JsValue::from_str(iso)).get_time()
+    Date::new(&JsValue::from_str(iso)).get_time()
 }
 
 fn now_ms() -> f64 {
@@ -112,10 +104,12 @@ fn format_duration(ms: f64) -> String {
     if ms <= 0.0 {
         return "T-00:00:00".to_string();
     }
+
     let total_seconds = (ms / 1000.0).floor() as i64;
     let hours = total_seconds / 3600;
     let minutes = (total_seconds % 3600) / 60;
     let seconds = total_seconds % 60;
+
     format!("T+{:02}:{:02}:{:02}", hours, minutes, seconds)
 }
 
@@ -124,16 +118,19 @@ fn format_countdown(ms: f64) -> String {
     let hours = total_seconds / 3600;
     let minutes = (total_seconds % 3600) / 60;
     let seconds = total_seconds % 60;
+
     format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
 }
 
 fn phase_index(phases: &[Phase], now: f64) -> usize {
-    let mut current = 0;
+    let mut current = 0usize;
+
     for (idx, phase) in phases.iter().enumerate() {
         if now >= parse_ms(phase.iso) {
             current = idx;
         }
     }
+
     current
 }
 
@@ -162,7 +159,10 @@ fn app() -> Html {
     {
         let now = now.clone();
         use_effect_with((), move |_| {
-            let interval = Interval::new(1000, move || now.set(now_ms()));
+            let interval = Interval::new(1000, move || {
+                now.set(now_ms());
+            });
+
             move || drop(interval)
         });
     }
@@ -176,9 +176,11 @@ fn app() -> Html {
     {
         let badge_state = badge_state.clone();
         let now_value = *now;
+
         use_effect_with(now_value, move |_| {
             let mut next = (*badge_state).clone();
             let phases = mission_phases();
+
             if now_value >= parse_ms(phases[0].iso) {
                 next.launch_witness = true;
             }
@@ -188,10 +190,12 @@ fn app() -> Html {
             if now_value >= parse_ms(phases[4].iso) {
                 next.moon_flyby_crew = true;
             }
+
             if next != *badge_state {
                 next.save();
                 badge_state.set(next);
             }
+
             || {}
         });
     }
@@ -203,7 +207,9 @@ fn app() -> Html {
 
     let toggle_kid = {
         let kid_mode = kid_mode.clone();
-        Callback::from(move |_| kid_mode.set(!*kid_mode))
+        Callback::from(move |_| {
+            kid_mode.set(!*kid_mode);
+        })
     };
 
     let on_enable_audio = {
@@ -217,6 +223,7 @@ fn app() -> Html {
     let on_share = {
         let share_copied = share_copied.clone();
         let met = format_duration(met_ms);
+
         Callback::from(move |_| {
             let text = format!(
                 "I’m riding Artemis II 🚀 {} into the mission. Join the journey: {}",
@@ -235,10 +242,19 @@ fn app() -> Html {
                 <p>
                     { "A cinematic mission companion following Artemis II from launch to lunar flyby and home again — with real mission elapsed time, story mode, kid-friendly STEM, and milestone tracking." }
                 </p>
+
                 <div class="controls">
-                    <button class="primary" onclick={on_share}>{ if *share_copied { "Share text copied" } else { "Copy share text" } }</button>
-                    <button class="secondary" onclick={toggle_kid}>{ if *kid_mode { "Kid Mode: ON" } else { "Kid Mode: OFF" } }</button>
-                    <button class="ghost" onclick={on_enable_audio}>{ if *audio_enabled { "Audio ready" } else { "Enable audio" } }</button>
+                    <button class="primary" onclick={on_share}>
+                        { if *share_copied { "Share text copied" } else { "Copy share text" } }
+                    </button>
+
+                    <button class="secondary" onclick={toggle_kid}>
+                        { if *kid_mode { "Kid Mode: ON" } else { "Kid Mode: OFF" } }
+                    </button>
+
+                    <button class="ghost" onclick={on_enable_audio}>
+                        { if *audio_enabled { "Audio ready" } else { "Enable audio" } }
+                    </button>
                 </div>
             </section>
 
@@ -259,18 +275,29 @@ fn app() -> Html {
                     <div class="label">{ "Current Phase" }</div>
                     <div class="phase-name">{ active.name }</div>
                     <div class="phase-description">{ active.note }</div>
+
                     {
                         if let Some(next) = next_phase {
                             html! {
                                 <>
                                     <div class="label" style="margin-top:16px;">{ "Next Event" }</div>
                                     <div class="small-text">
-                                        { format!("{} in {}", next.name, next_phase_countdown.unwrap_or_else(|| "00:00:00".to_string())) }
+                                        {
+                                            format!(
+                                                "{} in {}",
+                                                next.name,
+                                                next_phase_countdown.unwrap_or_else(|| "00:00:00".to_string())
+                                            )
+                                        }
                                     </div>
                                 </>
                             }
                         } else {
-                            html! { <div class="small-text" style="margin-top:16px;">{ "Final major mission phase reached." }</div> }
+                            html! {
+                                <div class="small-text" style="margin-top:16px;">
+                                    { "Final major mission phase reached." }
+                                </div>
+                            }
                         }
                     }
                 </div>
@@ -283,7 +310,9 @@ fn app() -> Html {
                 </div>
 
                 <div class="card">
-                    <div class="label">{ if *kid_mode { "Kid Mode: Mission Explain" } else { "Mission Explain" } }</div>
+                    <div class="label">
+                        { if *kid_mode { "Kid Mode: Mission Explain" } else { "Mission Explain" } }
+                    </div>
                     <div class="kid-text">
                         {
                             if *kid_mode {
@@ -298,9 +327,15 @@ fn app() -> Html {
                 <div class="card">
                     <div class="label">{ "Mission Badges" }</div>
                     <div class="badge-row">
-                        <div class={classes!("badge", if badge_state.launch_witness { "unlocked" } else { "" })}>{ "Launch Witness" }</div>
-                        <div class={classes!("badge", if badge_state.deep_space_rider { "unlocked" } else { "" })}>{ "Deep Space Rider" }</div>
-                        <div class={classes!("badge", if badge_state.moon_flyby_crew { "unlocked" } else { "" })}>{ "Moon Flyby Crew" }</div>
+                        <div class={classes!("badge", badge_state.launch_witness.then_some("unlocked"))}>
+                            { "Launch Witness" }
+                        </div>
+                        <div class={classes!("badge", badge_state.deep_space_rider.then_some("unlocked"))}>
+                            { "Deep Space Rider" }
+                        </div>
+                        <div class={classes!("badge", badge_state.moon_flyby_crew.then_some("unlocked"))}>
+                            { "Moon Flyby Crew" }
+                        </div>
                     </div>
                     <div class="share-text" style="margin-top:14px;">
                         { "Badges are saved locally so returning visitors can keep their mission progress." }
@@ -314,10 +349,15 @@ fn app() -> Html {
                     {
                         phases.iter().enumerate().map(|(phase_idx, phase)| {
                             let phase_ms = parse_ms(phase.iso);
+
                             let class_name = if *now >= phase_ms {
-                                if phase_idx == idx { "timeline-item active" } else { "timeline-item done" }
+                                if phase_idx == idx {
+                                    classes!("timeline-item", "active")
+                                } else {
+                                    classes!("timeline-item", "done")
+                                }
                             } else {
-                                "timeline-item"
+                                classes!("timeline-item")
                             };
 
                             html! {
