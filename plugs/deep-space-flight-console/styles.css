@@ -696,3 +696,14 @@ select {
     grid-template-columns: 1fr;
   }
 }
+
+.phase-jump-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.phase-jump-btn {
+  font-size: 0.78rem;
+  padding: 7px 10px;
+}
