@@ -831,21 +831,49 @@ fn app() -> Html {
     let viewport_width = use_state(window_width);
     let mobile_panel = use_state(|| MobilePanel::Center);
 
+    // Mirror the latest mission time into a mutable ref so the interval callback
+    // never falls back to the initial captured value.
+    let time_ref = use_mut_ref(|| 0.0_f64);
+
+    {
+        let time_ref = time_ref.clone();
+        let current_time = *time_s;
+        use_effect_with(current_time, move |t| {
+            *time_ref.borrow_mut() = *t;
+            || ()
+        });
+    }
+
     {
         let time_s = time_s.clone();
-        let playing = playing.clone();
-        let speed = speed.clone();
+        let time_ref = time_ref.clone();
+        let playing_now = *playing;
+        let speed_now = *speed;
 
-        use_effect_with((), move |_| {
-            let interval = Interval::new(TICK_MS, move || {
-                if *playing {
-                    let dt = (TICK_MS as f64 / 1000.0) * *speed;
-                    let total = mission_duration_total();
-                    let mut next = *time_s + dt;
-                    if next > total { next = total; }
-                    time_s.set(next);
+        use_effect_with((playing_now, speed_now), move |(playing_now, speed_now)| {
+            let interval = Interval::new(TICK_MS, {
+                let time_s = time_s.clone();
+                let time_ref = time_ref.clone();
+                let playing_now = *playing_now;
+                let speed_now = *speed_now;
+
+                move || {
+                    if playing_now {
+                        let dt = (TICK_MS as f64 / 1000.0) * speed_now;
+                        let total = mission_duration_total();
+
+                        let current = *time_ref.borrow();
+                        let mut next = current + dt;
+                        if next > total {
+                            next = total;
+                        }
+
+                        *time_ref.borrow_mut() = next;
+                        time_s.set(next);
+                    }
                 }
             });
+
             move || drop(interval)
         });
     }
@@ -872,7 +900,9 @@ fn app() -> Html {
 
             let mut next_logs = (*logs).clone();
             push_log(&mut next_logs, &state);
-            if next_logs != *logs { logs.set(next_logs); }
+            if next_logs != *logs {
+                logs.set(next_logs);
+            }
 
             let mut next_history = (*history).clone();
             push_history(&mut next_history, &state);
@@ -899,30 +929,46 @@ fn app() -> Html {
 
     let on_reset = {
         let time_s = time_s.clone();
+        let playing = playing.clone();
         let logs = logs.clone();
         let history = history.clone();
+        let time_ref = time_ref.clone();
+
         Callback::from(move |_| {
+            playing.set(true);
+            *time_ref.borrow_mut() = 0.0;
             time_s.set(0.0);
             logs.set(base_log_entries());
             history.set(base_history());
         })
     };
 
-    let on_speed_1 = { let speed = speed.clone(); Callback::from(move |_| speed.set(1.0)) };
-    let on_speed_5 = { let speed = speed.clone(); Callback::from(move |_| speed.set(5.0)) };
-    let on_speed_15 = { let speed = speed.clone(); Callback::from(move |_| speed.set(15.0)) };
+    let on_speed_1 = {
+        let speed = speed.clone();
+        Callback::from(move |_| speed.set(1.0))
+    };
+    let on_speed_5 = {
+        let speed = speed.clone();
+        Callback::from(move |_| speed.set(5.0))
+    };
+    let on_speed_15 = {
+        let speed = speed.clone();
+        Callback::from(move |_| speed.set(15.0))
+    };
 
     let on_jump = {
         let time_s = time_s.clone();
         let logs = logs.clone();
         let history = history.clone();
         let playing = playing.clone();
+        let time_ref = time_ref.clone();
 
         Callback::from(move |idx: usize| {
             let phase = phase_from_index(idx);
             let t = phase_start_time(phase);
 
             playing.set(false);
+            *time_ref.borrow_mut() = t;
             time_s.set(t);
             history.set(base_history());
 
@@ -935,9 +981,18 @@ fn app() -> Html {
         })
     };
 
-    let show_apollo = { let mp = mobile_panel.clone(); Callback::from(move |_| mp.set(MobilePanel::Apollo)) };
-    let show_center = { let mp = mobile_panel.clone(); Callback::from(move |_| mp.set(MobilePanel::Center)) };
-    let show_orion  = { let mp = mobile_panel.clone(); Callback::from(move |_| mp.set(MobilePanel::Orion))  };
+    let show_apollo = {
+        let mp = mobile_panel.clone();
+        Callback::from(move |_| mp.set(MobilePanel::Apollo))
+    };
+    let show_center = {
+        let mp = mobile_panel.clone();
+        Callback::from(move |_| mp.set(MobilePanel::Center))
+    };
+    let show_orion = {
+        let mp = mobile_panel.clone();
+        Callback::from(move |_| mp.set(MobilePanel::Orion))
+    };
 
     let total_progress_pct = (*time_s / mission_duration_total()) * 100.0;
     let path_progress = total_progress_pct / 100.0;
