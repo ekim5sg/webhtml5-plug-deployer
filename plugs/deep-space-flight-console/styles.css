@@ -167,6 +167,30 @@ select {
   }
 }
 
+.mobile-console-grid {
+  grid-template-columns: 1fr !important;
+}
+
+.mobile-switcher {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+  position: sticky;
+  top: 8px;
+  z-index: 20;
+  padding: 8px;
+  border-radius: 16px;
+  background: rgba(8, 17, 27, 0.92);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.mobile-switcher .btn {
+  flex: 1 1 0;
+  min-width: 88px;
+}
+
 .panel-shell {
   border-radius: 24px;
   overflow: hidden;
@@ -235,12 +259,6 @@ select {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
-}
-
-@media (max-width: 760px) {
-  .card-grid {
-    grid-template-columns: 1fr;
-  }
 }
 
 .card {
@@ -634,5 +652,47 @@ select {
   .panel-shell,
   .center-column {
     min-height: auto;
+  }
+}
+
+@media (max-width: 900px) {
+  .app-shell {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  .hero-top {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .controls {
+    justify-content: flex-start;
+  }
+
+  .panel-content {
+    padding: 12px;
+  }
+
+  .card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .mini-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .chart-frame {
+    height: 96px;
+  }
+
+  .path-box {
+    height: 220px;
+  }
+}
+
+@media (max-width: 760px) {
+  .card-grid {
+    grid-template-columns: 1fr;
   }
 }
