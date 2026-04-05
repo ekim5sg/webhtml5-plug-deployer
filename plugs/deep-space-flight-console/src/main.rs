@@ -76,26 +76,60 @@ impl MissionPhase {
     fn guidance_apollo(&self, p: f64) -> &'static str {
         match self {
             MissionPhase::Launch => {
-                if p < 0.35 { "ASC GUID" } else if p < 0.8 { "S-IVB STG" } else { "INSERT" }
+                if p < 0.35 {
+                    "ASC GUID"
+                } else if p < 0.8 {
+                    "S-IVB STG"
+                } else {
+                    "INSERT"
+                }
             }
             MissionPhase::OrbitCheckout => {
-                if p < 0.5 { "CSM CHK" } else { "ORB OPS" }
+                if p < 0.5 {
+                    "CSM CHK"
+                } else {
+                    "ORB OPS"
+                }
             }
             MissionPhase::Tli => {
-                if p < 0.2 { "PREP TLI" } else if p < 0.85 { "BURN EXEC" } else { "POST TLI" }
+                if p < 0.2 {
+                    "PREP TLI"
+                } else if p < 0.85 {
+                    "BURN EXEC"
+                } else {
+                    "POST TLI"
+                }
             }
             MissionPhase::CoastOut => {
-                if p < 0.4 { "PTC INIT" } else { "CST NAV" }
+                if p < 0.4 {
+                    "PTC INIT"
+                } else {
+                    "CST NAV"
+                }
             }
             MissionPhase::LunarFlyby => {
-                if p < 0.5 { "LOI TRK" } else { "FREE RET" }
+                if p < 0.5 {
+                    "LOI TRK"
+                } else {
+                    "FREE RET"
+                }
             }
             MissionPhase::CoastHome => "CST NAV",
             MissionPhase::ReturnBurn => {
-                if p < 0.8 { "TEI EXEC" } else { "RBURN END" }
+                if p < 0.8 {
+                    "TEI EXEC"
+                } else {
+                    "RBURN END"
+                }
             }
             MissionPhase::Reentry => {
-                if p < 0.35 { "ENTRY IF" } else if p < 0.7 { "CM ENTRY" } else { "CHUTE DEP" }
+                if p < 0.35 {
+                    "ENTRY IF"
+                } else if p < 0.7 {
+                    "CM ENTRY"
+                } else {
+                    "CHUTE DEP"
+                }
             }
         }
     }
@@ -103,26 +137,60 @@ impl MissionPhase {
     fn guidance_orion(&self, p: f64) -> &'static str {
         match self {
             MissionPhase::Launch => {
-                if p < 0.35 { "Ascent Guidance" } else if p < 0.8 { "Core Stage Flight" } else { "Orbit Insertion" }
+                if p < 0.35 {
+                    "Ascent Guidance"
+                } else if p < 0.8 {
+                    "Core Stage Flight"
+                } else {
+                    "Orbit Insertion"
+                }
             }
             MissionPhase::OrbitCheckout => {
-                if p < 0.5 { "Systems Checkout" } else { "Parking Orbit Ops" }
+                if p < 0.5 {
+                    "Systems Checkout"
+                } else {
+                    "Parking Orbit Ops"
+                }
             }
             MissionPhase::Tli => {
-                if p < 0.2 { "Burn Preparation" } else if p < 0.85 { "TLI Burn Active" } else { "Burn Complete" }
+                if p < 0.2 {
+                    "Burn Preparation"
+                } else if p < 0.85 {
+                    "TLI Burn Active"
+                } else {
+                    "Burn Complete"
+                }
             }
             MissionPhase::CoastOut => {
-                if p < 0.4 { "Attitude Stabilization" } else { "Deep Space Navigation" }
+                if p < 0.4 {
+                    "Attitude Stabilization"
+                } else {
+                    "Deep Space Navigation"
+                }
             }
             MissionPhase::LunarFlyby => {
-                if p < 0.5 { "Flyby Geometry" } else { "Free Return Track" }
+                if p < 0.5 {
+                    "Flyby Geometry"
+                } else {
+                    "Free Return Track"
+                }
             }
             MissionPhase::CoastHome => "Return Navigation",
             MissionPhase::ReturnBurn => {
-                if p < 0.8 { "Return Burn Active" } else { "Return Burn Complete" }
+                if p < 0.8 {
+                    "Return Burn Active"
+                } else {
+                    "Return Burn Complete"
+                }
             }
             MissionPhase::Reentry => {
-                if p < 0.35 { "Entry Interface" } else if p < 0.7 { "Guided Reentry" } else { "Parachute Sequence" }
+                if p < 0.35 {
+                    "Entry Interface"
+                } else if p < 0.7 {
+                    "Guided Reentry"
+                } else {
+                    "Parachute Sequence"
+                }
             }
         }
     }
@@ -464,31 +532,47 @@ fn build_mission_state(t: f64) -> MissionState {
 }
 
 fn apollo_comm_label(phase: MissionPhase, pct: f64) -> &'static str {
-    if phase == MissionPhase::Reentry && pct < 15.0 { "LOS" }
-    else if pct < 55.0 { "WEAK" }
-    else { "ACQ" }
+    if phase == MissionPhase::Reentry && pct < 15.0 {
+        "LOS"
+    } else if pct < 55.0 {
+        "WEAK"
+    } else {
+        "ACQ"
+    }
 }
 
 fn orion_comm_label(phase: MissionPhase, pct: f64) -> &'static str {
-    if phase == MissionPhase::Reentry && pct < 15.0 { "Blackout Expected" }
-    else if pct < 55.0 { "Degraded Link" }
-    else { "Nominal Link" }
+    if phase == MissionPhase::Reentry && pct < 15.0 {
+        "Blackout Expected"
+    } else if pct < 55.0 {
+        "Degraded Link"
+    } else {
+        "Nominal Link"
+    }
 }
 
 fn apollo_log_line(phase: MissionPhase, p: f64) -> &'static str {
     match phase {
         MissionPhase::Launch => {
-            if p < 0.25 { "LIFTOFF COMMITTED" }
-            else if p < 0.6 { "BOOSTER PERFORMANCE NOMINAL" }
-            else { "EARTH PARKING ORBIT APPROACHING" }
+            if p < 0.25 {
+                "LIFTOFF COMMITTED"
+            } else if p < 0.6 {
+                "BOOSTER PERFORMANCE NOMINAL"
+            } else {
+                "EARTH PARKING ORBIT APPROACHING"
+            }
         }
         MissionPhase::OrbitCheckout => {
             if p < 0.5 { "CSM SYSTEMS CHECK IN WORK" } else { "ORBIT OPS STABLE" }
         }
         MissionPhase::Tli => {
-            if p < 0.2 { "PREPARING TLI BURN" }
-            else if p < 0.85 { "S-IVB BURN IN PROGRESS" }
-            else { "TLI COMPLETE — FREE RETURN TRACK" }
+            if p < 0.2 {
+                "PREPARING TLI BURN"
+            } else if p < 0.85 {
+                "S-IVB BURN IN PROGRESS"
+            } else {
+                "TLI COMPLETE — FREE RETURN TRACK"
+            }
         }
         MissionPhase::CoastOut => {
             if p < 0.4 { "PTC ROLL ESTABLISHED" } else { "MIDCOURSE NAV UPDATE" }
@@ -503,9 +587,13 @@ fn apollo_log_line(phase: MissionPhase, p: f64) -> &'static str {
             if p < 0.8 { "RETURN BURN HOLDING PROFILE" } else { "RETURN BURN COMPLETE" }
         }
         MissionPhase::Reentry => {
-            if p < 0.35 { "ENTRY INTERFACE" }
-            else if p < 0.7 { "EXPECTED COM BLACKOUT" }
-            else { "CHUTES GOOD — SPLASHDOWN NEXT" }
+            if p < 0.35 {
+                "ENTRY INTERFACE"
+            } else if p < 0.7 {
+                "EXPECTED COM BLACKOUT"
+            } else {
+                "CHUTES GOOD — SPLASHDOWN NEXT"
+            }
         }
     }
 }
@@ -513,39 +601,46 @@ fn apollo_log_line(phase: MissionPhase, p: f64) -> &'static str {
 fn orion_log_line(phase: MissionPhase, p: f64) -> &'static str {
     match phase {
         MissionPhase::Launch => {
-            if p < 0.25 { "Vehicle committed to ascent corridor." }
-            else if p < 0.6 { "Ascent performance remains within family." }
-            else { "Orbit insertion sequence approaching." }
+            if p < 0.25 {
+                "Vehicle committed to ascent corridor."
+            } else if p < 0.6 {
+                "Ascent performance remains within family."
+            } else {
+                "Orbit insertion sequence approaching."
+            }
         }
         MissionPhase::OrbitCheckout => {
-            if p < 0.5 { "Avionics, power, and thermal checks continue." }
-            else { "Parking orbit operations stabilized." }
+            if p < 0.5 { "Avionics, power, and thermal checks continue." } else { "Parking orbit operations stabilized." }
         }
         MissionPhase::Tli => {
-            if p < 0.2 { "Trans-lunar injection burn prep complete." }
-            else if p < 0.85 { "TLI burn active. Guidance residuals low." }
-            else { "Outbound trajectory established." }
+            if p < 0.2 {
+                "Trans-lunar injection burn prep complete."
+            } else if p < 0.85 {
+                "TLI burn active. Guidance residuals low."
+            } else {
+                "Outbound trajectory established."
+            }
         }
         MissionPhase::CoastOut => {
-            if p < 0.4 { "Attitude stabilization complete." }
-            else { "Deep-space navigation update converged." }
+            if p < 0.4 { "Attitude stabilization complete." } else { "Deep-space navigation update converged." }
         }
         MissionPhase::LunarFlyby => {
-            if p < 0.5 { "Closest approach geometry tightening." }
-            else { "Free-return corridor confirmed homeward." }
+            if p < 0.5 { "Closest approach geometry tightening." } else { "Free-return corridor confirmed homeward." }
         }
         MissionPhase::CoastHome => {
-            if p < 0.5 { "Return coast consumables remain healthy." }
-            else { "Entry targeting solution refined." }
+            if p < 0.5 { "Return coast consumables remain healthy." } else { "Entry targeting solution refined." }
         }
         MissionPhase::ReturnBurn => {
-            if p < 0.8 { "Return burn active and holding expected profile." }
-            else { "Return burn complete." }
+            if p < 0.8 { "Return burn active and holding expected profile." } else { "Return burn complete." }
         }
         MissionPhase::Reentry => {
-            if p < 0.35 { "Entry interface crossing." }
-            else if p < 0.7 { "Communications blackout expected during plasma phase." }
-            else { "Parachute sequence underway." }
+            if p < 0.35 {
+                "Entry interface crossing."
+            } else if p < 0.7 {
+                "Communications blackout expected during plasma phase."
+            } else {
+                "Parachute sequence underway."
+            }
         }
     }
 }
@@ -676,9 +771,15 @@ fn push_history(history: &mut HistoryState, state: &MissionState) {
     history.velocity.push(ChartPoint { value: state.velocity_kps });
     history.comm.push(ChartPoint { value: state.comm_link_pct });
 
-    if history.altitude.len() > HISTORY_MAX { history.altitude.remove(0); }
-    if history.velocity.len() > HISTORY_MAX { history.velocity.remove(0); }
-    if history.comm.len() > HISTORY_MAX { history.comm.remove(0); }
+    if history.altitude.len() > HISTORY_MAX {
+        history.altitude.remove(0);
+    }
+    if history.velocity.len() > HISTORY_MAX {
+        history.velocity.remove(0);
+    }
+    if history.comm.len() > HISTORY_MAX {
+        history.comm.remove(0);
+    }
 }
 
 fn push_log(logs: &mut Vec<LogEntry>, state: &MissionState) {
@@ -696,7 +797,9 @@ fn push_log(logs: &mut Vec<LogEntry>, state: &MissionState) {
         MissionPhase::Reentry => (p > 0.25 && p < 0.31) || (p > 0.74 && p < 0.80),
     };
 
-    if !interesting { return; }
+    if !interesting {
+        return;
+    }
 
     let new_text = format!("{} | {}", phase.short_label(), orion_log_line(phase, p));
     let met = format_met(state.mission_time_s);
@@ -792,12 +895,6 @@ fn sparkline(props: &SparklineProps) -> Html {
     }
 }
 
-
-// ── Phase jump buttons ───────────────────────────────────────────────────────
-// Replaces <select>. Plain button clicks are the most reliable interactive
-// primitive in Yew/WASM — no event-target casting, no controlled-select vdom
-// conflicts, no iOS native picker quirks.
-
 #[derive(Properties, PartialEq)]
 struct PhaseJumpProps {
     current_phase_idx: usize,
@@ -810,7 +907,7 @@ fn phase_jump_buttons(props: &PhaseJumpProps) -> Html {
         <div class="phase-jump-wrap">
             {
                 MissionPhase::all().iter().enumerate().map(|(i, phase)| {
-                    let on_jump   = props.on_jump.clone();
+                    let on_jump = props.on_jump.clone();
                     let is_active = i == props.current_phase_idx;
                     html! {
                         <button
@@ -836,8 +933,6 @@ fn app() -> Html {
     let viewport_width = use_state(window_width);
     let mobile_panel = use_state(|| MobilePanel::Center);
 
-
-    // Tick the simulation forward
     {
         let time_s = time_s.clone();
         let playing = playing.clone();
@@ -849,7 +944,9 @@ fn app() -> Html {
                     let dt = (TICK_MS as f64 / 1000.0) * *speed;
                     let total = mission_duration_total();
                     let mut next = *time_s + dt;
-                    if next > total { next = total; }
+                    if next > total {
+                        next = total;
+                    }
                     time_s.set(next);
                 }
             });
@@ -857,8 +954,6 @@ fn app() -> Html {
         });
     }
 
-    // FIX: use_effect_with((), ...) so the resize listener is registered only
-    // once on mount, not torn down and recreated on every render tick.
     {
         let viewport_width = viewport_width.clone();
         use_effect_with((), move |_| {
@@ -871,7 +966,6 @@ fn app() -> Html {
         });
     }
 
-    // Push log entries and history points on each time step
     {
         let logs = logs.clone();
         let history = history.clone();
@@ -882,7 +976,9 @@ fn app() -> Html {
 
             let mut next_logs = (*logs).clone();
             push_log(&mut next_logs, &state);
-            if next_logs != *logs { logs.set(next_logs); }
+            if next_logs != *logs {
+                logs.set(next_logs);
+            }
 
             let mut next_history = (*history).clone();
             push_history(&mut next_history, &state);
@@ -899,7 +995,6 @@ fn app() -> Html {
         .iter()
         .position(|p| *p == state.phase)
         .unwrap_or(0);
-
 
     let is_mobile = *viewport_width < MOBILE_BREAKPOINT;
 
@@ -919,15 +1014,54 @@ fn app() -> Html {
         })
     };
 
-    let on_speed_1 = { let speed = speed.clone(); Callback::from(move |_| speed.set(1.0)) };
-    let on_speed_5 = { let speed = speed.clone(); Callback::from(move |_| speed.set(5.0)) };
-    let on_speed_15 = { let speed = speed.clone(); Callback::from(move |_| speed.set(15.0)) };
+    let on_speed_1 = {
+        let speed = speed.clone();
+        Callback::from(move |_| speed.set(1.0))
+    };
+    let on_speed_5 = {
+        let speed = speed.clone();
+        Callback::from(move |_| speed.set(5.0))
+    };
+    let on_speed_15 = {
+        let speed = speed.clone();
+        Callback::from(move |_| speed.set(15.0))
+    };
 
+    let on_jump = {
+        let time_s = time_s.clone();
+        let logs = logs.clone();
+        let history = history.clone();
+        let playing = playing.clone();
 
+        Callback::from(move |idx: usize| {
+            let phase = phase_from_index(idx);
+            let t = phase_start_time(phase);
 
-    let show_apollo = { let mp = mobile_panel.clone(); Callback::from(move |_| mp.set(MobilePanel::Apollo)) };
-    let show_center = { let mp = mobile_panel.clone(); Callback::from(move |_| mp.set(MobilePanel::Center)) };
-    let show_orion  = { let mp = mobile_panel.clone(); Callback::from(move |_| mp.set(MobilePanel::Orion))  };
+            time_s.set(t);
+            playing.set(false);
+
+            let mut next = base_log_entries();
+            next.push(LogEntry {
+                met: format_met(t),
+                text: format!("Jumped to phase: {}", phase.label()),
+            });
+            logs.set(next);
+            history.set(base_history());
+        })
+    };
+
+    let show_apollo = {
+        let mp = mobile_panel.clone();
+        Callback::from(move |_| mp.set(MobilePanel::Apollo))
+    };
+    let show_center = {
+        let mp = mobile_panel.clone();
+        Callback::from(move |_| mp.set(MobilePanel::Center))
+    };
+    let show_orion = {
+        let mp = mobile_panel.clone();
+        Callback::from(move |_| mp.set(MobilePanel::Orion))
+    };
 
     let total_progress_pct = (*time_s / mission_duration_total()) * 100.0;
     let path_progress = total_progress_pct / 100.0;
@@ -990,15 +1124,21 @@ fn app() -> Html {
                                     <button
                                         class={classes!("btn", if *mobile_panel == MobilePanel::Apollo { "active" } else { "" })}
                                         onclick={show_apollo}
-                                    >{"Apollo"}</button>
+                                    >
+                                        {"Apollo"}
+                                    </button>
                                     <button
                                         class={classes!("btn", if *mobile_panel == MobilePanel::Center { "active" } else { "" })}
                                         onclick={show_center}
-                                    >{"Center"}</button>
+                                    >
+                                        {"Center"}
+                                    </button>
                                     <button
                                         class={classes!("btn", if *mobile_panel == MobilePanel::Orion { "active" } else { "" })}
                                         onclick={show_orion}
-                                    >{"Orion"}</button>
+                                    >
+                                        {"Orion"}
+                                    </button>
                                 </div>
 
                                 {
