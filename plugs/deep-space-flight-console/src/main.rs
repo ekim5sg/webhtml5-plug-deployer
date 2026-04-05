@@ -276,7 +276,7 @@ fn find_phase_and_progress(t: f64) -> (MissionPhase, f64) {
     let mut remaining = t;
     for phase in MissionPhase::all() {
         let d = phase.duration_s();
-        if remaining <= d {
+        if remaining < d {
             return (phase, clamp(remaining / d, 0.0, 1.0));
         }
         remaining -= d;
