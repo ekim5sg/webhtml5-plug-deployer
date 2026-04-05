@@ -1,10 +1,12 @@
+use gloo::events::EventListener;
 use gloo::timers::callback::Interval;
 use js_sys::Math;
-use web_sys::HtmlSelectElement;
+use web_sys::{window, HtmlSelectElement};
 use yew::prelude::*;
 
 const TICK_MS: u32 = 250;
 const HISTORY_MAX: usize = 64;
+const MOBILE_BREAKPOINT: f64 = 900.0;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum MissionPhase {
@@ -194,6 +196,13 @@ impl MissionPhase {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MobilePanel {
+    Apollo,
+    Center,
+    Orion,
+}
+
 #[derive(Clone, PartialEq)]
 struct MissionState {
     mission_time_s: f64,
@@ -278,6 +287,13 @@ struct HistoryState {
     altitude: Vec<ChartPoint>,
     velocity: Vec<ChartPoint>,
     comm: Vec<ChartPoint>,
+}
+
+fn window_width() -> f64 {
+    window()
+        .and_then(|w| w.inner_width().ok())
+        .and_then(|v| v.as_f64())
+        .unwrap_or(1200.0)
 }
 
 fn clamp(v: f64, lo: f64, hi: f64) -> f64 {
@@ -510,7 +526,11 @@ fn build_mission_state(t: f64) -> MissionState {
         cabin_temp_c,
         pitch_deg,
         yaw_deg,
-        roll_deg: if roll_deg < 0.0 { 360.0 + roll_deg } else { roll_deg },
+        roll_deg: if roll_deg < 0.0 {
+            360.0 + roll_deg
+        } else {
+            roll_deg
+        },
         comm_link_pct: clamp(comm_link_pct, 0.0, 100.0),
     }
 }
@@ -965,6 +985,8 @@ fn app() -> Html {
     let speed = use_state(|| 1.0_f64);
     let logs = use_state(base_log_entries);
     let history = use_state(base_history);
+    let viewport_width = use_state(window_width);
+    let mobile_panel = use_state(|| MobilePanel::Center);
 
     {
         let time_s = time_s.clone();
@@ -985,6 +1007,20 @@ fn app() -> Html {
             });
 
             move || drop(interval)
+        });
+    }
+
+    {
+        let viewport_width = viewport_width.clone();
+
+        use_effect(move || {
+            let listener = window().map(|w| {
+                EventListener::new(&w, "resize", move |_| {
+                    viewport_width.set(window_width());
+                })
+            });
+
+            move || drop(listener)
         });
     }
 
@@ -1017,6 +1053,8 @@ fn app() -> Html {
         .iter()
         .position(|p| *p == state.phase)
         .unwrap_or(0);
+
+    let is_mobile = *viewport_width < MOBILE_BREAKPOINT;
 
     let on_toggle_play = {
         let playing = playing.clone();
@@ -1067,6 +1105,21 @@ fn app() -> Html {
         })
     };
 
+    let show_apollo = {
+        let mobile_panel = mobile_panel.clone();
+        Callback::from(move |_| mobile_panel.set(MobilePanel::Apollo))
+    };
+
+    let show_center = {
+        let mobile_panel = mobile_panel.clone();
+        Callback::from(move |_| mobile_panel.set(MobilePanel::Center))
+    };
+
+    let show_orion = {
+        let mobile_panel = mobile_panel.clone();
+        Callback::from(move |_| mobile_panel.set(MobilePanel::Orion))
+    };
+
     let total_progress_pct = (*time_s / mission_duration_total()) * 100.0;
     let path_progress = total_progress_pct / 100.0;
 
@@ -1083,6 +1136,13 @@ fn app() -> Html {
                             <span class="badge">{"Rust + Yew + WASM"}</span>
                             <span class="badge">{"Same-stage dual instrumentation"}</span>
                             <span class="badge">{"Mini charts + stronger trajectory"}</span>
+                            {
+                                if is_mobile {
+                                    html! { <span class="badge">{"Mobile tabbed layout"}</span> }
+                                } else {
+                                    html! {}
+                                }
+                            }
                         </div>
                     </div>
 
@@ -1119,27 +1179,87 @@ fn app() -> Html {
                 </div>
             </section>
 
-            <section class="console-grid">
-                <ApolloPanel
-                    display={apollo}
-                    state={state.clone()}
-                    history={(*history).clone()}
-                />
-                <CenterColumn
-                    state={state.clone()}
-                    total_progress_pct={total_progress_pct}
-                    path_progress={path_progress}
-                    logs={(*logs).clone()}
-                />
-                <OrionPanel
-                    display={orion}
-                    state={state.clone()}
-                    history={(*history).clone()}
-                />
+            <section class={classes!("console-grid", if is_mobile { "mobile-console-grid" } else { "" })}>
+                {
+                    if is_mobile {
+                        html! {
+                            <>
+                                <div class="mobile-switcher">
+                                    <button
+                                        class={classes!("btn", if *mobile_panel == MobilePanel::Apollo { "active" } else { "" })}
+                                        onclick={show_apollo}
+                                    >
+                                        {"Apollo"}
+                                    </button>
+                                    <button
+                                        class={classes!("btn", if *mobile_panel == MobilePanel::Center { "active" } else { "" })}
+                                        onclick={show_center}
+                                    >
+                                        {"Center"}
+                                    </button>
+                                    <button
+                                        class={classes!("btn", if *mobile_panel == MobilePanel::Orion { "active" } else { "" })}
+                                        onclick={show_orion}
+                                    >
+                                        {"Orion"}
+                                    </button>
+                                </div>
+
+                                {
+                                    match *mobile_panel {
+                                        MobilePanel::Apollo => html! {
+                                            <ApolloPanel
+                                                display={apollo.clone()}
+                                                state={state.clone()}
+                                                history={(*history).clone()}
+                                            />
+                                        },
+                                        MobilePanel::Center => html! {
+                                            <CenterColumn
+                                                state={state.clone()}
+                                                total_progress_pct={total_progress_pct}
+                                                path_progress={path_progress}
+                                                logs={(*logs).clone()}
+                                            />
+                                        },
+                                        MobilePanel::Orion => html! {
+                                            <OrionPanel
+                                                display={orion.clone()}
+                                                state={state.clone()}
+                                                history={(*history).clone()}
+                                            />
+                                        },
+                                    }
+                                }
+                            </>
+                        }
+                    } else {
+                        html! {
+                            <>
+                                <ApolloPanel
+                                    display={apollo.clone()}
+                                    state={state.clone()}
+                                    history={(*history).clone()}
+                                />
+                                <CenterColumn
+                                    state={state.clone()}
+                                    total_progress_pct={total_progress_pct}
+                                    path_progress={path_progress}
+                                    logs={(*logs).clone()}
+                                />
+                                <OrionPanel
+                                    display={orion.clone()}
+                                    state={state.clone()}
+                                    history={(*history).clone()}
+                                />
+                            </>
+                        }
+                    }
+                }
             </section>
 
             <div class="footer-line">
-                {"V2: stronger trajectory ribbon, mini charts, phase banners, and Orion broadcast overlay merged in."}
+                {"V2: stronger trajectory ribbon, mini charts, phase banners, Orion broadcast overlay, and responsive mobile panel switching."}
             </div>
         </div>
     }
