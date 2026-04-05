@@ -276,7 +276,7 @@ fn find_phase_and_progress(t: f64) -> (MissionPhase, f64) {
     let mut remaining = t;
     for phase in MissionPhase::all() {
         let d = phase.duration_s();
-        if remaining < d {
+        if remaining <= d {
             return (phase, clamp(remaining / d, 0.0, 1.0));
         }
         remaining -= d;
@@ -831,8 +831,6 @@ fn app() -> Html {
     let viewport_width = use_state(window_width);
     let mobile_panel = use_state(|| MobilePanel::Center);
 
-    // Mirror the latest mission time into a mutable ref so the interval callback
-    // never falls back to the initial captured value.
     let time_ref = use_mut_ref(|| 0.0_f64);
 
     {
@@ -847,6 +845,7 @@ fn app() -> Html {
     {
         let time_s = time_s.clone();
         let time_ref = time_ref.clone();
+        let playing = playing.clone();
         let playing_now = *playing;
         let speed_now = *speed;
 
@@ -854,20 +853,30 @@ fn app() -> Html {
             let interval = Interval::new(TICK_MS, {
                 let time_s = time_s.clone();
                 let time_ref = time_ref.clone();
+                let playing = playing.clone();
                 let playing_now = *playing_now;
                 let speed_now = *speed_now;
 
                 move || {
-                    if playing_now {
-                        let dt = (TICK_MS as f64 / 1000.0) * speed_now;
-                        let total = mission_duration_total();
+                    if !playing_now {
+                        return;
+                    }
 
-                        let current = *time_ref.borrow();
-                        let mut next = current + dt;
-                        if next > total {
-                            next = total;
-                        }
+                    let dt = (TICK_MS as f64 / 1000.0) * speed_now;
+                    let total = mission_duration_total();
+                    let current = *time_ref.borrow();
 
+                    if current >= total {
+                        return;
+                    }
+
+                    let mut next = current + dt;
+                    if next >= total {
+                        next = total;
+                        *time_ref.borrow_mut() = next;
+                        time_s.set(next);
+                        playing.set(false);
+                    } else {
                         *time_ref.borrow_mut() = next;
                         time_s.set(next);
                     }
