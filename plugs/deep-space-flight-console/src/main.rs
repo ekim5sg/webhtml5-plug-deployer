@@ -1,7 +1,7 @@
 use gloo::events::EventListener;
 use gloo::timers::callback::Interval;
 use js_sys::Math;
-use web_sys::{window, HtmlSelectElement};
+use web_sys::window;
 use yew::prelude::*;
 
 const TICK_MS: u32 = 250;
@@ -264,7 +264,9 @@ fn mission_duration_total() -> f64 {
 fn phase_start_time(target: MissionPhase) -> f64 {
     let mut total = 0.0;
     for phase in MissionPhase::all() {
-        if phase == target { break; }
+        if phase == target {
+            break;
+        }
         total += phase.duration_s();
     }
     total
@@ -301,129 +303,137 @@ fn build_mission_state(t: f64) -> MissionState {
     let p = ease_in_out(raw_p);
 
     let (
-        altitude_km, velocity_kps, downrange_km,
-        distance_from_earth_km, distance_to_moon_km,
-        fuel_pct, power_pct, cabin_temp_c,
-        pitch_deg, yaw_deg, roll_deg, comm_link_pct,
+        altitude_km,
+        velocity_kps,
+        downrange_km,
+        distance_from_earth_km,
+        distance_to_moon_km,
+        fuel_pct,
+        power_pct,
+        cabin_temp_c,
+        pitch_deg,
+        yaw_deg,
+        roll_deg,
+        comm_link_pct,
     ) = match phase {
         MissionPhase::Launch => {
-            let alt   = lerp(0.0, 185.0, p)    + tiny_noise(0.8);
-            let vel   = lerp(0.0, 7.8, p)      + tiny_noise(0.03);
-            let dr    = lerp(0.0, 2200.0, p)   + tiny_noise(8.0);
+            let alt = lerp(0.0, 185.0, p) + tiny_noise(0.8);
+            let vel = lerp(0.0, 7.8, p) + tiny_noise(0.03);
+            let dr = lerp(0.0, 2200.0, p) + tiny_noise(8.0);
             let earth = alt;
-            let moon  = 384400.0 - earth;
-            let fuel  = lerp(100.0, 84.0, p)   + tiny_noise(0.2);
-            let power = lerp(100.0, 99.0, p)   + tiny_noise(0.05);
-            let temp  = lerp(22.0, 24.0, p)    + tiny_noise(0.15);
-            let pitch = lerp(90.0, 10.0, p)    + tiny_noise(0.6);
-            let yaw   = lerp(0.0, 1.2, p)      + tiny_noise(0.2);
-            let roll  = lerp(0.0, 3.5, p)      + tiny_noise(0.3);
-            let comm  = lerp(94.0, 98.0, p)    + tiny_noise(0.2);
+            let moon = 384400.0 - earth;
+            let fuel = lerp(100.0, 84.0, p) + tiny_noise(0.2);
+            let power = lerp(100.0, 99.0, p) + tiny_noise(0.05);
+            let temp = lerp(22.0, 24.0, p) + tiny_noise(0.15);
+            let pitch = lerp(90.0, 10.0, p) + tiny_noise(0.6);
+            let yaw = lerp(0.0, 1.2, p) + tiny_noise(0.2);
+            let roll = lerp(0.0, 3.5, p) + tiny_noise(0.3);
+            let comm = lerp(94.0, 98.0, p) + tiny_noise(0.2);
             (alt, vel, dr, earth, moon, fuel, power, temp, pitch, yaw, roll, comm)
         }
         MissionPhase::OrbitCheckout => {
-            let alt   = 185.0                  + tiny_noise(1.5);
-            let vel   = 7.78                   + tiny_noise(0.03);
-            let dr    = lerp(2200.0, 9000.0, p)+ tiny_noise(14.0);
+            let alt = 185.0 + tiny_noise(1.5);
+            let vel = 7.78 + tiny_noise(0.03);
+            let dr = lerp(2200.0, 9000.0, p) + tiny_noise(14.0);
             let earth = alt;
-            let moon  = 384400.0 - earth;
-            let fuel  = lerp(84.0, 82.0, p)   + tiny_noise(0.15);
-            let power = lerp(99.0, 97.5, p)   + tiny_noise(0.08);
-            let temp  = lerp(24.0, 23.0, p)   + tiny_noise(0.1);
-            let pitch = lerp(10.0, 0.0, p)    + tiny_noise(0.3);
-            let yaw   = lerp(1.2, 0.2, p)     + tiny_noise(0.15);
-            let roll  = lerp(3.5, 0.4, p)     + tiny_noise(0.2);
-            let comm  = lerp(98.0, 99.0, p)   + tiny_noise(0.15);
+            let moon = 384400.0 - earth;
+            let fuel = lerp(84.0, 82.0, p) + tiny_noise(0.15);
+            let power = lerp(99.0, 97.5, p) + tiny_noise(0.08);
+            let temp = lerp(24.0, 23.0, p) + tiny_noise(0.1);
+            let pitch = lerp(10.0, 0.0, p) + tiny_noise(0.3);
+            let yaw = lerp(1.2, 0.2, p) + tiny_noise(0.15);
+            let roll = lerp(3.5, 0.4, p) + tiny_noise(0.2);
+            let comm = lerp(98.0, 99.0, p) + tiny_noise(0.15);
             (alt, vel, dr, earth, moon, fuel, power, temp, pitch, yaw, roll, comm)
         }
         MissionPhase::Tli => {
-            let alt   = lerp(185.0, 320.0, p)    + tiny_noise(1.2);
-            let vel   = lerp(7.8, 10.9, p)       + tiny_noise(0.05);
-            let dr    = lerp(9000.0, 21000.0, p) + tiny_noise(18.0);
-            let earth = lerp(185.0, 22000.0, p)  + tiny_noise(20.0);
-            let moon  = 384400.0 - earth;
-            let fuel  = lerp(82.0, 65.0, p)      + tiny_noise(0.2);
-            let power = lerp(97.5, 96.0, p)      + tiny_noise(0.08);
-            let temp  = lerp(23.0, 24.5, p)      + tiny_noise(0.12);
-            let pitch = lerp(0.0, -4.0, p)       + tiny_noise(0.35);
-            let yaw   = lerp(0.2, 0.0, p)        + tiny_noise(0.12);
-            let roll  = lerp(0.4, 1.0, p)        + tiny_noise(0.18);
-            let comm  = lerp(99.0, 97.0, p)      + tiny_noise(0.18);
+            let alt = lerp(185.0, 320.0, p) + tiny_noise(1.2);
+            let vel = lerp(7.8, 10.9, p) + tiny_noise(0.05);
+            let dr = lerp(9000.0, 21000.0, p) + tiny_noise(18.0);
+            let earth = lerp(185.0, 22000.0, p) + tiny_noise(20.0);
+            let moon = 384400.0 - earth;
+            let fuel = lerp(82.0, 65.0, p) + tiny_noise(0.2);
+            let power = lerp(97.5, 96.0, p) + tiny_noise(0.08);
+            let temp = lerp(23.0, 24.5, p) + tiny_noise(0.12);
+            let pitch = lerp(0.0, -4.0, p) + tiny_noise(0.35);
+            let yaw = lerp(0.2, 0.0, p) + tiny_noise(0.12);
+            let roll = lerp(0.4, 1.0, p) + tiny_noise(0.18);
+            let comm = lerp(99.0, 97.0, p) + tiny_noise(0.18);
             (alt, vel, dr, earth, moon, fuel, power, temp, pitch, yaw, roll, comm)
         }
         MissionPhase::CoastOut => {
-            let alt   = lerp(320.0, 5000.0, p)     + tiny_noise(6.0);
-            let vel   = lerp(10.9, 1.4, p)         + tiny_noise(0.04);
-            let dr    = lerp(21000.0, 180000.0, p) + tiny_noise(40.0);
+            let alt = lerp(320.0, 5000.0, p) + tiny_noise(6.0);
+            let vel = lerp(10.9, 1.4, p) + tiny_noise(0.04);
+            let dr = lerp(21000.0, 180000.0, p) + tiny_noise(40.0);
             let earth = lerp(22000.0, 320000.0, p) + tiny_noise(75.0);
-            let moon  = clamp(384400.0 - earth, 0.0, 384400.0);
-            let fuel  = lerp(65.0, 61.0, p)        + tiny_noise(0.12);
-            let power = lerp(96.0, 92.0, p)        + tiny_noise(0.09);
-            let temp  = lerp(24.5, 22.8, p)        + tiny_noise(0.12);
-            let pitch = lerp(-4.0, 0.0, p)         + tiny_noise(0.2);
-            let yaw   = lerp(0.0, 0.4, p)          + tiny_noise(0.1);
-            let roll  = lerp(1.0, 359.0, p)        + tiny_noise(0.35);
-            let comm  = lerp(97.0, 93.0, p)        + tiny_noise(0.25);
+            let moon = clamp(384400.0 - earth, 0.0, 384400.0);
+            let fuel = lerp(65.0, 61.0, p) + tiny_noise(0.12);
+            let power = lerp(96.0, 92.0, p) + tiny_noise(0.09);
+            let temp = lerp(24.5, 22.8, p) + tiny_noise(0.12);
+            let pitch = lerp(-4.0, 0.0, p) + tiny_noise(0.2);
+            let yaw = lerp(0.0, 0.4, p) + tiny_noise(0.1);
+            let roll = lerp(1.0, 359.0, p) + tiny_noise(0.35);
+            let comm = lerp(97.0, 93.0, p) + tiny_noise(0.25);
             (alt, vel, dr, earth, moon, fuel, power, temp, pitch, yaw, roll, comm)
         }
         MissionPhase::LunarFlyby => {
-            let alt   = lerp(5000.0, 9000.0, p)    + tiny_noise(6.0);
-            let vel   = lerp(1.4, 2.2, p)          + tiny_noise(0.03);
-            let dr    = lerp(180000.0, 215000.0, p)+ tiny_noise(35.0);
-            let earth = lerp(320000.0, 384400.0, p)+ tiny_noise(40.0);
-            let moon  = clamp(384400.0 - earth, 0.0, 384400.0);
-            let fuel  = lerp(61.0, 60.0, p)        + tiny_noise(0.08);
-            let power = lerp(92.0, 91.0, p)        + tiny_noise(0.08);
-            let temp  = lerp(22.8, 23.4, p)        + tiny_noise(0.1);
-            let pitch = lerp(0.0, 14.0, p)         + tiny_noise(0.2);
-            let yaw   = lerp(0.4, -0.5, p)         + tiny_noise(0.1);
-            let roll  = lerp(359.0, 2.0, p)        + tiny_noise(0.3);
-            let comm  = lerp(93.0, 90.0, p)        + tiny_noise(0.3);
+            let alt = lerp(5000.0, 9000.0, p) + tiny_noise(6.0);
+            let vel = lerp(1.4, 2.2, p) + tiny_noise(0.03);
+            let dr = lerp(180000.0, 215000.0, p) + tiny_noise(35.0);
+            let earth = lerp(320000.0, 384400.0, p) + tiny_noise(40.0);
+            let moon = clamp(384400.0 - earth, 0.0, 384400.0);
+            let fuel = lerp(61.0, 60.0, p) + tiny_noise(0.08);
+            let power = lerp(92.0, 91.0, p) + tiny_noise(0.08);
+            let temp = lerp(22.8, 23.4, p) + tiny_noise(0.1);
+            let pitch = lerp(0.0, 14.0, p) + tiny_noise(0.2);
+            let yaw = lerp(0.4, -0.5, p) + tiny_noise(0.1);
+            let roll = lerp(359.0, 2.0, p) + tiny_noise(0.3);
+            let comm = lerp(93.0, 90.0, p) + tiny_noise(0.3);
             (alt, vel, dr, earth, moon, fuel, power, temp, pitch, yaw, roll, comm)
         }
         MissionPhase::CoastHome => {
-            let alt   = lerp(9000.0, 3000.0, p)   + tiny_noise(6.0);
-            let vel   = lerp(2.2, 1.7, p)         + tiny_noise(0.03);
-            let dr    = lerp(215000.0, 380000.0, p)+ tiny_noise(45.0);
+            let alt = lerp(9000.0, 3000.0, p) + tiny_noise(6.0);
+            let vel = lerp(2.2, 1.7, p) + tiny_noise(0.03);
+            let dr = lerp(215000.0, 380000.0, p) + tiny_noise(45.0);
             let earth = lerp(384400.0, 90000.0, p) + tiny_noise(85.0);
-            let moon  = clamp(384400.0 - earth, 0.0, 384400.0);
-            let fuel  = lerp(60.0, 56.0, p)       + tiny_noise(0.12);
-            let power = lerp(91.0, 87.0, p)       + tiny_noise(0.09);
-            let temp  = lerp(23.4, 22.2, p)       + tiny_noise(0.1);
-            let pitch = lerp(14.0, -2.0, p)       + tiny_noise(0.2);
-            let yaw   = lerp(-0.5, 0.2, p)        + tiny_noise(0.1);
-            let roll  = lerp(2.0, 356.0, p)       + tiny_noise(0.35);
-            let comm  = lerp(90.0, 95.0, p)       + tiny_noise(0.24);
+            let moon = clamp(384400.0 - earth, 0.0, 384400.0);
+            let fuel = lerp(60.0, 56.0, p) + tiny_noise(0.12);
+            let power = lerp(91.0, 87.0, p) + tiny_noise(0.09);
+            let temp = lerp(23.4, 22.2, p) + tiny_noise(0.1);
+            let pitch = lerp(14.0, -2.0, p) + tiny_noise(0.2);
+            let yaw = lerp(-0.5, 0.2, p) + tiny_noise(0.1);
+            let roll = lerp(2.0, 356.0, p) + tiny_noise(0.35);
+            let comm = lerp(90.0, 95.0, p) + tiny_noise(0.24);
             (alt, vel, dr, earth, moon, fuel, power, temp, pitch, yaw, roll, comm)
         }
         MissionPhase::ReturnBurn => {
-            let alt   = lerp(3000.0, 1200.0, p)   + tiny_noise(3.0);
-            let vel   = lerp(1.7, 3.1, p)         + tiny_noise(0.03);
-            let dr    = lerp(380000.0, 402000.0, p)+ tiny_noise(28.0);
+            let alt = lerp(3000.0, 1200.0, p) + tiny_noise(3.0);
+            let vel = lerp(1.7, 3.1, p) + tiny_noise(0.03);
+            let dr = lerp(380000.0, 402000.0, p) + tiny_noise(28.0);
             let earth = lerp(90000.0, 22000.0, p) + tiny_noise(40.0);
-            let moon  = clamp(384400.0 - earth, 0.0, 384400.0);
-            let fuel  = lerp(56.0, 52.0, p)       + tiny_noise(0.1);
-            let power = lerp(87.0, 85.0, p)       + tiny_noise(0.07);
-            let temp  = lerp(22.2, 23.2, p)       + tiny_noise(0.1);
-            let pitch = lerp(-2.0, -12.0, p)      + tiny_noise(0.2);
-            let yaw   = lerp(0.2, 0.0, p)         + tiny_noise(0.08);
-            let roll  = lerp(356.0, 1.0, p)       + tiny_noise(0.28);
-            let comm  = lerp(95.0, 96.0, p)       + tiny_noise(0.18);
+            let moon = clamp(384400.0 - earth, 0.0, 384400.0);
+            let fuel = lerp(56.0, 52.0, p) + tiny_noise(0.1);
+            let power = lerp(87.0, 85.0, p) + tiny_noise(0.07);
+            let temp = lerp(22.2, 23.2, p) + tiny_noise(0.1);
+            let pitch = lerp(-2.0, -12.0, p) + tiny_noise(0.2);
+            let yaw = lerp(0.2, 0.0, p) + tiny_noise(0.08);
+            let roll = lerp(356.0, 1.0, p) + tiny_noise(0.28);
+            let comm = lerp(95.0, 96.0, p) + tiny_noise(0.18);
             (alt, vel, dr, earth, moon, fuel, power, temp, pitch, yaw, roll, comm)
         }
         MissionPhase::Reentry => {
-            let alt   = lerp(120.0, 2.0, p)       + tiny_noise(1.0);
-            let vel   = lerp(11.1, 0.25, p)       + tiny_noise(0.06);
-            let dr    = lerp(402000.0, 405500.0, p)+ tiny_noise(12.0);
+            let alt = lerp(120.0, 2.0, p) + tiny_noise(1.0);
+            let vel = lerp(11.1, 0.25, p) + tiny_noise(0.06);
+            let dr = lerp(402000.0, 405500.0, p) + tiny_noise(12.0);
             let earth = alt;
-            let moon  = 384400.0 - earth;
-            let fuel  = lerp(52.0, 50.0, p)       + tiny_noise(0.05);
-            let power = lerp(85.0, 83.0, p)       + tiny_noise(0.06);
-            let temp  = lerp(23.2, 27.0, p)       + tiny_noise(0.2);
-            let pitch = lerp(-12.0, 84.0, p)      + tiny_noise(0.8);
-            let yaw   = lerp(0.0, 0.5, p)         + tiny_noise(0.15);
-            let roll  = lerp(1.0, 0.0, p)         + tiny_noise(0.22);
-            let comm  = if p < 0.35 {
+            let moon = 384400.0 - earth;
+            let fuel = lerp(52.0, 50.0, p) + tiny_noise(0.05);
+            let power = lerp(85.0, 83.0, p) + tiny_noise(0.06);
+            let temp = lerp(23.2, 27.0, p) + tiny_noise(0.2);
+            let pitch = lerp(-12.0, 84.0, p) + tiny_noise(0.8);
+            let yaw = lerp(0.0, 0.5, p) + tiny_noise(0.15);
+            let roll = lerp(1.0, 0.0, p) + tiny_noise(0.22);
+            let comm = if p < 0.35 {
                 lerp(96.0, 8.0, p / 0.35) + tiny_noise(0.5)
             } else if p < 0.7 {
                 4.0 + tiny_noise(1.0)
@@ -654,16 +664,21 @@ fn base_log_entries() -> Vec<LogEntry> {
 }
 
 fn base_history() -> HistoryState {
-    HistoryState { altitude: vec![], velocity: vec![], comm: vec![] }
+    HistoryState {
+        altitude: vec![],
+        velocity: vec![],
+        comm: vec![],
+    }
 }
 
 fn push_history(history: &mut HistoryState, state: &MissionState) {
     history.altitude.push(ChartPoint { value: state.altitude_km });
     history.velocity.push(ChartPoint { value: state.velocity_kps });
     history.comm.push(ChartPoint { value: state.comm_link_pct });
+
     if history.altitude.len() > HISTORY_MAX { history.altitude.remove(0); }
     if history.velocity.len() > HISTORY_MAX { history.velocity.remove(0); }
-    if history.comm.len()    > HISTORY_MAX { history.comm.remove(0);     }
+    if history.comm.len() > HISTORY_MAX { history.comm.remove(0); }
 }
 
 fn push_log(logs: &mut Vec<LogEntry>, state: &MissionState) {
@@ -671,14 +686,14 @@ fn push_log(logs: &mut Vec<LogEntry>, state: &MissionState) {
     let p = state.phase_progress;
 
     let interesting = match phase {
-        MissionPhase::Launch        => (p > 0.10 && p < 0.16) || (p > 0.55 && p < 0.61),
-        MissionPhase::OrbitCheckout =>  p > 0.45 && p < 0.51,
-        MissionPhase::Tli           => (p > 0.08 && p < 0.14) || (p > 0.86 && p < 0.92),
-        MissionPhase::CoastOut      => (p > 0.35 && p < 0.41) || (p > 0.74 && p < 0.80),
-        MissionPhase::LunarFlyby    =>  p > 0.48 && p < 0.54,
-        MissionPhase::CoastHome     => (p > 0.20 && p < 0.26) || (p > 0.75 && p < 0.81),
-        MissionPhase::ReturnBurn    => (p > 0.10 && p < 0.16) || (p > 0.84 && p < 0.90),
-        MissionPhase::Reentry       => (p > 0.25 && p < 0.31) || (p > 0.74 && p < 0.80),
+        MissionPhase::Launch => (p > 0.10 && p < 0.16) || (p > 0.55 && p < 0.61),
+        MissionPhase::OrbitCheckout => p > 0.45 && p < 0.51,
+        MissionPhase::Tli => (p > 0.08 && p < 0.14) || (p > 0.86 && p < 0.92),
+        MissionPhase::CoastOut => (p > 0.35 && p < 0.41) || (p > 0.74 && p < 0.80),
+        MissionPhase::LunarFlyby => p > 0.48 && p < 0.54,
+        MissionPhase::CoastHome => (p > 0.20 && p < 0.26) || (p > 0.75 && p < 0.81),
+        MissionPhase::ReturnBurn => (p > 0.10 && p < 0.16) || (p > 0.84 && p < 0.90),
+        MissionPhase::Reentry => (p > 0.25 && p < 0.31) || (p > 0.74 && p < 0.80),
     };
 
     if !interesting { return; }
@@ -722,9 +737,9 @@ struct SparklineProps {
 
 #[function_component(Sparkline)]
 fn sparkline(props: &SparklineProps) -> Html {
-    let width = 320.0_f64;
-    let height = 110.0_f64;
-    let padding = 8.0_f64;
+    let width = 320.0;
+    let height = 110.0;
+    let padding = 8.0;
 
     if props.values.is_empty() {
         return html! {
@@ -750,8 +765,11 @@ fn sparkline(props: &SparklineProps) -> Html {
         let x = padding + i as f64 * step_x;
         let normalized = (point.value - min) / range;
         let y = height - padding - normalized * (height - 2.0 * padding);
-        if i == 0 { d.push_str(&format!("M {:.2} {:.2}", x, y)); }
-        else       { d.push_str(&format!(" L {:.2} {:.2}", x, y)); }
+        if i == 0 {
+            d.push_str(&format!("M {:.2} {:.2}", x, y));
+        } else {
+            d.push_str(&format!(" L {:.2} {:.2}", x, y));
+        }
     }
 
     html! {
@@ -760,18 +778,25 @@ fn sparkline(props: &SparklineProps) -> Html {
             <div class="chart-frame">
                 <svg viewBox="0 0 320 110" aria-label={props.label}>
                     <line x1="8" y1="102" x2="312" y2="102" stroke="rgba(255,255,255,0.12)" stroke-width="1" />
-                    <path d={d} fill="none" stroke={props.stroke_class} stroke-width="3" stroke-linejoin="round" stroke-linecap="round" />
+                    <path
+                        d={d}
+                        fill="none"
+                        stroke={props.stroke_class}
+                        stroke-width="3"
+                        stroke-linejoin="round"
+                        stroke-linecap="round"
+                    />
                 </svg>
             </div>
         </div>
     }
 }
 
-// ── Phase-jump button sub-component ─────────────────────────────────────────
-// Replaces the <select> entirely. Each phase is a small button. Buttons are
-// the most reliable interactive element in Yew/WASM across all browsers and
-// mobile OS native renderers — no event-target casting, no controlled-select
-// vdom conflicts, no iOS picker quirks.
+
+// ── Phase jump buttons ───────────────────────────────────────────────────────
+// Replaces <select>. Plain button clicks are the most reliable interactive
+// primitive in Yew/WASM — no event-target casting, no controlled-select vdom
+// conflicts, no iOS native picker quirks.
 
 #[derive(Properties, PartialEq)]
 struct PhaseJumpProps {
@@ -785,7 +810,7 @@ fn phase_jump_buttons(props: &PhaseJumpProps) -> Html {
         <div class="phase-jump-wrap">
             {
                 MissionPhase::all().iter().enumerate().map(|(i, phase)| {
-                    let on_jump = props.on_jump.clone();
+                    let on_jump   = props.on_jump.clone();
                     let is_active = i == props.current_phase_idx;
                     html! {
                         <button
@@ -803,25 +828,28 @@ fn phase_jump_buttons(props: &PhaseJumpProps) -> Html {
 
 #[function_component(App)]
 fn app() -> Html {
-    let time_s        = use_state(|| 0.0_f64);
-    let playing       = use_state(|| true);
-    let speed         = use_state(|| 1.0_f64);
-    let logs          = use_state(base_log_entries);
-    let history       = use_state(base_history);
+    let time_s = use_state(|| 0.0_f64);
+    let playing = use_state(|| true);
+    let speed = use_state(|| 1.0_f64);
+    let logs = use_state(base_log_entries);
+    let history = use_state(base_history);
     let viewport_width = use_state(window_width);
-    let mobile_panel  = use_state(|| MobilePanel::Center);
+    let mobile_panel = use_state(|| MobilePanel::Center);
+
 
     // Tick the simulation forward
     {
-        let time_s  = time_s.clone();
+        let time_s = time_s.clone();
         let playing = playing.clone();
-        let speed   = speed.clone();
+        let speed = speed.clone();
+
         use_effect_with((), move |_| {
             let interval = Interval::new(TICK_MS, move || {
                 if *playing {
-                    let dt    = (TICK_MS as f64 / 1000.0) * *speed;
+                    let dt = (TICK_MS as f64 / 1000.0) * *speed;
                     let total = mission_duration_total();
-                    let next  = (*time_s + dt).min(total);
+                    let mut next = *time_s + dt;
+                    if next > total { next = total; }
                     time_s.set(next);
                 }
             });
@@ -829,7 +857,8 @@ fn app() -> Html {
         });
     }
 
-    // Resize listener — registered once on mount
+    // FIX: use_effect_with((), ...) so the resize listener is registered only
+    // once on mount, not torn down and recreated on every render tick.
     {
         let viewport_width = viewport_width.clone();
         use_effect_with((), move |_| {
@@ -842,30 +871,35 @@ fn app() -> Html {
         });
     }
 
-    // Log + history push on every time tick
+    // Push log entries and history points on each time step
     {
-        let logs     = logs.clone();
-        let history  = history.clone();
+        let logs = logs.clone();
+        let history = history.clone();
         let mission_t = *time_s;
+
         use_effect_with(mission_t, move |t| {
             let state = build_mission_state(*t);
+
             let mut next_logs = (*logs).clone();
             push_log(&mut next_logs, &state);
             if next_logs != *logs { logs.set(next_logs); }
+
             let mut next_history = (*history).clone();
             push_history(&mut next_history, &state);
             history.set(next_history);
+
             || ()
         });
     }
 
-    let state     = build_mission_state(*time_s);
-    let apollo    = to_apollo_display(&state);
-    let orion     = to_orion_display(&state);
+    let state = build_mission_state(*time_s);
+    let apollo = to_apollo_display(&state);
+    let orion = to_orion_display(&state);
     let phase_idx = MissionPhase::all()
         .iter()
         .position(|p| *p == state.phase)
         .unwrap_or(0);
+
 
     let is_mobile = *viewport_width < MOBILE_BREAKPOINT;
 
@@ -875,8 +909,8 @@ fn app() -> Html {
     };
 
     let on_reset = {
-        let time_s  = time_s.clone();
-        let logs    = logs.clone();
+        let time_s = time_s.clone();
+        let logs = logs.clone();
         let history = history.clone();
         Callback::from(move |_| {
             time_s.set(0.0);
@@ -885,35 +919,18 @@ fn app() -> Html {
         })
     };
 
-    let on_speed_1  = { let s = speed.clone(); Callback::from(move |_| s.set(1.0))  };
-    let on_speed_5  = { let s = speed.clone(); Callback::from(move |_| s.set(5.0))  };
-    let on_speed_15 = { let s = speed.clone(); Callback::from(move |_| s.set(15.0)) };
+    let on_speed_1 = { let speed = speed.clone(); Callback::from(move |_| speed.set(1.0)) };
+    let on_speed_5 = { let speed = speed.clone(); Callback::from(move |_| speed.set(5.0)) };
+    let on_speed_15 = { let speed = speed.clone(); Callback::from(move |_| speed.set(15.0)) };
 
-    // Phase jump — receives an index from PhaseJumpButtons, no select/event casting needed
-    let on_jump = {
-        let time_s  = time_s.clone();
-        let logs    = logs.clone();
-        let history = history.clone();
-        Callback::from(move |idx: usize| {
-            let phase = phase_from_index(idx);
-            let t     = phase_start_time(phase);
-            time_s.set(t);
-            let mut next = base_log_entries();
-            next.push(LogEntry {
-                met:  format_met(t),
-                text: format!("Jumped to phase: {}", phase.label()),
-            });
-            logs.set(next);
-            history.set(base_history());
-        })
-    };
+
 
     let show_apollo = { let mp = mobile_panel.clone(); Callback::from(move |_| mp.set(MobilePanel::Apollo)) };
     let show_center = { let mp = mobile_panel.clone(); Callback::from(move |_| mp.set(MobilePanel::Center)) };
     let show_orion  = { let mp = mobile_panel.clone(); Callback::from(move |_| mp.set(MobilePanel::Orion))  };
 
     let total_progress_pct = (*time_s / mission_duration_total()) * 100.0;
-    let path_progress      = total_progress_pct / 100.0;
+    let path_progress = total_progress_pct / 100.0;
 
     html! {
         <div class="app-shell">
@@ -921,18 +938,29 @@ fn app() -> Html {
                 <div class="hero-top">
                     <div class="title-block">
                         <h1>{"Apollo vs Orion — Side-by-Side Deep Space Flight Console"}</h1>
-                        <p>{"One shared mission timeline. Two instrumentation philosophies. Apollo-style telemetry on the left, Orion-style telemetry on the right."}</p>
+                        <p>
+                            {"One shared mission timeline. Two instrumentation philosophies. Apollo-style telemetry on the left, Orion-style telemetry on the right."}
+                        </p>
                         <div class="badge-row">
                             <span class="badge">{"Rust + Yew + WASM"}</span>
                             <span class="badge">{"Same-stage dual instrumentation"}</span>
                             <span class="badge">{"Mini charts + stronger trajectory"}</span>
-                            { if is_mobile { html! { <span class="badge">{"Mobile tabbed layout"}</span> } } else { html! {} } }
+                            {
+                                if is_mobile {
+                                    html! { <span class="badge">{"Mobile tabbed layout"}</span> }
+                                } else {
+                                    html! {}
+                                }
+                            }
                         </div>
                     </div>
 
                     <div class="controls">
                         <div class="control-group">
-                            <button class={classes!("btn", if *playing { "active" } else { "" })} onclick={on_toggle_play}>
+                            <button
+                                class={classes!("btn", if *playing { "active" } else { "" })}
+                                onclick={on_toggle_play.clone()}
+                            >
                                 { if *playing { "Pause" } else { "Play" } }
                             </button>
                             <button class="btn" onclick={on_reset}>{"Reset"}</button>
@@ -940,8 +968,8 @@ fn app() -> Html {
 
                         <div class="control-group">
                             <label>{"Speed"}</label>
-                            <button class={classes!("btn", if (*speed - 1.0).abs()  < f64::EPSILON { "active" } else { "" })} onclick={on_speed_1} >{"1×"}</button>
-                            <button class={classes!("btn", if (*speed - 5.0).abs()  < f64::EPSILON { "active" } else { "" })} onclick={on_speed_5} >{"5×"}</button>
+                            <button class={classes!("btn", if (*speed - 1.0).abs() < f64::EPSILON { "active" } else { "" })} onclick={on_speed_1}>{"1×"}</button>
+                            <button class={classes!("btn", if (*speed - 5.0).abs() < f64::EPSILON { "active" } else { "" })} onclick={on_speed_5}>{"5×"}</button>
                             <button class={classes!("btn", if (*speed - 15.0).abs() < f64::EPSILON { "active" } else { "" })} onclick={on_speed_15}>{"15×"}</button>
                         </div>
 
@@ -959,15 +987,44 @@ fn app() -> Html {
                         html! {
                             <>
                                 <div class="mobile-switcher">
-                                    <button class={classes!("btn", if *mobile_panel == MobilePanel::Apollo { "active" } else { "" })} onclick={show_apollo}>{"Apollo"}</button>
-                                    <button class={classes!("btn", if *mobile_panel == MobilePanel::Center { "active" } else { "" })} onclick={show_center}>{"Center"}</button>
-                                    <button class={classes!("btn", if *mobile_panel == MobilePanel::Orion  { "active" } else { "" })} onclick={show_orion} >{"Orion"}</button>
+                                    <button
+                                        class={classes!("btn", if *mobile_panel == MobilePanel::Apollo { "active" } else { "" })}
+                                        onclick={show_apollo}
+                                    >{"Apollo"}</button>
+                                    <button
+                                        class={classes!("btn", if *mobile_panel == MobilePanel::Center { "active" } else { "" })}
+                                        onclick={show_center}
+                                    >{"Center"}</button>
+                                    <button
+                                        class={classes!("btn", if *mobile_panel == MobilePanel::Orion { "active" } else { "" })}
+                                        onclick={show_orion}
+                                    >{"Orion"}</button>
                                 </div>
+
                                 {
                                     match *mobile_panel {
-                                        MobilePanel::Apollo => html! { <ApolloPanel display={apollo.clone()} state={state.clone()} history={(*history).clone()} /> },
-                                        MobilePanel::Center => html! { <CenterColumn state={state.clone()} total_progress_pct={total_progress_pct} path_progress={path_progress} logs={(*logs).clone()} /> },
-                                        MobilePanel::Orion  => html! { <OrionPanel  display={orion.clone()}  state={state.clone()} history={(*history).clone()} /> },
+                                        MobilePanel::Apollo => html! {
+                                            <ApolloPanel
+                                                display={apollo.clone()}
+                                                state={state.clone()}
+                                                history={(*history).clone()}
+                                            />
+                                        },
+                                        MobilePanel::Center => html! {
+                                            <CenterColumn
+                                                state={state.clone()}
+                                                total_progress_pct={total_progress_pct}
+                                                path_progress={path_progress}
+                                                logs={(*logs).clone()}
+                                            />
+                                        },
+                                        MobilePanel::Orion => html! {
+                                            <OrionPanel
+                                                display={orion.clone()}
+                                                state={state.clone()}
+                                                history={(*history).clone()}
+                                            />
+                                        },
                                     }
                                 }
                             </>
@@ -975,9 +1032,22 @@ fn app() -> Html {
                     } else {
                         html! {
                             <>
-                                <ApolloPanel  display={apollo.clone()} state={state.clone()} history={(*history).clone()} />
-                                <CenterColumn state={state.clone()} total_progress_pct={total_progress_pct} path_progress={path_progress} logs={(*logs).clone()} />
-                                <OrionPanel   display={orion.clone()}  state={state.clone()} history={(*history).clone()} />
+                                <ApolloPanel
+                                    display={apollo.clone()}
+                                    state={state.clone()}
+                                    history={(*history).clone()}
+                                />
+                                <CenterColumn
+                                    state={state.clone()}
+                                    total_progress_pct={total_progress_pct}
+                                    path_progress={path_progress}
+                                    logs={(*logs).clone()}
+                                />
+                                <OrionPanel
+                                    display={orion.clone()}
+                                    state={state.clone()}
+                                    history={(*history).clone()}
+                                />
                             </>
                         }
                     }
@@ -1003,53 +1073,110 @@ fn apollo_panel(props: &ApolloPanelProps) -> Html {
     let d = &props.display;
     let s = &props.state;
     let history = &props.history;
+
     html! {
         <div class="panel-shell apollo-shell">
             <div class="panel-header">
                 <h2 class="panel-title">{"Apollo Console"}</h2>
-                <p class="panel-subtitle">{"Chunkier labels, coarser readouts, discrete status language, and Apollo-era style instrumentation."}</p>
+                <p class="panel-subtitle">
+                    {"Chunkier labels, coarser readouts, discrete status language, and Apollo-era style instrumentation."}
+                </p>
             </div>
+
             <div class="panel-content">
                 <div class="phase-banner apollo-banner">{d.banner}</div>
+
                 <div class="card apollo-card">
                     <h3>{"Mission Status"}</h3>
                     <div class="big-value apollo-value">{d.phase}</div>
                     <div class="subline">{format!("MET {}", d.met)}</div>
+
                     <div class="signal-lamps">
-                        <span class="lamp"><span class={classes!("lamp-dot", if d.lamp_guid { "on" } else { "" })}></span>{"GUID"}</span>
-                        <span class="lamp"><span class={classes!("lamp-dot", if d.lamp_comm { "on" } else { "" })}></span>{"COMM"}</span>
-                        <span class="lamp"><span class={classes!("lamp-dot", if d.lamp_prop { "on" } else { "" })}></span>{"PROP"}</span>
+                        <span class="lamp">
+                            <span class={classes!("lamp-dot", if d.lamp_guid { "on" } else { "" })}></span>
+                            {"GUID"}
+                        </span>
+                        <span class="lamp">
+                            <span class={classes!("lamp-dot", if d.lamp_comm { "on" } else { "" })}></span>
+                            {"COMM"}
+                        </span>
+                        <span class="lamp">
+                            <span class={classes!("lamp-dot", if d.lamp_prop { "on" } else { "" })}></span>
+                            {"PROP"}
+                        </span>
                     </div>
                 </div>
+
                 <div class="card-grid">
-                    <div class="card apollo-card"><h3>{"VEL"}</h3><div class="big-value apollo-value">{d.vel_kps.clone()}</div><div class="subline">{"Inertial velocity"}</div></div>
-                    <div class="card apollo-card"><h3>{"ALT"}</h3><div class="big-value apollo-value">{d.alt_km.clone()}</div><div class="subline">{"Instant altitude"}</div></div>
-                    <div class="card apollo-card"><h3>{"Downrange"}</h3><div class="big-value apollo-value">{d.downrange_km.clone()}</div><div class="subline">{"Ground track distance"}</div></div>
-                    <div class="card apollo-card"><h3>{"GNC"}</h3><div class="big-value apollo-value">{d.guidance}</div><div class="subline">{format!("COMM {}", d.comm)}</div></div>
+                    <div class="card apollo-card">
+                        <h3>{"VEL"}</h3>
+                        <div class="big-value apollo-value">{d.vel_kps.clone()}</div>
+                        <div class="subline">{"Inertial velocity"}</div>
+                    </div>
+                    <div class="card apollo-card">
+                        <h3>{"ALT"}</h3>
+                        <div class="big-value apollo-value">{d.alt_km.clone()}</div>
+                        <div class="subline">{"Instant altitude"}</div>
+                    </div>
+                    <div class="card apollo-card">
+                        <h3>{"Downrange"}</h3>
+                        <div class="big-value apollo-value">{d.downrange_km.clone()}</div>
+                        <div class="subline">{"Ground track distance"}</div>
+                    </div>
+                    <div class="card apollo-card">
+                        <h3>{"GNC"}</h3>
+                        <div class="big-value apollo-value">{d.guidance}</div>
+                        <div class="subline">{format!("COMM {}", d.comm)}</div>
+                    </div>
                 </div>
+
                 <div class="card apollo-card">
                     <h3>{"Guidance / Attitude"}</h3>
                     <div class="mini-grid">
-                        <div class="mini-stat apollo-mini"><div class="mini-label">{"PITCH"}</div><div class="mini-value">{d.pitch.clone()}</div></div>
-                        <div class="mini-stat apollo-mini"><div class="mini-label">{"YAW"}</div>  <div class="mini-value">{d.yaw.clone()}</div></div>
-                        <div class="mini-stat apollo-mini"><div class="mini-label">{"ROLL"}</div> <div class="mini-value">{d.roll.clone()}</div></div>
+                        <div class="mini-stat apollo-mini">
+                            <div class="mini-label">{"PITCH"}</div>
+                            <div class="mini-value">{d.pitch.clone()}</div>
+                        </div>
+                        <div class="mini-stat apollo-mini">
+                            <div class="mini-label">{"YAW"}</div>
+                            <div class="mini-value">{d.yaw.clone()}</div>
+                        </div>
+                        <div class="mini-stat apollo-mini">
+                            <div class="mini-label">{"ROLL"}</div>
+                            <div class="mini-value">{d.roll.clone()}</div>
+                        </div>
                     </div>
                     <div class="subline" style="margin-top:10px;">{d.log_line}</div>
                 </div>
+
                 <div class="card apollo-card">
                     <h3>{"Consumables"}</h3>
                     <div class="progress-wrap">
-                        <div class="progress-row"><span>{"Fuel"}</span><span>{d.fuel_pct.clone()}</span></div>
-                        <div class="progress-bar"><div class="progress-fill apollo-fill" style={format!("width:{:.1}%;", s.fuel_pct)}></div></div>
+                        <div class="progress-row">
+                            <span>{"Fuel"}</span>
+                            <span>{d.fuel_pct.clone()}</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill apollo-fill" style={format!("width:{:.1}%;", s.fuel_pct)}></div>
+                        </div>
                     </div>
                     <div class="progress-wrap">
-                        <div class="progress-row"><span>{"Power"}</span><span>{d.power_pct.clone()}</span></div>
-                        <div class="progress-bar"><div class="progress-fill apollo-fill" style={format!("width:{:.1}%;", s.power_pct)}></div></div>
+                        <div class="progress-row">
+                            <span>{"Power"}</span>
+                            <span>{d.power_pct.clone()}</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill apollo-fill" style={format!("width:{:.1}%;", s.power_pct)}></div>
+                        </div>
                     </div>
                     <div class="progress-wrap">
-                        <div class="progress-row"><span>{"Cabin Temp"}</span><span>{d.temp_c.clone()}</span></div>
+                        <div class="progress-row">
+                            <span>{"Cabin Temp"}</span>
+                            <span>{d.temp_c.clone()}</span>
+                        </div>
                     </div>
                 </div>
+
                 <div class="card apollo-card">
                     <h3>{"Flight Trend"}</h3>
                     <Sparkline values={history.altitude.clone()} stroke_class="#d9d66c" label="ALT trend" />
@@ -1072,14 +1199,19 @@ fn orion_panel(props: &OrionPanelProps) -> Html {
     let d = &props.display;
     let s = &props.state;
     let history = &props.history;
+
     html! {
         <div class="panel-shell orion-shell">
             <div class="panel-header">
                 <h2 class="panel-title">{"Orion Console"}</h2>
-                <p class="panel-subtitle">{"Cleaner typography, richer diagnostics, denser telemetry, and software-defined modern mission status."}</p>
+                <p class="panel-subtitle">
+                    {"Cleaner typography, richer diagnostics, denser telemetry, and software-defined modern mission status."}
+                </p>
             </div>
+
             <div class="panel-content">
                 <div class="phase-banner orion-banner">{d.banner}</div>
+
                 <div class="card orion-card">
                     <h3>{"Mission Mode"}</h3>
                     <div class="big-value orion-value">{d.phase}</div>
@@ -1090,51 +1222,96 @@ fn orion_panel(props: &OrionPanelProps) -> Html {
                         <span class="status-chip">{d.power_chip}</span>
                     </div>
                 </div>
+
                 <div class="card orion-card">
                     <h3>{"Broadcast Overlay"}</h3>
                     <div class="overlay-readout">
                         <div class="overlay-caption">{d.overlay_caption}</div>
                         <div class="overlay-metrics">
-                            {format!("On-screen overlays read: Distance to Earth: {}. Distance to the Moon: {}. Velocity: {}. Mission Elapsed Time: {}",
-                                d.overlay_distance_earth, d.overlay_distance_moon, d.overlay_velocity, d.overlay_met)}
+                            {format!(
+                                "On-screen overlays read: Distance to Earth: {}. Distance to the Moon: {}. Velocity: {}. Mission Elapsed Time: {}",
+                                d.overlay_distance_earth,
+                                d.overlay_distance_moon,
+                                d.overlay_velocity,
+                                d.overlay_met
+                            )}
                         </div>
                     </div>
                 </div>
+
                 <div class="card-grid">
-                    <div class="card orion-card"><h3>{"Inertial Velocity"}</h3><div class="big-value orion-value">{d.velocity.clone()}</div><div class="subline">{"Guidance-referenced solution"}</div></div>
-                    <div class="card orion-card"><h3>{"Altitude"}</h3><div class="big-value orion-value">{d.altitude.clone()}</div><div class="subline">{"Current flight altitude"}</div></div>
-                    <div class="card orion-card"><h3>{"Earth Distance"}</h3><div class="big-value orion-value">{d.earth_distance.clone()}</div><div class="subline">{"Range from Earth reference"}</div></div>
-                    <div class="card orion-card"><h3>{"Moon Distance"}</h3><div class="big-value orion-value">{d.moon_distance.clone()}</div><div class="subline">{"Range to lunar reference"}</div></div>
+                    <div class="card orion-card">
+                        <h3>{"Inertial Velocity"}</h3>
+                        <div class="big-value orion-value">{d.velocity.clone()}</div>
+                        <div class="subline">{"Guidance-referenced solution"}</div>
+                    </div>
+                    <div class="card orion-card">
+                        <h3>{"Altitude"}</h3>
+                        <div class="big-value orion-value">{d.altitude.clone()}</div>
+                        <div class="subline">{"Current flight altitude"}</div>
+                    </div>
+                    <div class="card orion-card">
+                        <h3>{"Earth Distance"}</h3>
+                        <div class="big-value orion-value">{d.earth_distance.clone()}</div>
+                        <div class="subline">{"Range from Earth reference"}</div>
+                    </div>
+                    <div class="card orion-card">
+                        <h3>{"Moon Distance"}</h3>
+                        <div class="big-value orion-value">{d.moon_distance.clone()}</div>
+                        <div class="subline">{"Range to lunar reference"}</div>
+                    </div>
                 </div>
+
                 <div class="card orion-card">
                     <h3>{"GN&C / Communications"}</h3>
                     <div class="big-value orion-value" style="font-size:1.35rem;">{d.guidance}</div>
                     <div class="subline" style="margin-top:8px;">{d.comm}</div>
                     <div class="subline" style="margin-top:10px;">{d.log_line}</div>
                 </div>
+
                 <div class="card orion-card">
                     <h3>{"Vehicle Health"}</h3>
                     <div class="mini-grid">
-                        <div class="mini-stat orion-mini"><div class="mini-label">{"Propellant"}</div><div class="mini-value">{d.propellant.clone()}</div></div>
-                        <div class="mini-stat orion-mini"><div class="mini-label">{"Battery"}</div>   <div class="mini-value">{d.battery.clone()}</div></div>
-                        <div class="mini-stat orion-mini"><div class="mini-label">{"Cabin"}</div>     <div class="mini-value">{d.temp.clone()}</div></div>
+                        <div class="mini-stat orion-mini">
+                            <div class="mini-label">{"Propellant"}</div>
+                            <div class="mini-value">{d.propellant.clone()}</div>
+                        </div>
+                        <div class="mini-stat orion-mini">
+                            <div class="mini-label">{"Battery"}</div>
+                            <div class="mini-value">{d.battery.clone()}</div>
+                        </div>
+                        <div class="mini-stat orion-mini">
+                            <div class="mini-label">{"Cabin"}</div>
+                            <div class="mini-value">{d.temp.clone()}</div>
+                        </div>
                     </div>
                     <div class="progress-wrap">
-                        <div class="progress-row"><span>{"Propellant Reserve"}</span><span>{d.propellant.clone()}</span></div>
-                        <div class="progress-bar"><div class="progress-fill orion-fill" style={format!("width:{:.1}%;", s.fuel_pct)}></div></div>
+                        <div class="progress-row">
+                            <span>{"Propellant Reserve"}</span>
+                            <span>{d.propellant.clone()}</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill orion-fill" style={format!("width:{:.1}%;", s.fuel_pct)}></div>
+                        </div>
                     </div>
                     <div class="progress-wrap">
-                        <div class="progress-row"><span>{"Power Bus"}</span><span>{d.battery.clone()}</span></div>
-                        <div class="progress-bar"><div class="progress-fill orion-fill" style={format!("width:{:.1}%;", s.power_pct)}></div></div>
+                        <div class="progress-row">
+                            <span>{"Power Bus"}</span>
+                            <span>{d.battery.clone()}</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill orion-fill" style={format!("width:{:.1}%;", s.power_pct)}></div>
+                        </div>
                     </div>
                     <div class="subline" style="margin-top:10px;">{d.attitude.clone()}</div>
                     <div class="subline" style="margin-top:6px;">{format!("Downrange {}", d.downrange)}</div>
                 </div>
+
                 <div class="card orion-card">
                     <h3>{"Modern Telemetry Trends"}</h3>
                     <Sparkline values={history.altitude.clone()} stroke_class="#73d7ff" label="Altitude trend" />
                     <Sparkline values={history.velocity.clone()} stroke_class="#73d7ff" label="Velocity trend" />
-                    <Sparkline values={history.comm.clone()}     stroke_class="#73d7ff" label="Comm link trend" />
+                    <Sparkline values={history.comm.clone()} stroke_class="#73d7ff" label="Comm link trend" />
                 </div>
             </div>
         </div>
@@ -1152,10 +1329,25 @@ struct CenterColumnProps {
 #[function_component(CenterColumn)]
 fn center_column(props: &CenterColumnProps) -> Html {
     let state = &props.state;
-    let outbound  = props.path_progress.min(0.5) / 0.5;
-    let inbound   = if props.path_progress > 0.5 { (props.path_progress - 0.5) / 0.5 } else { 0.0 };
-    let current_x = if props.path_progress <= 0.5 { 36.0 + outbound * 148.0 } else { 184.0 - inbound * 148.0 };
-    let current_y = if props.path_progress <= 0.5 { 210.0 - outbound * 150.0 } else { 60.0 + inbound * 158.0 };
+
+    let outbound = props.path_progress.min(0.5) / 0.5;
+    let inbound = if props.path_progress > 0.5 {
+        (props.path_progress - 0.5) / 0.5
+    } else {
+        0.0
+    };
+
+    let current_x = if props.path_progress <= 0.5 {
+        36.0 + outbound * 148.0
+    } else {
+        184.0 - inbound * 148.0
+    };
+
+    let current_y = if props.path_progress <= 0.5 {
+        210.0 - outbound * 150.0
+    } else {
+        60.0 + inbound * 158.0
+    };
 
     html! {
         <div class="center-column">
@@ -1163,68 +1355,121 @@ fn center_column(props: &CenterColumnProps) -> Html {
                 <div class="center-label">{"Current Phase"}</div>
                 <div class="phase-name">{state.phase.label()}</div>
                 <div class="met">{format_met(state.mission_time_s)}</div>
-                <div class="subline" style="margin-top:8px;">{format!("Mission progress {:.0}%", props.total_progress_pct)}</div>
+                <div class="subline" style="margin-top:8px;">
+                    {format!("Mission progress {:.0}%", props.total_progress_pct)}
+                </div>
                 <div class="progress-wrap">
                     <div class="progress-bar">
                         <div class="progress-fill orion-fill" style={format!("width:{:.1}%;", props.total_progress_pct)}></div>
                     </div>
                 </div>
             </div>
+
             <div class="center-card">
                 <div class="center-label">{"Mission Stages"}</div>
                 <div class="phase-list" style="margin-top:10px;">
-                    { MissionPhase::all().iter().map(|phase| html! {
-                        <div class={classes!("phase-pill", if *phase == state.phase { "active" } else { "" })}>{phase.label()}</div>
-                    }).collect::<Html>() }
+                    {
+                        MissionPhase::all().iter().map(|phase| {
+                            html! {
+                                <div class={classes!("phase-pill", if *phase == state.phase { "active" } else { "" })}>
+                                    {phase.label()}
+                                </div>
+                            }
+                        }).collect::<Html>()
+                    }
                 </div>
             </div>
+
             <div class="center-card">
                 <div class="center-label">{"Trajectory View"}</div>
                 <div class="path-box" style="margin-top:10px;">
                     <svg viewBox="0 0 220 260" aria-label="trajectory diagram">
                         <defs>
                             <radialGradient id="earthGlowV2" cx="50%" cy="50%" r="50%">
-                                <stop offset="0%"   stop-color="rgba(115,215,255,0.95)" />
+                                <stop offset="0%" stop-color="rgba(115,215,255,0.95)" />
                                 <stop offset="100%" stop-color="rgba(115,215,255,0.15)" />
                             </radialGradient>
                             <radialGradient id="moonGlowV2" cx="50%" cy="50%" r="50%">
-                                <stop offset="0%"   stop-color="rgba(240,240,255,0.95)" />
+                                <stop offset="0%" stop-color="rgba(240,240,255,0.95)" />
                                 <stop offset="100%" stop-color="rgba(240,240,255,0.18)" />
                             </radialGradient>
                         </defs>
-                        <circle cx="36"  cy="210" r="18" fill="url(#earthGlowV2)" />
-                        <circle cx="184" cy="60"  r="12" fill="url(#moonGlowV2)"  />
-                        <path d="M 36 210 Q 85 55 184 60"   fill="none" stroke="rgba(125,242,255,0.55)" stroke-width="3"   stroke-dasharray="5 5" />
-                        <path d="M 184 60 Q 148 170 36 218" fill="none" stroke="rgba(255,255,255,0.26)" stroke-width="2.5" stroke-dasharray="4 4" />
-                        <circle cx={format!("{:.2}", current_x)} cy={format!("{:.2}", current_y)} r="5.8" fill="rgba(125,242,255,0.95)" />
-                        <text x="18"  y="242" fill="rgba(255,255,255,0.65)" font-size="11">{"Earth"}</text>
-                        <text x="172" y="38"  fill="rgba(255,255,255,0.65)" font-size="11">{"Moon"}</text>
+
+                        <circle cx="36" cy="210" r="18" fill="url(#earthGlowV2)" />
+                        <circle cx="184" cy="60" r="12" fill="url(#moonGlowV2)" />
+
+                        <path
+                            d="M 36 210 Q 85 55 184 60"
+                            fill="none"
+                            stroke="rgba(125,242,255,0.55)"
+                            stroke-width="3"
+                            stroke-dasharray="5 5"
+                        />
+                        <path
+                            d="M 184 60 Q 148 170 36 218"
+                            fill="none"
+                            stroke="rgba(255,255,255,0.26)"
+                            stroke-width="2.5"
+                            stroke-dasharray="4 4"
+                        />
+
+                        <circle
+                            cx={format!("{:.2}", current_x)}
+                            cy={format!("{:.2}", current_y)}
+                            r="5.8"
+                            fill="rgba(125,242,255,0.95)"
+                        />
+
+                        <text x="18" y="242" fill="rgba(255,255,255,0.65)" font-size="11">{"Earth"}</text>
+                        <text x="172" y="38" fill="rgba(255,255,255,0.65)" font-size="11">{"Moon"}</text>
                     </svg>
                 </div>
                 <div class="traj-legend">
                     <div>{format!("Distance from Earth: {:.0} km", state.distance_from_earth_km)}</div>
-                    <div>{format!("Distance to Moon: {:.0} km",    state.distance_to_moon_km)}</div>
+                    <div>{format!("Distance to Moon: {:.0} km", state.distance_to_moon_km)}</div>
                 </div>
             </div>
+
             <div class="center-card">
                 <div class="center-label">{"Comparison Notes"}</div>
                 <div class="compare-grid" style="margin-top:10px;">
-                    <div class="compare-row"><div class="compare-title">{"Same phase"}</div><div class="compare-values">{"Both sides are locked to the same mission stage and physics-driven telemetry state."}</div></div>
-                    <div class="compare-row"><div class="compare-title">{"Apollo style"}</div><div class="compare-values">{"Abbreviated, procedural, stepped, and console-first."}</div></div>
-                    <div class="compare-row"><div class="compare-title">{"Orion style"}</div><div class="compare-values">{"Software-rich, audience-readable, mission-broadcast aware."}</div></div>
+                    <div class="compare-row">
+                        <div class="compare-title">{"Same phase"}</div>
+                        <div class="compare-values">
+                            {"Both sides are locked to the same mission stage and physics-driven telemetry state."}
+                        </div>
+                    </div>
+                    <div class="compare-row">
+                        <div class="compare-title">{"Apollo style"}</div>
+                        <div class="compare-values">
+                            {"Abbreviated, procedural, stepped, and console-first."}
+                        </div>
+                    </div>
+                    <div class="compare-row">
+                        <div class="compare-title">{"Orion style"}</div>
+                        <div class="compare-values">
+                            {"Software-rich, audience-readable, mission-broadcast aware."}
+                        </div>
+                    </div>
                 </div>
             </div>
+
             <div class="center-card">
                 <div class="center-label">{"Event Log"}</div>
                 <div class="log-wrap">
-                    { props.logs.iter().rev().map(|entry| html! {
-                        <div class="log-item">
-                            <div class="log-time">{entry.met.clone()}</div>
-                            <div class="log-text">{entry.text.clone()}</div>
-                        </div>
-                    }).collect::<Html>() }
+                    {
+                        props.logs.iter().rev().map(|entry| {
+                            html! {
+                                <div class="log-item">
+                                    <div class="log-time">{entry.met.clone()}</div>
+                                    <div class="log-text">{entry.text.clone()}</div>
+                                </div>
+                            }
+                        }).collect::<Html>()
+                    }
                 </div>
             </div>
+
             <div class="bottom-note">
                 {"This V2 build keeps one shared simulated mission state and transforms it into two distinct display languages. Apollo remains terse and procedural. Orion remains modern, graphic-rich, and broadcast-friendly."}
             </div>
