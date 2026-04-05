@@ -268,6 +268,7 @@ fn cue_key_for_state(state: &MissionState) -> Option<&'static str> {
 fn play_audio_cue(src: &str) {
     if let Ok(audio) = HtmlAudioElement::new_with_src(src) {
         audio.set_preload("auto");
+        audio.set_volume(1.0);
         let _ = audio.play();
     }
 }
@@ -327,7 +328,7 @@ fn find_phase_and_progress(t: f64) -> (MissionPhase, f64) {
     let mut remaining = t;
     for phase in MissionPhase::all() {
         let d = phase.duration_s();
-        if remaining <= d {
+        if remaining < d {
             return (phase, clamp(remaining / d, 0.0, 1.0));
         }
         remaining -= d;
@@ -1158,6 +1159,16 @@ fn app() -> Html {
         })
     };
 
+    let on_test_audio = {
+        let audio_armed = audio_armed.clone();
+        let last_cue_ref = last_cue_ref.clone();
+        Callback::from(move |_| {
+            audio_armed.set(true);
+            *last_cue_ref.borrow_mut() = String::new();
+            play_audio_cue(AUDIO_SPLASH_WAV);
+        })
+    };
+
     let total_progress_pct = (*time_s / mission_duration_total()) * 100.0;
     let path_progress = total_progress_pct / 100.0;
 
@@ -1202,6 +1213,7 @@ fn app() -> Html {
                             <button type="button" class={classes!("btn", if (*speed - 1.0).abs() < f64::EPSILON { "active" } else { "" })} onclick={on_speed_1}>{"1×"}</button>
                             <button type="button" class={classes!("btn", if (*speed - 5.0).abs() < f64::EPSILON { "active" } else { "" })} onclick={on_speed_5}>{"5×"}</button>
                             <button type="button" class={classes!("btn", if (*speed - 15.0).abs() < f64::EPSILON { "active" } else { "" })} onclick={on_speed_15}>{"15×"}</button>
+                            <button type="button" class="btn" onclick={on_test_audio}>{"Test Audio"}</button>
                         </div>
 
                         <div class="control-group" style="flex-direction:column; align-items:flex-start;">
@@ -1289,7 +1301,7 @@ fn app() -> Html {
             </section>
 
             <div class="footer-line">
-                {"V3: terminal-state lock, reentry blackout window, drogue/main chute timeline, WAV audio cues, and responsive mobile panel switching."}
+                {"V3.1: terminal-state lock, corrected phase boundaries, reentry blackout window, drogue/main chute timeline, WAV audio cues, test-audio button, and responsive mobile panel switching."}
             </div>
         </div>
     }
