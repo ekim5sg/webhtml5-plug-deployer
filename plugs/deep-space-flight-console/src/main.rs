@@ -982,27 +982,28 @@ fn app() -> Html {
         let last_cue_ref = last_cue_ref.clone();
         let state_for_cue = build_mission_state(*time_s);
 
-        use_effect_with((state_for_cue.phase, state_for_cue.phase_progress, *audio_armed), move |(_, _, armed)| {
-            if !*armed {
-                return || ();
-            }
-
-            if let Some(key) = cue_key_for_state(&state_for_cue) {
-                let mut last = last_cue_ref.borrow_mut();
-                if last.as_str() != key {
-                    match key {
-                        "blackout" => play_audio_cue(AUDIO_BLACKOUT_WAV),
-                        "drogue" => play_audio_cue(AUDIO_DROGUE_WAV),
-                        "main" => play_audio_cue(AUDIO_MAIN_WAV),
-                        "splash" => play_audio_cue(AUDIO_SPLASH_WAV),
-                        _ => {}
+        use_effect_with(
+            (state_for_cue.phase, state_for_cue.phase_progress, *audio_armed),
+            move |(_, _, armed)| {
+                if *armed {
+                    if let Some(key) = cue_key_for_state(&state_for_cue) {
+                        let mut last = last_cue_ref.borrow_mut();
+                        if last.as_str() != key {
+                            match key {
+                                "blackout" => play_audio_cue(AUDIO_BLACKOUT_WAV),
+                                "drogue" => play_audio_cue(AUDIO_DROGUE_WAV),
+                                "main" => play_audio_cue(AUDIO_MAIN_WAV),
+                                "splash" => play_audio_cue(AUDIO_SPLASH_WAV),
+                                _ => {}
+                            }
+                            *last = key.to_string();
+                        }
                     }
-                    *last = key.to_string();
                 }
-            }
 
-            || ()
-        });
+                || ()
+            },
+        );
     }
 
     {
