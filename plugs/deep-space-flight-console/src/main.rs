@@ -76,60 +76,26 @@ impl MissionPhase {
     fn guidance_apollo(&self, p: f64) -> &'static str {
         match self {
             MissionPhase::Launch => {
-                if p < 0.35 {
-                    "ASC GUID"
-                } else if p < 0.8 {
-                    "S-IVB STG"
-                } else {
-                    "INSERT"
-                }
+                if p < 0.35 { "ASC GUID" } else if p < 0.8 { "S-IVB STG" } else { "INSERT" }
             }
             MissionPhase::OrbitCheckout => {
-                if p < 0.5 {
-                    "CSM CHK"
-                } else {
-                    "ORB OPS"
-                }
+                if p < 0.5 { "CSM CHK" } else { "ORB OPS" }
             }
             MissionPhase::Tli => {
-                if p < 0.2 {
-                    "PREP TLI"
-                } else if p < 0.85 {
-                    "BURN EXEC"
-                } else {
-                    "POST TLI"
-                }
+                if p < 0.2 { "PREP TLI" } else if p < 0.85 { "BURN EXEC" } else { "POST TLI" }
             }
             MissionPhase::CoastOut => {
-                if p < 0.4 {
-                    "PTC INIT"
-                } else {
-                    "CST NAV"
-                }
+                if p < 0.4 { "PTC INIT" } else { "CST NAV" }
             }
             MissionPhase::LunarFlyby => {
-                if p < 0.5 {
-                    "LOI TRK"
-                } else {
-                    "FREE RET"
-                }
+                if p < 0.5 { "LOI TRK" } else { "FREE RET" }
             }
             MissionPhase::CoastHome => "CST NAV",
             MissionPhase::ReturnBurn => {
-                if p < 0.8 {
-                    "TEI EXEC"
-                } else {
-                    "RBURN END"
-                }
+                if p < 0.8 { "TEI EXEC" } else { "RBURN END" }
             }
             MissionPhase::Reentry => {
-                if p < 0.35 {
-                    "ENTRY IF"
-                } else if p < 0.7 {
-                    "CM ENTRY"
-                } else {
-                    "CHUTE DEP"
-                }
+                if p < 0.35 { "ENTRY IF" } else if p < 0.7 { "CM ENTRY" } else { "CHUTE DEP" }
             }
         }
     }
@@ -137,60 +103,26 @@ impl MissionPhase {
     fn guidance_orion(&self, p: f64) -> &'static str {
         match self {
             MissionPhase::Launch => {
-                if p < 0.35 {
-                    "Ascent Guidance"
-                } else if p < 0.8 {
-                    "Core Stage Flight"
-                } else {
-                    "Orbit Insertion"
-                }
+                if p < 0.35 { "Ascent Guidance" } else if p < 0.8 { "Core Stage Flight" } else { "Orbit Insertion" }
             }
             MissionPhase::OrbitCheckout => {
-                if p < 0.5 {
-                    "Systems Checkout"
-                } else {
-                    "Parking Orbit Ops"
-                }
+                if p < 0.5 { "Systems Checkout" } else { "Parking Orbit Ops" }
             }
             MissionPhase::Tli => {
-                if p < 0.2 {
-                    "Burn Preparation"
-                } else if p < 0.85 {
-                    "TLI Burn Active"
-                } else {
-                    "Burn Complete"
-                }
+                if p < 0.2 { "Burn Preparation" } else if p < 0.85 { "TLI Burn Active" } else { "Burn Complete" }
             }
             MissionPhase::CoastOut => {
-                if p < 0.4 {
-                    "Attitude Stabilization"
-                } else {
-                    "Deep Space Navigation"
-                }
+                if p < 0.4 { "Attitude Stabilization" } else { "Deep Space Navigation" }
             }
             MissionPhase::LunarFlyby => {
-                if p < 0.5 {
-                    "Flyby Geometry"
-                } else {
-                    "Free Return Track"
-                }
+                if p < 0.5 { "Flyby Geometry" } else { "Free Return Track" }
             }
             MissionPhase::CoastHome => "Return Navigation",
             MissionPhase::ReturnBurn => {
-                if p < 0.8 {
-                    "Return Burn Active"
-                } else {
-                    "Return Burn Complete"
-                }
+                if p < 0.8 { "Return Burn Active" } else { "Return Burn Complete" }
             }
             MissionPhase::Reentry => {
-                if p < 0.35 {
-                    "Entry Interface"
-                } else if p < 0.7 {
-                    "Guided Reentry"
-                } else {
-                    "Parachute Sequence"
-                }
+                if p < 0.35 { "Entry Interface" } else if p < 0.7 { "Guided Reentry" } else { "Parachute Sequence" }
             }
         }
     }
@@ -526,98 +458,54 @@ fn build_mission_state(t: f64) -> MissionState {
         cabin_temp_c,
         pitch_deg,
         yaw_deg,
-        roll_deg: if roll_deg < 0.0 {
-            360.0 + roll_deg
-        } else {
-            roll_deg
-        },
+        roll_deg: if roll_deg < 0.0 { 360.0 + roll_deg } else { roll_deg },
         comm_link_pct: clamp(comm_link_pct, 0.0, 100.0),
     }
 }
 
 fn apollo_comm_label(phase: MissionPhase, pct: f64) -> &'static str {
-    if phase == MissionPhase::Reentry && pct < 15.0 {
-        "LOS"
-    } else if pct < 55.0 {
-        "WEAK"
-    } else {
-        "ACQ"
-    }
+    if phase == MissionPhase::Reentry && pct < 15.0 { "LOS" }
+    else if pct < 55.0 { "WEAK" }
+    else { "ACQ" }
 }
 
 fn orion_comm_label(phase: MissionPhase, pct: f64) -> &'static str {
-    if phase == MissionPhase::Reentry && pct < 15.0 {
-        "Blackout Expected"
-    } else if pct < 55.0 {
-        "Degraded Link"
-    } else {
-        "Nominal Link"
-    }
+    if phase == MissionPhase::Reentry && pct < 15.0 { "Blackout Expected" }
+    else if pct < 55.0 { "Degraded Link" }
+    else { "Nominal Link" }
 }
 
 fn apollo_log_line(phase: MissionPhase, p: f64) -> &'static str {
     match phase {
         MissionPhase::Launch => {
-            if p < 0.25 {
-                "LIFTOFF COMMITTED"
-            } else if p < 0.6 {
-                "BOOSTER PERFORMANCE NOMINAL"
-            } else {
-                "EARTH PARKING ORBIT APPROACHING"
-            }
+            if p < 0.25 { "LIFTOFF COMMITTED" }
+            else if p < 0.6 { "BOOSTER PERFORMANCE NOMINAL" }
+            else { "EARTH PARKING ORBIT APPROACHING" }
         }
         MissionPhase::OrbitCheckout => {
-            if p < 0.5 {
-                "CSM SYSTEMS CHECK IN WORK"
-            } else {
-                "ORBIT OPS STABLE"
-            }
+            if p < 0.5 { "CSM SYSTEMS CHECK IN WORK" } else { "ORBIT OPS STABLE" }
         }
         MissionPhase::Tli => {
-            if p < 0.2 {
-                "PREPARING TLI BURN"
-            } else if p < 0.85 {
-                "S-IVB BURN IN PROGRESS"
-            } else {
-                "TLI COMPLETE — FREE RETURN TRACK"
-            }
+            if p < 0.2 { "PREPARING TLI BURN" }
+            else if p < 0.85 { "S-IVB BURN IN PROGRESS" }
+            else { "TLI COMPLETE — FREE RETURN TRACK" }
         }
         MissionPhase::CoastOut => {
-            if p < 0.4 {
-                "PTC ROLL ESTABLISHED"
-            } else {
-                "MIDCOURSE NAV UPDATE"
-            }
+            if p < 0.4 { "PTC ROLL ESTABLISHED" } else { "MIDCOURSE NAV UPDATE" }
         }
         MissionPhase::LunarFlyby => {
-            if p < 0.5 {
-                "LUNAR PERICYNTHION APPROACH"
-            } else {
-                "FREE RETURN HOMEBOUND"
-            }
+            if p < 0.5 { "LUNAR PERICYNTHION APPROACH" } else { "FREE RETURN HOMEBOUND" }
         }
         MissionPhase::CoastHome => {
-            if p < 0.5 {
-                "DEEP SPACE TRACKING STEADY"
-            } else {
-                "ENTRY TARGET REFINE"
-            }
+            if p < 0.5 { "DEEP SPACE TRACKING STEADY" } else { "ENTRY TARGET REFINE" }
         }
         MissionPhase::ReturnBurn => {
-            if p < 0.8 {
-                "RETURN BURN HOLDING PROFILE"
-            } else {
-                "RETURN BURN COMPLETE"
-            }
+            if p < 0.8 { "RETURN BURN HOLDING PROFILE" } else { "RETURN BURN COMPLETE" }
         }
         MissionPhase::Reentry => {
-            if p < 0.35 {
-                "ENTRY INTERFACE"
-            } else if p < 0.7 {
-                "EXPECTED COM BLACKOUT"
-            } else {
-                "CHUTES GOOD — SPLASHDOWN NEXT"
-            }
+            if p < 0.35 { "ENTRY INTERFACE" }
+            else if p < 0.7 { "EXPECTED COM BLACKOUT" }
+            else { "CHUTES GOOD — SPLASHDOWN NEXT" }
         }
     }
 }
@@ -625,66 +513,39 @@ fn apollo_log_line(phase: MissionPhase, p: f64) -> &'static str {
 fn orion_log_line(phase: MissionPhase, p: f64) -> &'static str {
     match phase {
         MissionPhase::Launch => {
-            if p < 0.25 {
-                "Vehicle committed to ascent corridor."
-            } else if p < 0.6 {
-                "Ascent performance remains within family."
-            } else {
-                "Orbit insertion sequence approaching."
-            }
+            if p < 0.25 { "Vehicle committed to ascent corridor." }
+            else if p < 0.6 { "Ascent performance remains within family." }
+            else { "Orbit insertion sequence approaching." }
         }
         MissionPhase::OrbitCheckout => {
-            if p < 0.5 {
-                "Avionics, power, and thermal checks continue."
-            } else {
-                "Parking orbit operations stabilized."
-            }
+            if p < 0.5 { "Avionics, power, and thermal checks continue." }
+            else { "Parking orbit operations stabilized." }
         }
         MissionPhase::Tli => {
-            if p < 0.2 {
-                "Trans-lunar injection burn prep complete."
-            } else if p < 0.85 {
-                "TLI burn active. Guidance residuals low."
-            } else {
-                "Outbound trajectory established."
-            }
+            if p < 0.2 { "Trans-lunar injection burn prep complete." }
+            else if p < 0.85 { "TLI burn active. Guidance residuals low." }
+            else { "Outbound trajectory established." }
         }
         MissionPhase::CoastOut => {
-            if p < 0.4 {
-                "Attitude stabilization complete."
-            } else {
-                "Deep-space navigation update converged."
-            }
+            if p < 0.4 { "Attitude stabilization complete." }
+            else { "Deep-space navigation update converged." }
         }
         MissionPhase::LunarFlyby => {
-            if p < 0.5 {
-                "Closest approach geometry tightening."
-            } else {
-                "Free-return corridor confirmed homeward."
-            }
+            if p < 0.5 { "Closest approach geometry tightening." }
+            else { "Free-return corridor confirmed homeward." }
         }
         MissionPhase::CoastHome => {
-            if p < 0.5 {
-                "Return coast consumables remain healthy."
-            } else {
-                "Entry targeting solution refined."
-            }
+            if p < 0.5 { "Return coast consumables remain healthy." }
+            else { "Entry targeting solution refined." }
         }
         MissionPhase::ReturnBurn => {
-            if p < 0.8 {
-                "Return burn active and holding expected profile."
-            } else {
-                "Return burn complete."
-            }
+            if p < 0.8 { "Return burn active and holding expected profile." }
+            else { "Return burn complete." }
         }
         MissionPhase::Reentry => {
-            if p < 0.35 {
-                "Entry interface crossing."
-            } else if p < 0.7 {
-                "Communications blackout expected during plasma phase."
-            } else {
-                "Parachute sequence underway."
-            }
+            if p < 0.35 { "Entry interface crossing." }
+            else if p < 0.7 { "Communications blackout expected during plasma phase." }
+            else { "Parachute sequence underway." }
         }
     }
 }
@@ -718,27 +579,13 @@ fn orion_banner(phase: MissionPhase) -> &'static str {
 fn orion_overlay_caption(phase: MissionPhase) -> &'static str {
     match phase {
         MissionPhase::Launch => "Orion is centered and climbing under powered ascent.",
-        MissionPhase::OrbitCheckout => {
-            "Orion is centered and stabilized in parking orbit for systems checkout."
-        }
-        MissionPhase::Tli => {
-            "Orion is centered as translunar injection pushes the vehicle beyond low Earth orbit."
-        }
-        MissionPhase::CoastOut => {
-            "Orion is centered. Orion's solar array wings are unfurled and swept back."
-        }
-        MissionPhase::LunarFlyby => {
-            "Orion is centered as it sweeps through lunar flyby geometry."
-        }
-        MissionPhase::CoastHome => {
-            "Orion is centered on the return leg with deep-space tracking active."
-        }
-        MissionPhase::ReturnBurn => {
-            "Orion is centered as return burn reshapes the Earth approach corridor."
-        }
-        MissionPhase::Reentry => {
-            "Orion is centered on final return with entry and recovery sequence underway."
-        }
+        MissionPhase::OrbitCheckout => "Orion is centered and stabilized in parking orbit for systems checkout.",
+        MissionPhase::Tli => "Orion is centered as translunar injection pushes the vehicle beyond low Earth orbit.",
+        MissionPhase::CoastOut => "Orion is centered. Orion's solar array wings are unfurled and swept back.",
+        MissionPhase::LunarFlyby => "Orion is centered as it sweeps through lunar flyby geometry.",
+        MissionPhase::CoastHome => "Orion is centered on the return leg with deep-space tracking active.",
+        MissionPhase::ReturnBurn => "Orion is centered as return burn reshapes the Earth approach corridor.",
+        MissionPhase::Reentry => "Orion is centered on final return with entry and recovery sequence underway.",
     }
 }
 
@@ -800,11 +647,7 @@ fn to_orion_display(state: &MissionState) -> OrionDisplay {
         } else {
             "GN&C Stable"
         },
-        power_chip: if state.power_pct > 85.0 {
-            "Power Nominal"
-        } else {
-            "Power Conservation"
-        },
+        power_chip: if state.power_pct > 85.0 { "Power Nominal" } else { "Power Conservation" },
         overlay_distance_earth: format!("{:.0} mi", km_to_miles(state.distance_from_earth_km)),
         overlay_distance_moon: format!("{:.0} mi", km_to_miles(state.distance_to_moon_km)),
         overlay_velocity: format!("{:.0} mph", kps_to_mph(state.velocity_kps)),
@@ -829,25 +672,13 @@ fn base_history() -> HistoryState {
 }
 
 fn push_history(history: &mut HistoryState, state: &MissionState) {
-    history.altitude.push(ChartPoint {
-        value: state.altitude_km,
-    });
-    history.velocity.push(ChartPoint {
-        value: state.velocity_kps,
-    });
-    history.comm.push(ChartPoint {
-        value: state.comm_link_pct,
-    });
+    history.altitude.push(ChartPoint { value: state.altitude_km });
+    history.velocity.push(ChartPoint { value: state.velocity_kps });
+    history.comm.push(ChartPoint { value: state.comm_link_pct });
 
-    if history.altitude.len() > HISTORY_MAX {
-        history.altitude.remove(0);
-    }
-    if history.velocity.len() > HISTORY_MAX {
-        history.velocity.remove(0);
-    }
-    if history.comm.len() > HISTORY_MAX {
-        history.comm.remove(0);
-    }
+    if history.altitude.len() > HISTORY_MAX { history.altitude.remove(0); }
+    if history.velocity.len() > HISTORY_MAX { history.velocity.remove(0); }
+    if history.comm.len() > HISTORY_MAX { history.comm.remove(0); }
 }
 
 fn push_log(logs: &mut Vec<LogEntry>, state: &MissionState) {
@@ -865,9 +696,7 @@ fn push_log(logs: &mut Vec<LogEntry>, state: &MissionState) {
         MissionPhase::Reentry => (p > 0.25 && p < 0.31) || (p > 0.74 && p < 0.80),
     };
 
-    if !interesting {
-        return;
-    }
+    if !interesting { return; }
 
     let new_text = format!("{} | {}", phase.short_label(), orion_log_line(phase, p));
     let met = format_met(state.mission_time_s);
@@ -878,10 +707,7 @@ fn push_log(logs: &mut Vec<LogEntry>, state: &MissionState) {
     };
 
     if should_add {
-        logs.push(LogEntry {
-            met,
-            text: new_text,
-        });
+        logs.push(LogEntry { met, text: new_text });
         if logs.len() > 18 {
             let overflow = logs.len() - 18;
             logs.drain(0..overflow);
@@ -924,21 +750,9 @@ fn sparkline(props: &SparklineProps) -> Html {
         };
     }
 
-    let min = props
-        .values
-        .iter()
-        .map(|p| p.value)
-        .fold(f64::INFINITY, f64::min);
-    let max = props
-        .values
-        .iter()
-        .map(|p| p.value)
-        .fold(f64::NEG_INFINITY, f64::max);
-    let range = if (max - min).abs() < f64::EPSILON {
-        1.0
-    } else {
-        max - min
-    };
+    let min = props.values.iter().map(|p| p.value).fold(f64::INFINITY, f64::min);
+    let max = props.values.iter().map(|p| p.value).fold(f64::NEG_INFINITY, f64::max);
+    let range = if (max - min).abs() < f64::EPSILON { 1.0 } else { max - min };
 
     let step_x = if props.values.len() <= 1 {
         width - 2.0 * padding
@@ -988,6 +802,11 @@ fn app() -> Html {
     let viewport_width = use_state(window_width);
     let mobile_panel = use_state(|| MobilePanel::Center);
 
+    // NodeRef for the phase select — lets us set its value imperatively
+    // instead of fighting Yew's vdom with controlled `selected` attributes.
+    let phase_select_ref = use_node_ref();
+
+    // Tick the simulation forward
     {
         let time_s = time_s.clone();
         let playing = playing.clone();
@@ -999,31 +818,28 @@ fn app() -> Html {
                     let dt = (TICK_MS as f64 / 1000.0) * *speed;
                     let total = mission_duration_total();
                     let mut next = *time_s + dt;
-                    if next > total {
-                        next = total;
-                    }
+                    if next > total { next = total; }
                     time_s.set(next);
                 }
             });
-
             move || drop(interval)
         });
     }
 
+    // Register resize listener once on mount only
     {
         let viewport_width = viewport_width.clone();
-
-        use_effect(move || {
+        use_effect_with((), move |_| {
             let listener = window().map(|w| {
                 EventListener::new(&w, "resize", move |_| {
                     viewport_width.set(window_width());
                 })
             });
-
             move || drop(listener)
         });
     }
 
+    // Push log entries and history on each time step
     {
         let logs = logs.clone();
         let history = history.clone();
@@ -1034,9 +850,7 @@ fn app() -> Html {
 
             let mut next_logs = (*logs).clone();
             push_log(&mut next_logs, &state);
-            if next_logs != *logs {
-                logs.set(next_logs);
-            }
+            if next_logs != *logs { logs.set(next_logs); }
 
             let mut next_history = (*history).clone();
             push_history(&mut next_history, &state);
@@ -1053,6 +867,18 @@ fn app() -> Html {
         .iter()
         .position(|p| *p == state.phase)
         .unwrap_or(0);
+
+    // Sync the <select> DOM value imperatively whenever the phase changes.
+    // This is the correct Yew pattern — no `selected` attrs needed on options.
+    {
+        let phase_select_ref = phase_select_ref.clone();
+        use_effect_with(phase_idx, move |&idx| {
+            if let Some(select) = phase_select_ref.cast::<HtmlSelectElement>() {
+                select.set_value(&idx.to_string());
+            }
+            || ()
+        });
+    }
 
     let is_mobile = *viewport_width < MOBILE_BREAKPOINT;
 
@@ -1072,53 +898,36 @@ fn app() -> Html {
         })
     };
 
-    let on_speed_1 = {
-        let speed = speed.clone();
-        Callback::from(move |_| speed.set(1.0))
-    };
-    let on_speed_5 = {
-        let speed = speed.clone();
-        Callback::from(move |_| speed.set(5.0))
-    };
-    let on_speed_15 = {
-        let speed = speed.clone();
-        Callback::from(move |_| speed.set(15.0))
-    };
+    let on_speed_1  = { let s = speed.clone(); Callback::from(move |_| s.set(1.0))  };
+    let on_speed_5  = { let s = speed.clone(); Callback::from(move |_| s.set(5.0))  };
+    let on_speed_15 = { let s = speed.clone(); Callback::from(move |_| s.set(15.0)) };
 
+    // Jump to phase: sets time, auto-pauses, resets log + history
     let on_phase_change = {
-        let time_s = time_s.clone();
-        let logs = logs.clone();
-        let history = history.clone();
+        let time_s   = time_s.clone();
+        let logs     = logs.clone();
+        let history  = history.clone();
+        let playing  = playing.clone();
         Callback::from(move |e: Event| {
             let input: HtmlSelectElement = e.target_unchecked_into();
             let idx = input.value().parse::<usize>().unwrap_or(0);
             let phase = phase_from_index(idx);
             let t = phase_start_time(phase);
             time_s.set(t);
+            playing.set(false);
             let mut next = base_log_entries();
             next.push(LogEntry {
                 met: format_met(t),
-                text: format!("Jumped to phase: {}", phase.label()),
+                text: format!("Jumped to phase: {} — simulation paused.", phase.label()),
             });
             logs.set(next);
             history.set(base_history());
         })
     };
 
-    let show_apollo = {
-        let mobile_panel = mobile_panel.clone();
-        Callback::from(move |_| mobile_panel.set(MobilePanel::Apollo))
-    };
-
-    let show_center = {
-        let mobile_panel = mobile_panel.clone();
-        Callback::from(move |_| mobile_panel.set(MobilePanel::Center))
-    };
-
-    let show_orion = {
-        let mobile_panel = mobile_panel.clone();
-        Callback::from(move |_| mobile_panel.set(MobilePanel::Orion))
-    };
+    let show_apollo = { let mp = mobile_panel.clone(); Callback::from(move |_| mp.set(MobilePanel::Apollo)) };
+    let show_center = { let mp = mobile_panel.clone(); Callback::from(move |_| mp.set(MobilePanel::Center)) };
+    let show_orion  = { let mp = mobile_panel.clone(); Callback::from(move |_| mp.set(MobilePanel::Orion))  };
 
     let total_progress_pct = (*time_s / mission_duration_total()) * 100.0;
     let path_progress = total_progress_pct / 100.0;
@@ -1148,7 +957,10 @@ fn app() -> Html {
 
                     <div class="controls">
                         <div class="control-group">
-                            <button class={classes!("btn", if *playing { "active" } else { "" })} onclick={on_toggle_play.clone()}>
+                            <button
+                                class={classes!("btn", if *playing { "active" } else { "" })}
+                                onclick={on_toggle_play.clone()}
+                            >
                                 { if *playing { "Pause" } else { "Play" } }
                             </button>
                             <button class="btn" onclick={on_reset}>{"Reset"}</button>
@@ -1156,18 +968,18 @@ fn app() -> Html {
 
                         <div class="control-group">
                             <label>{"Speed"}</label>
-                            <button class={classes!("btn", if (*speed - 1.0).abs() < f64::EPSILON { "active" } else { "" })} onclick={on_speed_1}>{"1×"}</button>
-                            <button class={classes!("btn", if (*speed - 5.0).abs() < f64::EPSILON { "active" } else { "" })} onclick={on_speed_5}>{"5×"}</button>
+                            <button class={classes!("btn", if (*speed - 1.0).abs()  < f64::EPSILON { "active" } else { "" })} onclick={on_speed_1} >{"1×"}</button>
+                            <button class={classes!("btn", if (*speed - 5.0).abs()  < f64::EPSILON { "active" } else { "" })} onclick={on_speed_5} >{"5×"}</button>
                             <button class={classes!("btn", if (*speed - 15.0).abs() < f64::EPSILON { "active" } else { "" })} onclick={on_speed_15}>{"15×"}</button>
                         </div>
 
                         <div class="control-group">
                             <label for="phase-select">{"Jump to phase"}</label>
-                            <select id="phase-select" onchange={on_phase_change}>
+                            <select id="phase-select" ref={phase_select_ref} onchange={on_phase_change}>
                                 {
                                     MissionPhase::all().iter().enumerate().map(|(i, phase)| {
                                         html! {
-                                            <option value={i.to_string()} selected={i == phase_idx}>
+                                            <option value={i.to_string()}>
                                                 {phase.label()}
                                             </option>
                                         }
@@ -1185,50 +997,15 @@ fn app() -> Html {
                         html! {
                             <>
                                 <div class="mobile-switcher">
-                                    <button
-                                        class={classes!("btn", if *mobile_panel == MobilePanel::Apollo { "active" } else { "" })}
-                                        onclick={show_apollo}
-                                    >
-                                        {"Apollo"}
-                                    </button>
-                                    <button
-                                        class={classes!("btn", if *mobile_panel == MobilePanel::Center { "active" } else { "" })}
-                                        onclick={show_center}
-                                    >
-                                        {"Center"}
-                                    </button>
-                                    <button
-                                        class={classes!("btn", if *mobile_panel == MobilePanel::Orion { "active" } else { "" })}
-                                        onclick={show_orion}
-                                    >
-                                        {"Orion"}
-                                    </button>
+                                    <button class={classes!("btn", if *mobile_panel == MobilePanel::Apollo { "active" } else { "" })} onclick={show_apollo}>{"Apollo"}</button>
+                                    <button class={classes!("btn", if *mobile_panel == MobilePanel::Center { "active" } else { "" })} onclick={show_center}>{"Center"}</button>
+                                    <button class={classes!("btn", if *mobile_panel == MobilePanel::Orion  { "active" } else { "" })} onclick={show_orion} >{"Orion"}</button>
                                 </div>
-
                                 {
                                     match *mobile_panel {
-                                        MobilePanel::Apollo => html! {
-                                            <ApolloPanel
-                                                display={apollo.clone()}
-                                                state={state.clone()}
-                                                history={(*history).clone()}
-                                            />
-                                        },
-                                        MobilePanel::Center => html! {
-                                            <CenterColumn
-                                                state={state.clone()}
-                                                total_progress_pct={total_progress_pct}
-                                                path_progress={path_progress}
-                                                logs={(*logs).clone()}
-                                            />
-                                        },
-                                        MobilePanel::Orion => html! {
-                                            <OrionPanel
-                                                display={orion.clone()}
-                                                state={state.clone()}
-                                                history={(*history).clone()}
-                                            />
-                                        },
+                                        MobilePanel::Apollo => html! { <ApolloPanel display={apollo.clone()} state={state.clone()} history={(*history).clone()} /> },
+                                        MobilePanel::Center => html! { <CenterColumn state={state.clone()} total_progress_pct={total_progress_pct} path_progress={path_progress} logs={(*logs).clone()} /> },
+                                        MobilePanel::Orion  => html! { <OrionPanel  display={orion.clone()}  state={state.clone()} history={(*history).clone()} /> },
                                     }
                                 }
                             </>
@@ -1236,22 +1013,9 @@ fn app() -> Html {
                     } else {
                         html! {
                             <>
-                                <ApolloPanel
-                                    display={apollo.clone()}
-                                    state={state.clone()}
-                                    history={(*history).clone()}
-                                />
-                                <CenterColumn
-                                    state={state.clone()}
-                                    total_progress_pct={total_progress_pct}
-                                    path_progress={path_progress}
-                                    logs={(*logs).clone()}
-                                />
-                                <OrionPanel
-                                    display={orion.clone()}
-                                    state={state.clone()}
-                                    history={(*history).clone()}
-                                />
+                                <ApolloPanel  display={apollo.clone()} state={state.clone()} history={(*history).clone()} />
+                                <CenterColumn state={state.clone()} total_progress_pct={total_progress_pct} path_progress={path_progress} logs={(*logs).clone()} />
+                                <OrionPanel   display={orion.clone()}  state={state.clone()} history={(*history).clone()} />
                             </>
                         }
                     }
@@ -1282,11 +1046,8 @@ fn apollo_panel(props: &ApolloPanelProps) -> Html {
         <div class="panel-shell apollo-shell">
             <div class="panel-header">
                 <h2 class="panel-title">{"Apollo Console"}</h2>
-                <p class="panel-subtitle">
-                    {"Chunkier labels, coarser readouts, discrete status language, and Apollo-era style instrumentation."}
-                </p>
+                <p class="panel-subtitle">{"Chunkier labels, coarser readouts, discrete status language, and Apollo-era style instrumentation."}</p>
             </div>
-
             <div class="panel-content">
                 <div class="phase-banner apollo-banner">{d.banner}</div>
 
@@ -1294,20 +1055,10 @@ fn apollo_panel(props: &ApolloPanelProps) -> Html {
                     <h3>{"Mission Status"}</h3>
                     <div class="big-value apollo-value">{d.phase}</div>
                     <div class="subline">{format!("MET {}", d.met)}</div>
-
                     <div class="signal-lamps">
-                        <span class="lamp">
-                            <span class={classes!("lamp-dot", if d.lamp_guid { "on" } else { "" })}></span>
-                            {"GUID"}
-                        </span>
-                        <span class="lamp">
-                            <span class={classes!("lamp-dot", if d.lamp_comm { "on" } else { "" })}></span>
-                            {"COMM"}
-                        </span>
-                        <span class="lamp">
-                            <span class={classes!("lamp-dot", if d.lamp_prop { "on" } else { "" })}></span>
-                            {"PROP"}
-                        </span>
+                        <span class="lamp"><span class={classes!("lamp-dot", if d.lamp_guid { "on" } else { "" })}></span>{"GUID"}</span>
+                        <span class="lamp"><span class={classes!("lamp-dot", if d.lamp_comm { "on" } else { "" })}></span>{"COMM"}</span>
+                        <span class="lamp"><span class={classes!("lamp-dot", if d.lamp_prop { "on" } else { "" })}></span>{"PROP"}</span>
                     </div>
                 </div>
 
@@ -1317,19 +1068,16 @@ fn apollo_panel(props: &ApolloPanelProps) -> Html {
                         <div class="big-value apollo-value">{d.vel_kps.clone()}</div>
                         <div class="subline">{"Inertial velocity"}</div>
                     </div>
-
                     <div class="card apollo-card">
                         <h3>{"ALT"}</h3>
                         <div class="big-value apollo-value">{d.alt_km.clone()}</div>
                         <div class="subline">{"Instant altitude"}</div>
                     </div>
-
                     <div class="card apollo-card">
                         <h3>{"Downrange"}</h3>
                         <div class="big-value apollo-value">{d.downrange_km.clone()}</div>
                         <div class="subline">{"Ground track distance"}</div>
                     </div>
-
                     <div class="card apollo-card">
                         <h3>{"GNC"}</h3>
                         <div class="big-value apollo-value">{d.guidance}</div>
@@ -1340,18 +1088,9 @@ fn apollo_panel(props: &ApolloPanelProps) -> Html {
                 <div class="card apollo-card">
                     <h3>{"Guidance / Attitude"}</h3>
                     <div class="mini-grid">
-                        <div class="mini-stat apollo-mini">
-                            <div class="mini-label">{"PITCH"}</div>
-                            <div class="mini-value">{d.pitch.clone()}</div>
-                        </div>
-                        <div class="mini-stat apollo-mini">
-                            <div class="mini-label">{"YAW"}</div>
-                            <div class="mini-value">{d.yaw.clone()}</div>
-                        </div>
-                        <div class="mini-stat apollo-mini">
-                            <div class="mini-label">{"ROLL"}</div>
-                            <div class="mini-value">{d.roll.clone()}</div>
-                        </div>
+                        <div class="mini-stat apollo-mini"><div class="mini-label">{"PITCH"}</div><div class="mini-value">{d.pitch.clone()}</div></div>
+                        <div class="mini-stat apollo-mini"><div class="mini-label">{"YAW"}</div>  <div class="mini-value">{d.yaw.clone()}</div></div>
+                        <div class="mini-stat apollo-mini"><div class="mini-label">{"ROLL"}</div> <div class="mini-value">{d.roll.clone()}</div></div>
                     </div>
                     <div class="subline" style="margin-top:10px;">{d.log_line}</div>
                 </div>
@@ -1359,45 +1098,22 @@ fn apollo_panel(props: &ApolloPanelProps) -> Html {
                 <div class="card apollo-card">
                     <h3>{"Consumables"}</h3>
                     <div class="progress-wrap">
-                        <div class="progress-row">
-                            <span>{"Fuel"}</span>
-                            <span>{d.fuel_pct.clone()}</span>
-                        </div>
-                        <div class="progress-bar">
-                            <div class="progress-fill apollo-fill" style={format!("width:{:.1}%;", s.fuel_pct)}></div>
-                        </div>
+                        <div class="progress-row"><span>{"Fuel"}</span><span>{d.fuel_pct.clone()}</span></div>
+                        <div class="progress-bar"><div class="progress-fill apollo-fill" style={format!("width:{:.1}%;", s.fuel_pct)}></div></div>
                     </div>
-
                     <div class="progress-wrap">
-                        <div class="progress-row">
-                            <span>{"Power"}</span>
-                            <span>{d.power_pct.clone()}</span>
-                        </div>
-                        <div class="progress-bar">
-                            <div class="progress-fill apollo-fill" style={format!("width:{:.1}%;", s.power_pct)}></div>
-                        </div>
+                        <div class="progress-row"><span>{"Power"}</span><span>{d.power_pct.clone()}</span></div>
+                        <div class="progress-bar"><div class="progress-fill apollo-fill" style={format!("width:{:.1}%;", s.power_pct)}></div></div>
                     </div>
-
                     <div class="progress-wrap">
-                        <div class="progress-row">
-                            <span>{"Cabin Temp"}</span>
-                            <span>{d.temp_c.clone()}</span>
-                        </div>
+                        <div class="progress-row"><span>{"Cabin Temp"}</span><span>{d.temp_c.clone()}</span></div>
                     </div>
                 </div>
 
                 <div class="card apollo-card">
                     <h3>{"Flight Trend"}</h3>
-                    <Sparkline
-                        values={history.altitude.clone()}
-                        stroke_class="#d9d66c"
-                        label="ALT trend"
-                    />
-                    <Sparkline
-                        values={history.velocity.clone()}
-                        stroke_class="#d9d66c"
-                        label="VEL trend"
-                    />
+                    <Sparkline values={history.altitude.clone()} stroke_class="#d9d66c" label="ALT trend" />
+                    <Sparkline values={history.velocity.clone()} stroke_class="#d9d66c" label="VEL trend" />
                 </div>
             </div>
         </div>
@@ -1421,11 +1137,8 @@ fn orion_panel(props: &OrionPanelProps) -> Html {
         <div class="panel-shell orion-shell">
             <div class="panel-header">
                 <h2 class="panel-title">{"Orion Console"}</h2>
-                <p class="panel-subtitle">
-                    {"Cleaner typography, richer diagnostics, denser telemetry, and software-defined modern mission status."}
-                </p>
+                <p class="panel-subtitle">{"Cleaner typography, richer diagnostics, denser telemetry, and software-defined modern mission status."}</p>
             </div>
-
             <div class="panel-content">
                 <div class="phase-banner orion-banner">{d.banner}</div>
 
@@ -1433,7 +1146,6 @@ fn orion_panel(props: &OrionPanelProps) -> Html {
                     <h3>{"Mission Mode"}</h3>
                     <div class="big-value orion-value">{d.phase}</div>
                     <div class="subline">{format!("MET {}", d.met)}</div>
-
                     <div class="orion-status-row">
                         <span class="status-chip">{d.mode_chip}</span>
                         <span class="status-chip">{d.nav_chip}</span>
@@ -1448,10 +1160,8 @@ fn orion_panel(props: &OrionPanelProps) -> Html {
                         <div class="overlay-metrics">
                             {format!(
                                 "On-screen overlays read: Distance to Earth: {}. Distance to the Moon: {}. Velocity: {}. Mission Elapsed Time: {}",
-                                d.overlay_distance_earth,
-                                d.overlay_distance_moon,
-                                d.overlay_velocity,
-                                d.overlay_met
+                                d.overlay_distance_earth, d.overlay_distance_moon,
+                                d.overlay_velocity, d.overlay_met
                             )}
                         </div>
                     </div>
@@ -1463,19 +1173,16 @@ fn orion_panel(props: &OrionPanelProps) -> Html {
                         <div class="big-value orion-value">{d.velocity.clone()}</div>
                         <div class="subline">{"Guidance-referenced solution"}</div>
                     </div>
-
                     <div class="card orion-card">
                         <h3>{"Altitude"}</h3>
                         <div class="big-value orion-value">{d.altitude.clone()}</div>
                         <div class="subline">{"Current flight altitude"}</div>
                     </div>
-
                     <div class="card orion-card">
                         <h3>{"Earth Distance"}</h3>
                         <div class="big-value orion-value">{d.earth_distance.clone()}</div>
                         <div class="subline">{"Range from Earth reference"}</div>
                     </div>
-
                     <div class="card orion-card">
                         <h3>{"Moon Distance"}</h3>
                         <div class="big-value orion-value">{d.moon_distance.clone()}</div>
@@ -1493,61 +1200,27 @@ fn orion_panel(props: &OrionPanelProps) -> Html {
                 <div class="card orion-card">
                     <h3>{"Vehicle Health"}</h3>
                     <div class="mini-grid">
-                        <div class="mini-stat orion-mini">
-                            <div class="mini-label">{"Propellant"}</div>
-                            <div class="mini-value">{d.propellant.clone()}</div>
-                        </div>
-                        <div class="mini-stat orion-mini">
-                            <div class="mini-label">{"Battery"}</div>
-                            <div class="mini-value">{d.battery.clone()}</div>
-                        </div>
-                        <div class="mini-stat orion-mini">
-                            <div class="mini-label">{"Cabin"}</div>
-                            <div class="mini-value">{d.temp.clone()}</div>
-                        </div>
+                        <div class="mini-stat orion-mini"><div class="mini-label">{"Propellant"}</div><div class="mini-value">{d.propellant.clone()}</div></div>
+                        <div class="mini-stat orion-mini"><div class="mini-label">{"Battery"}</div>   <div class="mini-value">{d.battery.clone()}</div></div>
+                        <div class="mini-stat orion-mini"><div class="mini-label">{"Cabin"}</div>     <div class="mini-value">{d.temp.clone()}</div></div>
                     </div>
-
                     <div class="progress-wrap">
-                        <div class="progress-row">
-                            <span>{"Propellant Reserve"}</span>
-                            <span>{d.propellant.clone()}</span>
-                        </div>
-                        <div class="progress-bar">
-                            <div class="progress-fill orion-fill" style={format!("width:{:.1}%;", s.fuel_pct)}></div>
-                        </div>
+                        <div class="progress-row"><span>{"Propellant Reserve"}</span><span>{d.propellant.clone()}</span></div>
+                        <div class="progress-bar"><div class="progress-fill orion-fill" style={format!("width:{:.1}%;", s.fuel_pct)}></div></div>
                     </div>
-
                     <div class="progress-wrap">
-                        <div class="progress-row">
-                            <span>{"Power Bus"}</span>
-                            <span>{d.battery.clone()}</span>
-                        </div>
-                        <div class="progress-bar">
-                            <div class="progress-fill orion-fill" style={format!("width:{:.1}%;", s.power_pct)}></div>
-                        </div>
+                        <div class="progress-row"><span>{"Power Bus"}</span><span>{d.battery.clone()}</span></div>
+                        <div class="progress-bar"><div class="progress-fill orion-fill" style={format!("width:{:.1}%;", s.power_pct)}></div></div>
                     </div>
-
                     <div class="subline" style="margin-top:10px;">{d.attitude.clone()}</div>
                     <div class="subline" style="margin-top:6px;">{format!("Downrange {}", d.downrange)}</div>
                 </div>
 
                 <div class="card orion-card">
                     <h3>{"Modern Telemetry Trends"}</h3>
-                    <Sparkline
-                        values={history.altitude.clone()}
-                        stroke_class="#73d7ff"
-                        label="Altitude trend"
-                    />
-                    <Sparkline
-                        values={history.velocity.clone()}
-                        stroke_class="#73d7ff"
-                        label="Velocity trend"
-                    />
-                    <Sparkline
-                        values={history.comm.clone()}
-                        stroke_class="#73d7ff"
-                        label="Comm link trend"
-                    />
+                    <Sparkline values={history.altitude.clone()} stroke_class="#73d7ff" label="Altitude trend" />
+                    <Sparkline values={history.velocity.clone()} stroke_class="#73d7ff" label="Velocity trend" />
+                    <Sparkline values={history.comm.clone()}     stroke_class="#73d7ff" label="Comm link trend" />
                 </div>
             </div>
         </div>
@@ -1567,23 +1240,10 @@ fn center_column(props: &CenterColumnProps) -> Html {
     let state = &props.state;
 
     let outbound = props.path_progress.min(0.5) / 0.5;
-    let inbound = if props.path_progress > 0.5 {
-        (props.path_progress - 0.5) / 0.5
-    } else {
-        0.0
-    };
+    let inbound = if props.path_progress > 0.5 { (props.path_progress - 0.5) / 0.5 } else { 0.0 };
 
-    let current_x = if props.path_progress <= 0.5 {
-        36.0 + outbound * 148.0
-    } else {
-        184.0 - inbound * 148.0
-    };
-
-    let current_y = if props.path_progress <= 0.5 {
-        210.0 - outbound * 150.0
-    } else {
-        60.0 + inbound * 158.0
-    };
+    let current_x = if props.path_progress <= 0.5 { 36.0 + outbound * 148.0 } else { 184.0 - inbound * 148.0 };
+    let current_y = if props.path_progress <= 0.5 { 210.0 - outbound * 150.0 } else { 60.0 + inbound * 158.0 };
 
     html! {
         <div class="center-column">
@@ -1591,9 +1251,7 @@ fn center_column(props: &CenterColumnProps) -> Html {
                 <div class="center-label">{"Current Phase"}</div>
                 <div class="phase-name">{state.phase.label()}</div>
                 <div class="met">{format_met(state.mission_time_s)}</div>
-                <div class="subline" style="margin-top:8px;">
-                    {format!("Mission progress {:.0}%", props.total_progress_pct)}
-                </div>
+                <div class="subline" style="margin-top:8px;">{format!("Mission progress {:.0}%", props.total_progress_pct)}</div>
                 <div class="progress-wrap">
                     <div class="progress-bar">
                         <div class="progress-fill orion-fill" style={format!("width:{:.1}%;", props.total_progress_pct)}></div>
@@ -1622,48 +1280,26 @@ fn center_column(props: &CenterColumnProps) -> Html {
                     <svg viewBox="0 0 220 260" aria-label="trajectory diagram">
                         <defs>
                             <radialGradient id="earthGlowV2" cx="50%" cy="50%" r="50%">
-                                <stop offset="0%" stop-color="rgba(115,215,255,0.95)" />
+                                <stop offset="0%"   stop-color="rgba(115,215,255,0.95)" />
                                 <stop offset="100%" stop-color="rgba(115,215,255,0.15)" />
                             </radialGradient>
                             <radialGradient id="moonGlowV2" cx="50%" cy="50%" r="50%">
-                                <stop offset="0%" stop-color="rgba(240,240,255,0.95)" />
+                                <stop offset="0%"   stop-color="rgba(240,240,255,0.95)" />
                                 <stop offset="100%" stop-color="rgba(240,240,255,0.18)" />
                             </radialGradient>
                         </defs>
-
-                        <circle cx="36" cy="210" r="18" fill="url(#earthGlowV2)" />
-                        <circle cx="184" cy="60" r="12" fill="url(#moonGlowV2)" />
-
-                        <path
-                            d="M 36 210 Q 85 55 184 60"
-                            fill="none"
-                            stroke="rgba(125,242,255,0.55)"
-                            stroke-width="3"
-                            stroke-dasharray="5 5"
-                        />
-                        <path
-                            d="M 184 60 Q 148 170 36 218"
-                            fill="none"
-                            stroke="rgba(255,255,255,0.26)"
-                            stroke-width="2.5"
-                            stroke-dasharray="4 4"
-                        />
-
-                        <circle
-                            cx={format!("{:.2}", current_x)}
-                            cy={format!("{:.2}", current_y)}
-                            r="5.8"
-                            fill="rgba(125,242,255,0.95)"
-                        />
-
-                        <text x="18" y="242" fill="rgba(255,255,255,0.65)" font-size="11">{"Earth"}</text>
-                        <text x="172" y="38" fill="rgba(255,255,255,0.65)" font-size="11">{"Moon"}</text>
+                        <circle cx="36"  cy="210" r="18"  fill="url(#earthGlowV2)" />
+                        <circle cx="184" cy="60"  r="12"  fill="url(#moonGlowV2)"  />
+                        <path d="M 36 210 Q 85 55 184 60"   fill="none" stroke="rgba(125,242,255,0.55)" stroke-width="3"   stroke-dasharray="5 5" />
+                        <path d="M 184 60 Q 148 170 36 218" fill="none" stroke="rgba(255,255,255,0.26)" stroke-width="2.5" stroke-dasharray="4 4" />
+                        <circle cx={format!("{:.2}", current_x)} cy={format!("{:.2}", current_y)} r="5.8" fill="rgba(125,242,255,0.95)" />
+                        <text x="18"  y="242" fill="rgba(255,255,255,0.65)" font-size="11">{"Earth"}</text>
+                        <text x="172" y="38"  fill="rgba(255,255,255,0.65)" font-size="11">{"Moon"}</text>
                     </svg>
                 </div>
-
                 <div class="traj-legend">
                     <div>{format!("Distance from Earth: {:.0} km", state.distance_from_earth_km)}</div>
-                    <div>{format!("Distance to Moon: {:.0} km", state.distance_to_moon_km)}</div>
+                    <div>{format!("Distance to Moon: {:.0} km",    state.distance_to_moon_km)}</div>
                 </div>
             </div>
 
@@ -1672,21 +1308,15 @@ fn center_column(props: &CenterColumnProps) -> Html {
                 <div class="compare-grid" style="margin-top:10px;">
                     <div class="compare-row">
                         <div class="compare-title">{"Same phase"}</div>
-                        <div class="compare-values">
-                            {"Both sides are locked to the same mission stage and physics-driven telemetry state."}
-                        </div>
+                        <div class="compare-values">{"Both sides are locked to the same mission stage and physics-driven telemetry state."}</div>
                     </div>
                     <div class="compare-row">
                         <div class="compare-title">{"Apollo style"}</div>
-                        <div class="compare-values">
-                            {"Abbreviated, procedural, stepped, and console-first."}
-                        </div>
+                        <div class="compare-values">{"Abbreviated, procedural, stepped, and console-first."}</div>
                     </div>
                     <div class="compare-row">
                         <div class="compare-title">{"Orion style"}</div>
-                        <div class="compare-values">
-                            {"Software-rich, audience-readable, mission-broadcast aware."}
-                        </div>
+                        <div class="compare-values">{"Software-rich, audience-readable, mission-broadcast aware."}</div>
                     </div>
                 </div>
             </div>
