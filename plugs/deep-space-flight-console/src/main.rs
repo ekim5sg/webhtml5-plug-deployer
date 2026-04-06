@@ -1,7 +1,7 @@
 use gloo::events::EventListener;
 use gloo::timers::callback::Interval;
 use js_sys::Math;
-use web_sys::{window, HtmlAudioElement};
+use web_sys::{window, AudioContext, OscillatorType};
 use yew::prelude::*;
 
 const TICK_MS: u32 = 250;
@@ -227,11 +227,8 @@ struct HistoryState {
 }
 
 #[derive(Default)]
-struct AudioBank {
-    blackout: Option<HtmlAudioElement>,
-    drogue: Option<HtmlAudioElement>,
-    main: Option<HtmlAudioElement>,
-    splash: Option<HtmlAudioElement>,
+struct AudioEngine {
+    ctx: Option<AudioContext>,
 }
 
 #[derive(Clone, Copy)]
@@ -241,7 +238,6 @@ enum AudioCue {
     Main,
     Splash,
 }
-
 
 fn reentry_blackout_active(state: &MissionState) -> bool {
     state.phase == MissionPhase::Reentry
@@ -281,65 +277,56 @@ fn cue_key_for_state(state: &MissionState) -> Option<&'static str> {
     }
 }
 
-fn build_audio_element(src: &str) -> Option<HtmlAudioElement> {
-    if let Ok(audio) = HtmlAudioElement::new_with_src(src) {
-        audio.set_preload("auto");
-        audio.set_volume(1.0);
-        Some(audio)
+fn ensure_audio_context(engine: &mut AudioEngine) -> bool {
+    if engine.ctx.is_none() {
+        if let Ok(ctx) = AudioContext::new() {
+            engine.ctx = Some(ctx);
+        }
+    }
+
+    if let Some(ctx) = &engine.ctx {
+        let _ = ctx.resume();
+        true
     } else {
-        None
+        false
     }
 }
 
-fn unlock_audio_element(audio: &HtmlAudioElement) {
-    audio.set_muted(true);
-    let _ = audio.play();
-    audio.pause();
-    let _ = audio.set_current_time(0.0);
-    audio.set_muted(false);
-}
-
-fn prime_audio_bank(bank: &mut AudioBank) {
-    if bank.blackout.is_none() {
-        bank.blackout = build_audio_element(AUDIO_BLACKOUT_WAV);
-    }
-    if bank.drogue.is_none() {
-        bank.drogue = build_audio_element(AUDIO_DROGUE_WAV);
-    }
-    if bank.main.is_none() {
-        bank.main = build_audio_element(AUDIO_MAIN_WAV);
-    }
-    if bank.splash.is_none() {
-        bank.splash = build_audio_element(AUDIO_SPLASH_WAV);
-    }
-
-    if let Some(audio) = &bank.blackout {
-        unlock_audio_element(audio);
-    }
-    if let Some(audio) = &bank.drogue {
-        unlock_audio_element(audio);
-    }
-    if let Some(audio) = &bank.main {
-        unlock_audio_element(audio);
-    }
-    if let Some(audio) = &bank.splash {
-        unlock_audio_element(audio);
+fn cue_profile(cue: AudioCue) -> (f32, f64, f32) {
+    match cue {
+        AudioCue::Blackout => (180.0, 0.20, 0.12),
+        AudioCue::Drogue => (520.0, 0.12, 0.10),
+        AudioCue::Main => (360.0, 0.18, 0.10),
+        AudioCue::Splash => (240.0, 0.35, 0.14),
     }
 }
 
-fn play_audio_cue(bank: &AudioBank, cue: AudioCue) {
-    let target = match cue {
-        AudioCue::Blackout => &bank.blackout,
-        AudioCue::Drogue => &bank.drogue,
-        AudioCue::Main => &bank.main,
-        AudioCue::Splash => &bank.splash,
+fn play_audio_cue(engine: &AudioEngine, cue: AudioCue) -> bool {
+    let Some(ctx) = &engine.ctx else {
+        return false;
     };
 
-    if let Some(audio) = target {
-        let _ = audio.pause();
-        let _ = audio.set_current_time(0.0);
-        let _ = audio.play();
-    }
+    let Ok(osc) = ctx.create_oscillator() else {
+        return false;
+    };
+    let Ok(gain) = ctx.create_gain() else {
+        return false;
+    };
+
+    let (freq, duration, volume) = cue_profile(cue);
+
+    osc.set_type(OscillatorType::Sine);
+    osc.frequency().set_value(freq);
+    gain.gain().set_value(volume);
+
+    let _ = osc.connect_with_audio_node(&gain);
+    let _ = gain.connect_with_audio_node(&ctx.destination());
+
+    let now = ctx.current_time();
+    let _ = osc.start();
+    let _ = osc.stop_with_when(now + duration);
+
+    true
 }
 
 fn window_width() -> f64 {
@@ -1001,7 +988,7 @@ fn app() -> Html {
     let drogue_played_ref = use_mut_ref(|| false);
     let main_played_ref = use_mut_ref(|| false);
     let splash_played_ref = use_mut_ref(|| false);
-    let audio_bank_ref = use_mut_ref(AudioBank::default);
+    let audio_engine_ref = use_mut_ref(AudioEngine::default);
 
     {
         let time_ref = time_ref.clone();
@@ -1056,7 +1043,6 @@ fn app() -> Html {
             move || drop(interval)
         });
     }
-
     {
         let audio_armed = audio_armed.clone();
         let audio_ready = audio_ready.clone();
@@ -1065,7 +1051,7 @@ fn app() -> Html {
         let drogue_played_ref = drogue_played_ref.clone();
         let main_played_ref = main_played_ref.clone();
         let splash_played_ref = splash_played_ref.clone();
-        let audio_bank_ref = audio_bank_ref.clone();
+        let audio_engine_ref = audio_engine_ref.clone();
         let state_for_cue = build_mission_state(*time_s);
 
         use_effect_with(
@@ -1073,30 +1059,30 @@ fn app() -> Html {
             move |(_, _, armed, ready)| {
                 if *armed && *ready && state_for_cue.phase == MissionPhase::Reentry {
                     let p = state_for_cue.phase_progress;
-                    let bank = audio_bank_ref.borrow();
+                    let engine = audio_engine_ref.borrow();
 
                     if p >= 0.30 && !*blackout_played_ref.borrow() {
-                        play_audio_cue(&bank, AudioCue::Blackout);
+                        let played = play_audio_cue(&engine, AudioCue::Blackout);
                         *blackout_played_ref.borrow_mut() = true;
-                        audio_status_handle.set("Play Requested: Blackout".to_string());
+                        audio_status_handle.set(if played { "Cue Played: Blackout".to_string() } else { "Cue Failed: Blackout".to_string() });
                     }
 
                     if p >= 0.72 && !*drogue_played_ref.borrow() {
-                        play_audio_cue(&bank, AudioCue::Drogue);
+                        let played = play_audio_cue(&engine, AudioCue::Drogue);
                         *drogue_played_ref.borrow_mut() = true;
-                        audio_status_handle.set("Play Requested: Drogue".to_string());
+                        audio_status_handle.set(if played { "Cue Played: Drogue".to_string() } else { "Cue Failed: Drogue".to_string() });
                     }
 
                     if p >= 0.84 && !*main_played_ref.borrow() {
-                        play_audio_cue(&bank, AudioCue::Main);
+                        let played = play_audio_cue(&engine, AudioCue::Main);
                         *main_played_ref.borrow_mut() = true;
-                        audio_status_handle.set("Play Requested: Main".to_string());
+                        audio_status_handle.set(if played { "Cue Played: Main".to_string() } else { "Cue Failed: Main".to_string() });
                     }
 
                     if p >= 0.98 && !*splash_played_ref.borrow() {
-                        play_audio_cue(&bank, AudioCue::Splash);
+                        let played = play_audio_cue(&engine, AudioCue::Splash);
                         *splash_played_ref.borrow_mut() = true;
-                        audio_status_handle.set("Play Requested: Splash".to_string());
+                        audio_status_handle.set(if played { "Cue Played: Splash".to_string() } else { "Cue Failed: Splash".to_string() });
                     }
                 }
 
@@ -1104,7 +1090,6 @@ fn app() -> Html {
             },
         );
     }
-
     {
         let viewport_width = viewport_width.clone();
         use_effect_with((), move |_| {
@@ -1281,16 +1266,26 @@ fn app() -> Html {
         let audio_armed = audio_armed.clone();
         let audio_ready = audio_ready.clone();
         let audio_status_test = audio_status.clone();
-        let audio_bank_ref = audio_bank_ref.clone();
+        let audio_engine_ref = audio_engine_ref.clone();
         Callback::from(move |_| {
             audio_armed.set(true);
-            {
-                let mut bank = audio_bank_ref.borrow_mut();
-                prime_audio_bank(&mut bank);
-                play_audio_cue(&bank, AudioCue::Splash);
-            }
-            audio_ready.set(true);
-            audio_status_test.set("Audio Primed 4/4 + Test Splash Fired".to_string());
+            let mut engine = audio_engine_ref.borrow_mut();
+            let primed = ensure_audio_context(&mut engine);
+            let played = if primed {
+                play_audio_cue(&engine, AudioCue::Splash)
+            } else {
+                false
+            };
+            audio_ready.set(primed);
+            audio_status_test.set(
+                if primed && played {
+                    "AudioContext Primed + Test Splash Played".to_string()
+                } else if primed {
+                    "AudioContext Primed but Test Splash Failed".to_string()
+                } else {
+                    "AudioContext Failed to Prime".to_string()
+                }
+            );
         })
     };
 
@@ -1348,7 +1343,7 @@ fn app() -> Html {
 
                         <div class="control-group" style="flex-direction:column; align-items:flex-start; min-width:240px;">
                             <label style="margin-bottom:6px;">{"Audio Status"}</label>
-                            <div class="badge">{format!("{}{}", if *audio_ready { "Audio Primed — " } else { "Audio Not Primed — " }, (*audio_status).clone())}</div>
+                            <div class="badge">{format!("{}{}", if *audio_ready { "AudioContext Ready — " } else { "AudioContext Not Ready — " }, (*audio_status).clone())}</div>
                         </div>
                     </div>
                 </div>
@@ -1431,7 +1426,7 @@ fn app() -> Html {
             </section>
 
             <div class="footer-line">
-                {"V3.5: terminal-state lock, corrected phase boundaries, iPhone-style audio unlock priming, replay-from-zero cue playback, on-screen audio cue indicator, blackout window, full reentry log timeline, splashdown indicator, test-audio priming button, and responsive mobile panel switching."}
+                {"V4.0: terminal-state lock, corrected phase boundaries, Web Audio API cue playback, AudioContext priming, on-screen cue status, blackout window, full reentry log timeline, splashdown indicator, test-audio button, and responsive mobile panel switching."}
             </div>
         </div>
     }
