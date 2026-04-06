@@ -984,8 +984,7 @@ fn app() -> Html {
 
     {
         let audio_armed = audio_armed.clone();
-        let audio_status = audio_status.clone();
-        let audio_status = audio_status.clone();
+        let audio_status_handle = audio_status.clone();
         let blackout_played_ref = blackout_played_ref.clone();
         let drogue_played_ref = drogue_played_ref.clone();
         let main_played_ref = main_played_ref.clone();
@@ -1001,25 +1000,25 @@ fn app() -> Html {
                     if p >= 0.30 && !*blackout_played_ref.borrow() {
                         play_audio_cue(AUDIO_BLACKOUT_WAV);
                         *blackout_played_ref.borrow_mut() = true;
-                        audio_status.set("Audio Cue Fired: Blackout".to_string());
+                        audio_status_handle.set("Audio Cue Fired: Blackout".to_string());
                     }
 
                     if p >= 0.72 && !*drogue_played_ref.borrow() {
                         play_audio_cue(AUDIO_DROGUE_WAV);
                         *drogue_played_ref.borrow_mut() = true;
-                        audio_status.set("Audio Cue Fired: Drogue".to_string());
+                        audio_status_handle.set("Audio Cue Fired: Drogue".to_string());
                     }
 
                     if p >= 0.84 && !*main_played_ref.borrow() {
                         play_audio_cue(AUDIO_MAIN_WAV);
                         *main_played_ref.borrow_mut() = true;
-                        audio_status.set("Audio Cue Fired: Main".to_string());
+                        audio_status_handle.set("Audio Cue Fired: Main".to_string());
                     }
 
                     if p >= 0.98 && !*splash_played_ref.borrow() {
                         play_audio_cue(AUDIO_SPLASH_WAV);
                         *splash_played_ref.borrow_mut() = true;
-                        audio_status.set("Audio Cue Fired: Splash".to_string());
+                        audio_status_handle.set("Audio Cue Fired: Splash".to_string());
                     }
                 }
 
@@ -1092,10 +1091,11 @@ fn app() -> Html {
         let main_played_ref = main_played_ref.clone();
         let splash_played_ref = splash_played_ref.clone();
         let audio_armed = audio_armed.clone();
+        let audio_status_reset = audio_status.clone();
 
         Callback::from(move |_| {
             audio_armed.set(true);
-            audio_status.set("No cue fired yet".to_string());
+            audio_status_reset.set("No cue fired yet".to_string());
             playing.set(true);
             *time_ref.borrow_mut() = 0.0;
             *blackout_played_ref.borrow_mut() = false;
@@ -1140,7 +1140,7 @@ fn app() -> Html {
         let playing = playing.clone();
         let time_ref = time_ref.clone();
         let audio_armed = audio_armed.clone();
-        let audio_status = audio_status.clone();
+        let audio_status_jump = audio_status.clone();
         let blackout_played_ref = blackout_played_ref.clone();
         let drogue_played_ref = drogue_played_ref.clone();
         let main_played_ref = main_played_ref.clone();
@@ -1151,7 +1151,7 @@ fn app() -> Html {
             let t = phase_start_time(phase);
 
             audio_armed.set(true);
-            audio_status.set("No cue fired yet".to_string());
+            audio_status_jump.set("No cue fired yet".to_string());
             playing.set(false);
             *time_ref.borrow_mut() = t;
             *blackout_played_ref.borrow_mut() = false;
@@ -1197,10 +1197,10 @@ fn app() -> Html {
 
     let on_test_audio = {
         let audio_armed = audio_armed.clone();
-        let audio_status = audio_status.clone();
+        let audio_status_test = audio_status.clone();
         Callback::from(move |_| {
             audio_armed.set(true);
-            audio_status.set("Audio Cue Fired: Test Splash".to_string());
+            audio_status_test.set("Audio Cue Fired: Test Splash".to_string());
             play_audio_cue(AUDIO_SPLASH_WAV);
         })
     };
