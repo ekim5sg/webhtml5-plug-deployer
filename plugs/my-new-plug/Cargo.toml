@@ -1,26 +1,23 @@
 [package]
-name = "steadysip"
-version = "0.1.0"
+name = "apollo-orion-console-v3"
+version = "0.3.0"
 edition = "2021"
 
 [dependencies]
-yew = { version = "0.21", features = ["csr"] }
-gloo = "0.11"
-gloo-storage = "0.3"
-gloo-timers = { version = "0.3", features = ["futures"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+gloo = { version = "0.11", features = ["timers", "events"] }
 js-sys = "0.3"
-wasm-bindgen = "0.2"
+yew = { version = "0.21", features = ["csr"] }
 
-web-sys = { version = "0.3", features = [
+[dependencies.web-sys]
+version = "0.3"
+features = [
   "Window",
-  "Notification",
-  "NotificationPermission",
-  "HtmlInputElement",
-  "HtmlAudioElement",
-  "Url",
-  "Blob",
-  "BlobPropertyBag",
-  "console"
-] }
+  "AudioContext",
+  "AudioDestinationNode",
+  "AudioNode",
+  "AudioParam",
+  "BaseAudioContext",
+  "GainNode",
+  "OscillatorNode",
+  "OscillatorType",
+]
