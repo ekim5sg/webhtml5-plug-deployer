@@ -291,6 +291,14 @@ fn build_audio_element(src: &str) -> Option<HtmlAudioElement> {
     }
 }
 
+fn unlock_audio_element(audio: &HtmlAudioElement) {
+    audio.set_muted(true);
+    let _ = audio.play();
+    audio.pause();
+    let _ = audio.set_current_time(0.0);
+    audio.set_muted(false);
+}
+
 fn prime_audio_bank(bank: &mut AudioBank) {
     if bank.blackout.is_none() {
         bank.blackout = build_audio_element(AUDIO_BLACKOUT_WAV);
@@ -304,6 +312,19 @@ fn prime_audio_bank(bank: &mut AudioBank) {
     if bank.splash.is_none() {
         bank.splash = build_audio_element(AUDIO_SPLASH_WAV);
     }
+
+    if let Some(audio) = &bank.blackout {
+        unlock_audio_element(audio);
+    }
+    if let Some(audio) = &bank.drogue {
+        unlock_audio_element(audio);
+    }
+    if let Some(audio) = &bank.main {
+        unlock_audio_element(audio);
+    }
+    if let Some(audio) = &bank.splash {
+        unlock_audio_element(audio);
+    }
 }
 
 fn play_audio_cue(bank: &AudioBank, cue: AudioCue) {
@@ -315,6 +336,8 @@ fn play_audio_cue(bank: &AudioBank, cue: AudioCue) {
     };
 
     if let Some(audio) = target {
+        let _ = audio.pause();
+        let _ = audio.set_current_time(0.0);
         let _ = audio.play();
     }
 }
@@ -1055,25 +1078,25 @@ fn app() -> Html {
                     if p >= 0.30 && !*blackout_played_ref.borrow() {
                         play_audio_cue(&bank, AudioCue::Blackout);
                         *blackout_played_ref.borrow_mut() = true;
-                        audio_status_handle.set("Audio Cue Fired: Blackout".to_string());
+                        audio_status_handle.set("Play Requested: Blackout".to_string());
                     }
 
                     if p >= 0.72 && !*drogue_played_ref.borrow() {
                         play_audio_cue(&bank, AudioCue::Drogue);
                         *drogue_played_ref.borrow_mut() = true;
-                        audio_status_handle.set("Audio Cue Fired: Drogue".to_string());
+                        audio_status_handle.set("Play Requested: Drogue".to_string());
                     }
 
                     if p >= 0.84 && !*main_played_ref.borrow() {
                         play_audio_cue(&bank, AudioCue::Main);
                         *main_played_ref.borrow_mut() = true;
-                        audio_status_handle.set("Audio Cue Fired: Main".to_string());
+                        audio_status_handle.set("Play Requested: Main".to_string());
                     }
 
                     if p >= 0.98 && !*splash_played_ref.borrow() {
                         play_audio_cue(&bank, AudioCue::Splash);
                         *splash_played_ref.borrow_mut() = true;
-                        audio_status_handle.set("Audio Cue Fired: Splash".to_string());
+                        audio_status_handle.set("Play Requested: Splash".to_string());
                     }
                 }
 
@@ -1267,7 +1290,7 @@ fn app() -> Html {
                 play_audio_cue(&bank, AudioCue::Splash);
             }
             audio_ready.set(true);
-            audio_status_test.set("Audio Primed + Test Splash Fired".to_string());
+            audio_status_test.set("Audio Primed 4/4 + Test Splash Fired".to_string());
         })
     };
 
@@ -1408,7 +1431,7 @@ fn app() -> Html {
             </section>
 
             <div class="footer-line">
-                {"V3.4: terminal-state lock, corrected phase boundaries, primed persistent audio cues, on-screen audio cue indicator, blackout window, full reentry log timeline, splashdown indicator, test-audio priming button, and responsive mobile panel switching."}
+                {"V3.5: terminal-state lock, corrected phase boundaries, iPhone-style audio unlock priming, replay-from-zero cue playback, on-screen audio cue indicator, blackout window, full reentry log timeline, splashdown indicator, test-audio priming button, and responsive mobile panel switching."}
             </div>
         </div>
     }
