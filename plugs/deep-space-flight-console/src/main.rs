@@ -922,7 +922,10 @@ fn app() -> Html {
     let audio_armed = use_state(|| false);
 
     let time_ref = use_mut_ref(|| 0.0_f64);
-    let last_cue_ref = use_mut_ref(|| String::new());
+    let blackout_played_ref = use_mut_ref(|| false);
+    let drogue_played_ref = use_mut_ref(|| false);
+    let main_played_ref = use_mut_ref(|| false);
+    let splash_played_ref = use_mut_ref(|| false);
 
     {
         let time_ref = time_ref.clone();
@@ -980,25 +983,36 @@ fn app() -> Html {
 
     {
         let audio_armed = audio_armed.clone();
-        let last_cue_ref = last_cue_ref.clone();
+        let blackout_played_ref = blackout_played_ref.clone();
+        let drogue_played_ref = drogue_played_ref.clone();
+        let main_played_ref = main_played_ref.clone();
+        let splash_played_ref = splash_played_ref.clone();
         let state_for_cue = build_mission_state(*time_s);
 
         use_effect_with(
             (state_for_cue.phase, state_for_cue.phase_progress, *audio_armed),
             move |(_, _, armed)| {
-                if *armed {
-                    if let Some(key) = cue_key_for_state(&state_for_cue) {
-                        let mut last = last_cue_ref.borrow_mut();
-                        if last.as_str() != key {
-                            match key {
-                                "blackout" => play_audio_cue(AUDIO_BLACKOUT_WAV),
-                                "drogue" => play_audio_cue(AUDIO_DROGUE_WAV),
-                                "main" => play_audio_cue(AUDIO_MAIN_WAV),
-                                "splash" => play_audio_cue(AUDIO_SPLASH_WAV),
-                                _ => {}
-                            }
-                            *last = key.to_string();
-                        }
+                if *armed && state_for_cue.phase == MissionPhase::Reentry {
+                    let p = state_for_cue.phase_progress;
+
+                    if p >= 0.30 && !*blackout_played_ref.borrow() {
+                        play_audio_cue(AUDIO_BLACKOUT_WAV);
+                        *blackout_played_ref.borrow_mut() = true;
+                    }
+
+                    if p >= 0.72 && !*drogue_played_ref.borrow() {
+                        play_audio_cue(AUDIO_DROGUE_WAV);
+                        *drogue_played_ref.borrow_mut() = true;
+                    }
+
+                    if p >= 0.84 && !*main_played_ref.borrow() {
+                        play_audio_cue(AUDIO_MAIN_WAV);
+                        *main_played_ref.borrow_mut() = true;
+                    }
+
+                    if p >= 0.98 && !*splash_played_ref.borrow() {
+                        play_audio_cue(AUDIO_SPLASH_WAV);
+                        *splash_played_ref.borrow_mut() = true;
                     }
                 }
 
@@ -1066,14 +1080,20 @@ fn app() -> Html {
         let logs = logs.clone();
         let history = history.clone();
         let time_ref = time_ref.clone();
-        let last_cue_ref = last_cue_ref.clone();
+        let blackout_played_ref = blackout_played_ref.clone();
+        let drogue_played_ref = drogue_played_ref.clone();
+        let main_played_ref = main_played_ref.clone();
+        let splash_played_ref = splash_played_ref.clone();
         let audio_armed = audio_armed.clone();
 
         Callback::from(move |_| {
             audio_armed.set(true);
             playing.set(true);
             *time_ref.borrow_mut() = 0.0;
-            *last_cue_ref.borrow_mut() = String::new();
+            *blackout_played_ref.borrow_mut() = false;
+            *drogue_played_ref.borrow_mut() = false;
+            *main_played_ref.borrow_mut() = false;
+            *splash_played_ref.borrow_mut() = false;
             time_s.set(0.0);
             logs.set(base_log_entries());
             history.set(base_history());
@@ -1112,7 +1132,10 @@ fn app() -> Html {
         let playing = playing.clone();
         let time_ref = time_ref.clone();
         let audio_armed = audio_armed.clone();
-        let last_cue_ref = last_cue_ref.clone();
+        let blackout_played_ref = blackout_played_ref.clone();
+        let drogue_played_ref = drogue_played_ref.clone();
+        let main_played_ref = main_played_ref.clone();
+        let splash_played_ref = splash_played_ref.clone();
 
         Callback::from(move |idx: usize| {
             let phase = phase_from_index(idx);
@@ -1121,7 +1144,10 @@ fn app() -> Html {
             audio_armed.set(true);
             playing.set(false);
             *time_ref.borrow_mut() = t;
-            *last_cue_ref.borrow_mut() = String::new();
+            *blackout_played_ref.borrow_mut() = false;
+            *drogue_played_ref.borrow_mut() = false;
+            *main_played_ref.borrow_mut() = false;
+            *splash_played_ref.borrow_mut() = false;
             time_s.set(t);
             history.set(base_history());
 
@@ -1161,10 +1187,8 @@ fn app() -> Html {
 
     let on_test_audio = {
         let audio_armed = audio_armed.clone();
-        let last_cue_ref = last_cue_ref.clone();
         Callback::from(move |_| {
             audio_armed.set(true);
-            *last_cue_ref.borrow_mut() = String::new();
             play_audio_cue(AUDIO_SPLASH_WAV);
         })
     };
@@ -1301,7 +1325,7 @@ fn app() -> Html {
             </section>
 
             <div class="footer-line">
-                {"V3.1: terminal-state lock, corrected phase boundaries, reentry blackout window, drogue/main chute timeline, WAV audio cues, test-audio button, and responsive mobile panel switching."}
+                {"V3.2: terminal-state lock, corrected phase boundaries, threshold-latched reentry audio cues, blackout window, drogue/main chute timeline, test-audio button, and responsive mobile panel switching."}
             </div>
         </div>
     }
