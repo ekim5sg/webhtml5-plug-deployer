@@ -843,7 +843,7 @@ fn push_log(logs: &mut Vec<LogEntry>, state: &MissionState) {
         MissionPhase::LunarFlyby => p > 0.48 && p < 0.54,
         MissionPhase::CoastHome => (p > 0.20 && p < 0.26) || (p > 0.75 && p < 0.81),
         MissionPhase::ReturnBurn => (p > 0.10 && p < 0.16) || (p > 0.84 && p < 0.90),
-        MissionPhase::Reentry => (p > 0.25 && p < 0.31) || (p > 0.74 && p < 0.80),
+        MissionPhase::Reentry => (p > 0.29 && p < 0.34) || (p > 0.71 && p < 0.76) || (p > 0.83 && p < 0.88) || (p > 0.97 && p <= 1.0),
     };
 
     if !interesting { return; }
