@@ -1118,7 +1118,7 @@ fn app() -> Html {
     let on_enable_audio = {
         let audio_enabled = audio_enabled.clone();
         let audio_status = audio_status.clone();
-        let audio_pool_ref = audio_pool_ref.clone();
+        let audio_pool_ref = use_mut_ref(|| AudioPool::default());
 
         Callback::from(move |_| {
             let ok = {
