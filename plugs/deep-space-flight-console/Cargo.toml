@@ -12,5 +12,12 @@ yew = { version = "0.21", features = ["csr"] }
 version = "0.3"
 features = [
   "Window",
-  "HtmlAudioElement",
+  "AudioContext",
+  "AudioDestinationNode",
+  "AudioNode",
+  "AudioParam",
+  "BaseAudioContext",
+  "GainNode",
+  "OscillatorNode",
+  "OscillatorType",
 ]
