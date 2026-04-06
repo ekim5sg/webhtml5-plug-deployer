@@ -985,7 +985,7 @@ fn app() -> Html {
 
     let time_ref = use_mut_ref(|| 0.0_f64);
     let last_cue_ref = use_mut_ref(|| String::new());
-    let audio_pool_ref = use_mut_ref(AudioPool::default());
+    let audio_pool_ref = use_mut_ref(|| AudioPool::default());
 
     {
         let time_ref = time_ref.clone();
@@ -1118,7 +1118,7 @@ fn app() -> Html {
     let on_enable_audio = {
         let audio_enabled = audio_enabled.clone();
         let audio_status = audio_status.clone();
-        let audio_pool_ref = use_mut_ref(|| AudioPool::default());
+        let audio_pool_ref = audio_pool_ref.clone();
 
         Callback::from(move |_| {
             let ok = {
