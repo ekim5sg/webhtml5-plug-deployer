@@ -920,6 +920,7 @@ fn app() -> Html {
     let viewport_width = use_state(window_width);
     let mobile_panel = use_state(|| MobilePanel::Center);
     let audio_armed = use_state(|| false);
+    let audio_status = use_state(|| "No cue fired yet".to_string());
 
     let time_ref = use_mut_ref(|| 0.0_f64);
     let blackout_played_ref = use_mut_ref(|| false);
@@ -983,6 +984,8 @@ fn app() -> Html {
 
     {
         let audio_armed = audio_armed.clone();
+        let audio_status = audio_status.clone();
+        let audio_status = audio_status.clone();
         let blackout_played_ref = blackout_played_ref.clone();
         let drogue_played_ref = drogue_played_ref.clone();
         let main_played_ref = main_played_ref.clone();
@@ -998,21 +1001,25 @@ fn app() -> Html {
                     if p >= 0.30 && !*blackout_played_ref.borrow() {
                         play_audio_cue(AUDIO_BLACKOUT_WAV);
                         *blackout_played_ref.borrow_mut() = true;
+                        audio_status.set("Audio Cue Fired: Blackout".to_string());
                     }
 
                     if p >= 0.72 && !*drogue_played_ref.borrow() {
                         play_audio_cue(AUDIO_DROGUE_WAV);
                         *drogue_played_ref.borrow_mut() = true;
+                        audio_status.set("Audio Cue Fired: Drogue".to_string());
                     }
 
                     if p >= 0.84 && !*main_played_ref.borrow() {
                         play_audio_cue(AUDIO_MAIN_WAV);
                         *main_played_ref.borrow_mut() = true;
+                        audio_status.set("Audio Cue Fired: Main".to_string());
                     }
 
                     if p >= 0.98 && !*splash_played_ref.borrow() {
                         play_audio_cue(AUDIO_SPLASH_WAV);
                         *splash_played_ref.borrow_mut() = true;
+                        audio_status.set("Audio Cue Fired: Splash".to_string());
                     }
                 }
 
@@ -1088,6 +1095,7 @@ fn app() -> Html {
 
         Callback::from(move |_| {
             audio_armed.set(true);
+            audio_status.set("No cue fired yet".to_string());
             playing.set(true);
             *time_ref.borrow_mut() = 0.0;
             *blackout_played_ref.borrow_mut() = false;
@@ -1132,6 +1140,7 @@ fn app() -> Html {
         let playing = playing.clone();
         let time_ref = time_ref.clone();
         let audio_armed = audio_armed.clone();
+        let audio_status = audio_status.clone();
         let blackout_played_ref = blackout_played_ref.clone();
         let drogue_played_ref = drogue_played_ref.clone();
         let main_played_ref = main_played_ref.clone();
@@ -1142,6 +1151,7 @@ fn app() -> Html {
             let t = phase_start_time(phase);
 
             audio_armed.set(true);
+            audio_status.set("No cue fired yet".to_string());
             playing.set(false);
             *time_ref.borrow_mut() = t;
             *blackout_played_ref.borrow_mut() = false;
@@ -1187,8 +1197,10 @@ fn app() -> Html {
 
     let on_test_audio = {
         let audio_armed = audio_armed.clone();
+        let audio_status = audio_status.clone();
         Callback::from(move |_| {
             audio_armed.set(true);
+            audio_status.set("Audio Cue Fired: Test Splash".to_string());
             play_audio_cue(AUDIO_SPLASH_WAV);
         })
     };
@@ -1243,6 +1255,11 @@ fn app() -> Html {
                         <div class="control-group" style="flex-direction:column; align-items:flex-start;">
                             <label style="margin-bottom:6px;">{"Jump to phase"}</label>
                             <PhaseJumpButtons current_phase_idx={phase_idx} on_jump={on_jump} />
+                        </div>
+
+                        <div class="control-group" style="flex-direction:column; align-items:flex-start; min-width:240px;">
+                            <label style="margin-bottom:6px;">{"Audio Status"}</label>
+                            <div class="badge">{(*audio_status).clone()}</div>
                         </div>
                     </div>
                 </div>
@@ -1325,7 +1342,7 @@ fn app() -> Html {
             </section>
 
             <div class="footer-line">
-                {"V3.2: terminal-state lock, corrected phase boundaries, threshold-latched reentry audio cues, blackout window, drogue/main chute timeline, test-audio button, and responsive mobile panel switching."}
+                {"V3.3: terminal-state lock, corrected phase boundaries, threshold-latched reentry audio cues, on-screen audio cue indicator, blackout window, drogue/main chute timeline, test-audio button, and responsive mobile panel switching."}
             </div>
         </div>
     }
