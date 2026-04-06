@@ -226,6 +226,22 @@ struct HistoryState {
     comm: Vec<ChartPoint>,
 }
 
+#[derive(Default)]
+struct AudioBank {
+    blackout: Option<HtmlAudioElement>,
+    drogue: Option<HtmlAudioElement>,
+    main: Option<HtmlAudioElement>,
+    splash: Option<HtmlAudioElement>,
+}
+
+#[derive(Clone, Copy)]
+enum AudioCue {
+    Blackout,
+    Drogue,
+    Main,
+    Splash,
+}
+
 
 fn reentry_blackout_active(state: &MissionState) -> bool {
     state.phase == MissionPhase::Reentry
@@ -265,10 +281,40 @@ fn cue_key_for_state(state: &MissionState) -> Option<&'static str> {
     }
 }
 
-fn play_audio_cue(src: &str) {
+fn build_audio_element(src: &str) -> Option<HtmlAudioElement> {
     if let Ok(audio) = HtmlAudioElement::new_with_src(src) {
         audio.set_preload("auto");
         audio.set_volume(1.0);
+        Some(audio)
+    } else {
+        None
+    }
+}
+
+fn prime_audio_bank(bank: &mut AudioBank) {
+    if bank.blackout.is_none() {
+        bank.blackout = build_audio_element(AUDIO_BLACKOUT_WAV);
+    }
+    if bank.drogue.is_none() {
+        bank.drogue = build_audio_element(AUDIO_DROGUE_WAV);
+    }
+    if bank.main.is_none() {
+        bank.main = build_audio_element(AUDIO_MAIN_WAV);
+    }
+    if bank.splash.is_none() {
+        bank.splash = build_audio_element(AUDIO_SPLASH_WAV);
+    }
+}
+
+fn play_audio_cue(bank: &AudioBank, cue: AudioCue) {
+    let target = match cue {
+        AudioCue::Blackout => &bank.blackout,
+        AudioCue::Drogue => &bank.drogue,
+        AudioCue::Main => &bank.main,
+        AudioCue::Splash => &bank.splash,
+    };
+
+    if let Some(audio) = target {
         let _ = audio.play();
     }
 }
@@ -782,7 +828,11 @@ fn push_log(logs: &mut Vec<LogEntry>, state: &MissionState) {
         MissionPhase::LunarFlyby => p > 0.48 && p < 0.54,
         MissionPhase::CoastHome => (p > 0.20 && p < 0.26) || (p > 0.75 && p < 0.81),
         MissionPhase::ReturnBurn => (p > 0.10 && p < 0.16) || (p > 0.84 && p < 0.90),
-        MissionPhase::Reentry => (p > 0.25 && p < 0.31) || (p > 0.74 && p < 0.80),
+        MissionPhase::Reentry =>
+            (p > 0.25 && p < 0.31) ||
+            (p > 0.71 && p < 0.77) ||
+            (p > 0.83 && p < 0.89) ||
+            (p > 0.97 && p <= 1.0),
     };
 
     if !interesting { return; }
@@ -920,6 +970,7 @@ fn app() -> Html {
     let viewport_width = use_state(window_width);
     let mobile_panel = use_state(|| MobilePanel::Center);
     let audio_armed = use_state(|| false);
+    let audio_ready = use_state(|| false);
     let audio_status = use_state(|| "No cue fired yet".to_string());
 
     let time_ref = use_mut_ref(|| 0.0_f64);
@@ -927,6 +978,7 @@ fn app() -> Html {
     let drogue_played_ref = use_mut_ref(|| false);
     let main_played_ref = use_mut_ref(|| false);
     let splash_played_ref = use_mut_ref(|| false);
+    let audio_bank_ref = use_mut_ref(AudioBank::default);
 
     {
         let time_ref = time_ref.clone();
@@ -984,39 +1036,42 @@ fn app() -> Html {
 
     {
         let audio_armed = audio_armed.clone();
+        let audio_ready = audio_ready.clone();
         let audio_status_handle = audio_status.clone();
         let blackout_played_ref = blackout_played_ref.clone();
         let drogue_played_ref = drogue_played_ref.clone();
         let main_played_ref = main_played_ref.clone();
         let splash_played_ref = splash_played_ref.clone();
+        let audio_bank_ref = audio_bank_ref.clone();
         let state_for_cue = build_mission_state(*time_s);
 
         use_effect_with(
-            (state_for_cue.phase, state_for_cue.phase_progress, *audio_armed),
-            move |(_, _, armed)| {
-                if *armed && state_for_cue.phase == MissionPhase::Reentry {
+            (state_for_cue.phase, state_for_cue.phase_progress, *audio_armed, *audio_ready),
+            move |(_, _, armed, ready)| {
+                if *armed && *ready && state_for_cue.phase == MissionPhase::Reentry {
                     let p = state_for_cue.phase_progress;
+                    let bank = audio_bank_ref.borrow();
 
                     if p >= 0.30 && !*blackout_played_ref.borrow() {
-                        play_audio_cue(AUDIO_BLACKOUT_WAV);
+                        play_audio_cue(&bank, AudioCue::Blackout);
                         *blackout_played_ref.borrow_mut() = true;
                         audio_status_handle.set("Audio Cue Fired: Blackout".to_string());
                     }
 
                     if p >= 0.72 && !*drogue_played_ref.borrow() {
-                        play_audio_cue(AUDIO_DROGUE_WAV);
+                        play_audio_cue(&bank, AudioCue::Drogue);
                         *drogue_played_ref.borrow_mut() = true;
                         audio_status_handle.set("Audio Cue Fired: Drogue".to_string());
                     }
 
                     if p >= 0.84 && !*main_played_ref.borrow() {
-                        play_audio_cue(AUDIO_MAIN_WAV);
+                        play_audio_cue(&bank, AudioCue::Main);
                         *main_played_ref.borrow_mut() = true;
                         audio_status_handle.set("Audio Cue Fired: Main".to_string());
                     }
 
                     if p >= 0.98 && !*splash_played_ref.borrow() {
-                        play_audio_cue(AUDIO_SPLASH_WAV);
+                        play_audio_cue(&bank, AudioCue::Splash);
                         *splash_played_ref.borrow_mut() = true;
                         audio_status_handle.set("Audio Cue Fired: Splash".to_string());
                     }
@@ -1091,10 +1146,12 @@ fn app() -> Html {
         let main_played_ref = main_played_ref.clone();
         let splash_played_ref = splash_played_ref.clone();
         let audio_armed = audio_armed.clone();
+        let audio_ready = audio_ready.clone();
         let audio_status_reset = audio_status.clone();
 
         Callback::from(move |_| {
             audio_armed.set(true);
+            audio_ready.set(false);
             audio_status_reset.set("No cue fired yet".to_string());
             playing.set(true);
             *time_ref.borrow_mut() = 0.0;
@@ -1140,6 +1197,7 @@ fn app() -> Html {
         let playing = playing.clone();
         let time_ref = time_ref.clone();
         let audio_armed = audio_armed.clone();
+        let audio_ready = audio_ready.clone();
         let audio_status_jump = audio_status.clone();
         let blackout_played_ref = blackout_played_ref.clone();
         let drogue_played_ref = drogue_played_ref.clone();
@@ -1151,6 +1209,7 @@ fn app() -> Html {
             let t = phase_start_time(phase);
 
             audio_armed.set(true);
+            audio_ready.set(false);
             audio_status_jump.set("No cue fired yet".to_string());
             playing.set(false);
             *time_ref.borrow_mut() = t;
@@ -1197,11 +1256,18 @@ fn app() -> Html {
 
     let on_test_audio = {
         let audio_armed = audio_armed.clone();
+        let audio_ready = audio_ready.clone();
         let audio_status_test = audio_status.clone();
+        let audio_bank_ref = audio_bank_ref.clone();
         Callback::from(move |_| {
             audio_armed.set(true);
-            audio_status_test.set("Audio Cue Fired: Test Splash".to_string());
-            play_audio_cue(AUDIO_SPLASH_WAV);
+            {
+                let mut bank = audio_bank_ref.borrow_mut();
+                prime_audio_bank(&mut bank);
+                play_audio_cue(&bank, AudioCue::Splash);
+            }
+            audio_ready.set(true);
+            audio_status_test.set("Audio Primed + Test Splash Fired".to_string());
         })
     };
 
@@ -1259,7 +1325,7 @@ fn app() -> Html {
 
                         <div class="control-group" style="flex-direction:column; align-items:flex-start; min-width:240px;">
                             <label style="margin-bottom:6px;">{"Audio Status"}</label>
-                            <div class="badge">{(*audio_status).clone()}</div>
+                            <div class="badge">{format!("{}{}", if *audio_ready { "Audio Primed — " } else { "Audio Not Primed — " }, (*audio_status).clone())}</div>
                         </div>
                     </div>
                 </div>
@@ -1342,7 +1408,7 @@ fn app() -> Html {
             </section>
 
             <div class="footer-line">
-                {"V3.3: terminal-state lock, corrected phase boundaries, threshold-latched reentry audio cues, on-screen audio cue indicator, blackout window, drogue/main chute timeline, test-audio button, and responsive mobile panel switching."}
+                {"V3.4: terminal-state lock, corrected phase boundaries, primed persistent audio cues, on-screen audio cue indicator, blackout window, full reentry log timeline, splashdown indicator, test-audio priming button, and responsive mobile panel switching."}
             </div>
         </div>
     }
@@ -1672,6 +1738,13 @@ fn center_column(props: &CenterColumnProps) -> Html {
                 <div class="subline" style="margin-top:8px;">
                     {format!("Mission progress {:.0}%", props.total_progress_pct)}
                 </div>
+                {
+                    if state.phase == MissionPhase::Reentry && state.phase_progress >= 0.98 {
+                        html! { <div class="badge" style="margin-top:8px;">{"Reached Splashdown"}</div> }
+                    } else {
+                        html! {}
+                    }
+                }
                 <div class="progress-wrap">
                     <div class="progress-bar">
                         <div class="progress-fill orion-fill" style={format!("width:{:.1}%;", props.total_progress_pct)}></div>
