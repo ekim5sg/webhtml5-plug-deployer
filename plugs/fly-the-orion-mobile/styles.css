@@ -1,0 +1,401 @@
+:root {
+  --bg: #020617;
+  --panel: rgba(15, 23, 42, 0.94);
+  --panel-2: #020617;
+  --border: #1e293b;
+  --text: #e2e8f0;
+  --muted: #94a3b8;
+  --accent: #0284c7;
+  --accent-2: #f59e0b;
+  --danger: #ef4444;
+  --success: #22c55e;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Arial, Helvetica, sans-serif;
+  overflow: hidden;
+  touch-action: manipulation;
+}
+
+body {
+  min-height: 100vh;
+}
+
+#app {
+  width: 100%;
+  min-height: 100vh;
+}
+
+button {
+  font: inherit;
+}
+
+svg {
+  display: block;
+  max-width: 100%;
+}
+
+.app-shell {
+  min-height: 100vh;
+  padding: 10px;
+  background: var(--bg);
+}
+
+.layout {
+  max-width: 980px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+}
+
+.main-card {
+  overflow: hidden;
+}
+
+.header-row {
+  padding: 16px 16px 8px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.title {
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.subtitle {
+  margin-top: 6px;
+  color: #cbd5e1;
+  font-size: 14px;
+  line-height: 1.4;
+  max-width: 680px;
+}
+
+.badges {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.badge {
+  padding: 7px 12px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.badge-phase-moon {
+  background: #082f49;
+  color: #bae6fd;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+}
+
+.badge-phase-home,
+.badge-score {
+  background: #451a03;
+  color: #fde68a;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.main-content {
+  padding: 0 16px 16px;
+}
+
+.space-box {
+  border-radius: 20px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: #000;
+}
+
+.space-svg {
+  display: block;
+  width: 100%;
+  height: 42vh;
+  min-height: 300px;
+  max-height: 460px;
+  background: radial-gradient(circle at center, #0f172a 0%, #020617 65%);
+}
+
+.mission-message {
+  margin-bottom: 10px;
+  padding: 12px 14px;
+  line-height: 1.45;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  font-size: 14px;
+}
+
+.stats-grid,
+.distance-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.stats-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 12px;
+}
+
+.distance-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 12px;
+}
+
+.panel-mini,
+.side-card,
+.control-item,
+.goal-item,
+.kpi-box {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+}
+
+.panel-mini,
+.kpi-box {
+  padding: 12px;
+}
+
+.side-column {
+  display: grid;
+  gap: 10px;
+}
+
+.side-card {
+  padding: 16px;
+}
+
+.section-title {
+  font-size: 21px;
+  font-weight: 800;
+}
+
+.kpi-label,
+.stat-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.kpi-value {
+  font-size: 22px;
+  font-weight: 800;
+  margin-top: 4px;
+}
+
+.stat-value {
+  font-size: 26px;
+  font-weight: 800;
+  margin-top: 4px;
+}
+
+.stat-note {
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 8px;
+  line-height: 1.35;
+}
+
+.bar-track {
+  margin-top: 10px;
+  height: 10px;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  border-radius: 999px;
+}
+
+.button-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.button {
+  border-radius: 16px;
+  padding: 14px 14px;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+  border: none;
+}
+
+.button-primary {
+  background: var(--accent);
+  color: white;
+}
+
+.button-secondary {
+  background: #020617;
+  color: var(--text);
+  border: 1px solid #334155;
+}
+
+.control-list,
+.goal-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.goal-list {
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.control-item,
+.goal-item {
+  padding: 12px;
+}
+
+.control-title {
+  font-weight: 800;
+  font-size: 14px;
+}
+
+.control-text {
+  color: var(--muted);
+  margin-top: 6px;
+  line-height: 1.4;
+  font-size: 13px;
+}
+
+.mobile-pad {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: 10px;
+}
+
+.pad-group {
+  background: rgba(2, 6, 23, 0.75);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 10px;
+}
+
+.pad-title {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 8px;
+  font-weight: 700;
+}
+
+.dpad-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.action-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.pad-btn {
+  min-height: 58px;
+  border-radius: 16px;
+  border: 1px solid #334155;
+  background: #0f172a;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  touch-action: none;
+}
+
+.pad-btn:active,
+.pad-btn.active {
+  transform: scale(0.98);
+  background: #1e293b;
+}
+
+.pad-btn.forward {
+  background: #082f49;
+  border-color: rgba(56, 189, 248, 0.35);
+  color: #bae6fd;
+}
+
+.pad-btn.slow {
+  background: #3f1d1d;
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #fecaca;
+}
+
+.pad-btn.burn {
+  background: #451a03;
+  border-color: rgba(245, 158, 11, 0.35);
+  color: #fde68a;
+  min-height: 76px;
+}
+
+.footer-note {
+  max-width: 980px;
+  margin: 8px auto 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+@media (max-width: 560px) {
+  .title {
+    font-size: 24px;
+  }
+
+  .stats-grid,
+  .distance-grid,
+  .button-row,
+  .mobile-pad {
+    grid-template-columns: 1fr;
+  }
+
+  .space-svg {
+    height: 38vh;
+    min-height: 260px;
+  }
+
+  .pad-btn {
+    min-height: 54px;
+  }
+
+  .pad-btn.burn {
+    min-height: 68px;
+  }
+}
