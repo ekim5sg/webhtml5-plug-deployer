@@ -288,92 +288,6 @@ fn tick_game(game: &mut GameState, dt: f64) {
     }
 }
 
-fn set_control(keys: &mut KeyState, name: &str, pressed: bool) {
-    match name {
-        "forward" => keys.forward = pressed,
-        "slow" => keys.slow = pressed,
-        "left" => keys.left = pressed,
-        "right" => keys.right = pressed,
-        "up" => keys.up = pressed,
-        "down" => keys.down = pressed,
-        "burn" => keys.burn = pressed,
-        _ => {}
-    }
-}
-
-fn control_active(keys: &KeyState, name: &str) -> bool {
-    match name {
-        "forward" => keys.forward,
-        "slow" => keys.slow,
-        "left" => keys.left,
-        "right" => keys.right,
-        "up" => keys.up,
-        "down" => keys.down,
-        "burn" => keys.burn,
-        _ => false,
-    }
-}
-
-#[derive(Properties, PartialEq)]
-struct PadButtonProps {
-    label: AttrValue,
-    control: AttrValue,
-    class_name: AttrValue,
-    game_ref: UseMutRefHandle<GameState>,
-    force_render: Callback<()>,
-    active: bool,
-}
-
-#[function_component(PadButton)]
-fn pad_button(props: &PadButtonProps) -> Html {
-    let on_press = {
-        let game_ref = props.game_ref.clone();
-        let force_render = props.force_render.clone();
-        let control = props.control.to_string();
-        Callback::from(move |_| {
-            let mut game = game_ref.borrow_mut();
-            set_control(&mut game.keys, &control, true);
-            if !game.started && !game.landed_home {
-                game.started = true;
-                game.message = "Mission started from touch controls. Fly to the Moon!".to_string();
-            }
-            force_render.emit(());
-        })
-    };
-
-    let on_release = {
-        let game_ref = props.game_ref.clone();
-        let force_render = props.force_render.clone();
-        let control = props.control.to_string();
-        Callback::from(move |_| {
-            let mut game = game_ref.borrow_mut();
-            set_control(&mut game.keys, &control, false);
-            force_render.emit(());
-        })
-    };
-
-    let classes = if props.active {
-        format!("pad-btn {} active", props.class_name)
-    } else {
-        format!("pad-btn {}", props.class_name)
-    };
-
-    html! {
-        <button
-            class={classes}
-            onpointerdown={on_press.clone()}
-            onpointerup={on_release.clone()}
-            onpointerleave={on_release.clone()}
-            onpointercancel={on_release.clone()}
-            ontouchstart={on_press}
-            ontouchend={on_release.clone()}
-            ontouchcancel={on_release}
-        >
-            {props.label.clone()}
-        </button>
-    }
-}
-
 #[function_component(App)]
 fn app() -> Html {
     let game_ref = use_mut_ref(GameState::default);
@@ -385,6 +299,36 @@ fn app() -> Html {
         Callback::from(move |_| {
             render_tick.set(*render_tick + 1);
         })
+    };
+
+    let set_control = {
+        let game_ref = game_ref.clone();
+        let force_render = force_render.clone();
+        move |name: &'static str, pressed: bool| {
+            let game_ref = game_ref.clone();
+            let force_render = force_render.clone();
+            Callback::from(move |_| {
+                let mut game = game_ref.borrow_mut();
+                match name {
+                    "forward" => game.keys.forward = pressed,
+                    "slow" => game.keys.slow = pressed,
+                    "left" => game.keys.left = pressed,
+                    "right" => game.keys.right = pressed,
+                    "up" => game.keys.up = pressed,
+                    "down" => game.keys.down = pressed,
+                    "burn" => game.keys.burn = pressed,
+                    _ => {}
+                }
+
+                if pressed && !game.started && !game.landed_home {
+                    game.started = true;
+                    game.message =
+                        "Mission started from touch controls. Fly to the Moon!".to_string();
+                }
+
+                force_render.emit(());
+            })
+        }
     };
 
     {
@@ -671,50 +615,57 @@ fn app() -> Html {
                                 <div class="pad-title">{"Directional Controls"}</div>
                                 <div class="dpad-grid">
                                     <div></div>
-                                    <PadButton
-                                        label="↑"
-                                        control="up"
-                                        class_name=""
-                                        game_ref={game_ref.clone()}
-                                        force_render={force_render.clone()}
-                                        active={control_active(&game.keys, "up")}
-                                    />
+                                    <button
+                                        class={classes!("pad-btn", game.keys.up.then_some("active"))}
+                                        onpointerdown={set_control("up", true)}
+                                        onpointerup={set_control("up", false)}
+                                        onpointerleave={set_control("up", false)}
+                                        onpointercancel={set_control("up", false)}
+                                    >
+                                        {"↑"}
+                                    </button>
                                     <div></div>
 
-                                    <PadButton
-                                        label="←"
-                                        control="left"
-                                        class_name=""
-                                        game_ref={game_ref.clone()}
-                                        force_render={force_render.clone()}
-                                        active={control_active(&game.keys, "left")}
-                                    />
-                                    <PadButton
-                                        label="→ GO"
-                                        control="forward"
-                                        class_name="forward"
-                                        game_ref={game_ref.clone()}
-                                        force_render={force_render.clone()}
-                                        active={control_active(&game.keys, "forward")}
-                                    />
-                                    <PadButton
-                                        label="→"
-                                        control="right"
-                                        class_name=""
-                                        game_ref={game_ref.clone()}
-                                        force_render={force_render.clone()}
-                                        active={control_active(&game.keys, "right")}
-                                    />
+                                    <button
+                                        class={classes!("pad-btn", game.keys.left.then_some("active"))}
+                                        onpointerdown={set_control("left", true)}
+                                        onpointerup={set_control("left", false)}
+                                        onpointerleave={set_control("left", false)}
+                                        onpointercancel={set_control("left", false)}
+                                    >
+                                        {"←"}
+                                    </button>
+
+                                    <button
+                                        class={classes!("pad-btn", "forward", game.keys.forward.then_some("active"))}
+                                        onpointerdown={set_control("forward", true)}
+                                        onpointerup={set_control("forward", false)}
+                                        onpointerleave={set_control("forward", false)}
+                                        onpointercancel={set_control("forward", false)}
+                                    >
+                                        {"→ GO"}
+                                    </button>
+
+                                    <button
+                                        class={classes!("pad-btn", game.keys.right.then_some("active"))}
+                                        onpointerdown={set_control("right", true)}
+                                        onpointerup={set_control("right", false)}
+                                        onpointerleave={set_control("right", false)}
+                                        onpointercancel={set_control("right", false)}
+                                    >
+                                        {"→"}
+                                    </button>
 
                                     <div></div>
-                                    <PadButton
-                                        label="↓"
-                                        control="down"
-                                        class_name=""
-                                        game_ref={game_ref.clone()}
-                                        force_render={force_render.clone()}
-                                        active={control_active(&game.keys, "down")}
-                                    />
+                                    <button
+                                        class={classes!("pad-btn", game.keys.down.then_some("active"))}
+                                        onpointerdown={set_control("down", true)}
+                                        onpointerup={set_control("down", false)}
+                                        onpointerleave={set_control("down", false)}
+                                        onpointercancel={set_control("down", false)}
+                                    >
+                                        {"↓"}
+                                    </button>
                                     <div></div>
                                 </div>
                             </div>
@@ -722,22 +673,25 @@ fn app() -> Html {
                             <div class="pad-group">
                                 <div class="pad-title">{"Action Controls"}</div>
                                 <div class="action-grid">
-                                    <PadButton
-                                        label="SLOW"
-                                        control="slow"
-                                        class_name="slow"
-                                        game_ref={game_ref.clone()}
-                                        force_render={force_render.clone()}
-                                        active={control_active(&game.keys, "slow")}
-                                    />
-                                    <PadButton
-                                        label="🔥 BURN"
-                                        control="burn"
-                                        class_name="burn"
-                                        game_ref={game_ref.clone()}
-                                        force_render={force_render.clone()}
-                                        active={control_active(&game.keys, "burn")}
-                                    />
+                                    <button
+                                        class={classes!("pad-btn", "slow", game.keys.slow.then_some("active"))}
+                                        onpointerdown={set_control("slow", true)}
+                                        onpointerup={set_control("slow", false)}
+                                        onpointerleave={set_control("slow", false)}
+                                        onpointercancel={set_control("slow", false)}
+                                    >
+                                        {"SLOW"}
+                                    </button>
+
+                                    <button
+                                        class={classes!("pad-btn", "burn", game.keys.burn.then_some("active"))}
+                                        onpointerdown={set_control("burn", true)}
+                                        onpointerup={set_control("burn", false)}
+                                        onpointerleave={set_control("burn", false)}
+                                        onpointercancel={set_control("burn", false)}
+                                    >
+                                        {"🔥 BURN"}
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -775,7 +729,7 @@ fn app() -> Html {
                         <div class="control-list">
                             <div class="control-item">
                                 <div class="control-title">{"GO"}</div>
-                                <div class="control-text">{"Push Orion forward toward the Moon or back home."}</div>
+                                <div class="control-text">{"Push Orion forward toward the Moon or toward home."}</div>
                             </div>
                             <div class="control-item">
                                 <div class="control-title">{"SLOW"}</div>
