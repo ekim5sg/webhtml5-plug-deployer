@@ -1,12 +1,23 @@
 body {
   margin: 0;
-  background: radial-gradient(circle at top, #1a237e, #0b1020);
+  background: #0b1020;
   color: white;
   font-family: Arial;
-  overflow-x: hidden;
+  overflow: hidden;
+}
+
+#stars {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
 }
 
 .container {
+  position: relative;
+  z-index: 1;
   max-width: 900px;
   margin: auto;
   padding: 20px;
@@ -14,33 +25,17 @@ body {
 }
 
 .house {
-  width: 120px;
-  height: 120px;
+  width: 130px;
+  height: 130px;
   margin: 20px auto;
   border-radius: 20px;
   background: linear-gradient(45deg, #ffd27a, #ff9f1c);
-  box-shadow: 0 0 20px rgba(255,210,122,0.4);
-  transition: all 0.2s ease;
+  transition: all 0.2s;
 }
 
 .house.active {
-  transform: scale(1.15);
-  box-shadow: 0 0 45px rgba(255,210,122,0.9);
-}
-
-.beam {
-  width: 4px;
-  height: 100px;
-  margin: auto;
-  background: #ffd27a;
-  opacity: 0;
-  animation: beam 1s infinite;
-}
-
-@keyframes beam {
-  0% { opacity: 0; transform: translateY(0); }
-  50% { opacity: 1; transform: translateY(-10px); }
-  100% { opacity: 0; transform: translateY(-20px); }
+  transform: scale(1.2);
+  box-shadow: 0 0 50px rgba(255,210,122,0.9);
 }
 
 .card {
@@ -57,8 +52,6 @@ button {
   border-radius: 10px;
   border: none;
   background: #ffd27a;
-  color: black;
-  font-weight: bold;
 }
 
 .big {
