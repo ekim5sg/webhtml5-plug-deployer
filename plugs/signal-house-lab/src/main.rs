@@ -124,7 +124,8 @@ fn app() -> Html {
     let current_level = use_state(|| 1_usize);
     let combo = use_state(|| 0_i32);
     let max_combo = use_state(|| LocalStorage::get("signal_house_max_combo").unwrap_or(0_i32));
-    let game_message = use_state(|| "Free play: wake the house and send signals into the sky.".to_string());
+    let game_message =
+        use_state(|| "Free play: wake the house and send signals into the sky.".to_string());
 
     let crew_names = use_state(|| {
         LocalStorage::get("signal_house_crew_names").unwrap_or_else(|_| {
