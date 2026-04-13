@@ -17,6 +17,14 @@ const STORY_STEPS: [&str; 5] = [
 
 const LEVEL_TARGETS: [i32; 3] = [8, 14, 20];
 const LEVEL_TIMES: [i32; 3] = [10, 12, 15];
+const TARGETS: [(f64, f64); 6] = [
+    (26.0, 32.0),
+    (40.0, 16.0),
+    (60.0, 16.0),
+    (74.0, 32.0),
+    (34.0, 54.0),
+    (66.0, 54.0),
+];
 
 #[derive(Clone, PartialEq)]
 enum Mode {
@@ -25,6 +33,13 @@ enum Mode {
     Story,
     GameOver,
     Victory,
+}
+
+#[derive(Clone, PartialEq)]
+struct Burst {
+    id: usize,
+    x_pct: f64,
+    y_pct: f64,
 }
 
 fn safe_play(audio: &HtmlAudioElement) {
@@ -139,7 +154,7 @@ fn begin_level(
     challenge_time_left.set(time_allowed);
     challenge_running.set(true);
     game_message.set(format!(
-        "Level {} started. Reach {} signals in {} seconds.",
+        "Level {} started. Hit the glowing target and reach {} signals in {} seconds.",
         clamped_level, target, time_allowed
     ));
 
@@ -219,7 +234,7 @@ fn app() -> Html {
     let max_combo =
         use_state(|| LocalStorage::get("signal_house_max_combo").unwrap_or(0_i32));
     let game_message =
-        use_state(|| "Free play: wake the house and send signals into the sky.".to_string());
+        use_state(|| "Free play: wake the house and tap the target to send signals.".to_string());
 
     let crew_names = use_state(|| {
         LocalStorage::get("signal_house_crew_names").unwrap_or_else(|_| {
@@ -230,6 +245,10 @@ fn app() -> Html {
             ]
         })
     });
+
+    let target_index = use_state(|| 0_usize);
+    let burst_counter = use_state(|| 0_usize);
+    let bursts = use_state(Vec::<Burst>::new);
 
     let ping_audio =
         use_state(|| HtmlAudioElement::new_with_src("assets/audio/ping.wav").unwrap());
@@ -289,7 +308,7 @@ fn app() -> Html {
         })
     };
 
-    let send_signal = {
+    let hit_target = {
         let signals = signals.clone();
         let best_score = best_score.clone();
         let combo = combo.clone();
@@ -303,6 +322,11 @@ fn app() -> Html {
         let game_message = game_message.clone();
         let signal_count_ref = signal_count_ref.clone();
         let last_tap_ms_ref = last_tap_ms_ref.clone();
+        let crew_names = crew_names.clone();
+        let current_level = current_level.clone();
+        let target_index = target_index.clone();
+        let burst_counter = burst_counter.clone();
+        let bursts = bursts.clone();
 
         Callback::from(move |_| {
             ensure_audio_started.emit(());
@@ -316,13 +340,8 @@ fn app() -> Html {
 
             let now = Date::now();
             let last = *last_tap_ms_ref.borrow();
-            let next_combo = if now - last <= 1200.0 {
-                *combo + 1
-            } else {
-                1
-            };
+            let next_combo = if now - last <= 1200.0 { *combo + 1 } else { 1 };
             *last_tap_ms_ref.borrow_mut() = now;
-
             combo.set(next_combo);
 
             if next_combo > *max_combo {
@@ -346,11 +365,47 @@ fn app() -> Html {
                 let _ = LocalStorage::set("signal_house_best_score", next);
             }
 
+            let crew_len = crew_names.len().max(1);
+            let idx = (next as usize) % crew_len;
+            let crew_name = crew_names
+                .get(idx)
+                .cloned()
+                .unwrap_or_else(|| "Crew".to_string());
+
             if bonus > 1 {
-                game_message.set(format!("Combo x{}! Bonus signal burst!", next_combo));
+                game_message.set(format!("{crew_name} boosted the signal! Combo x{next_combo}!"));
             } else {
-                game_message.set("Signal sent.".to_string());
+                game_message.set(format!("{crew_name} locked onto the frequency."));
             }
+
+            let current_target = *target_index;
+            let (x_pct, y_pct) = TARGETS[current_target];
+            let burst_id = *burst_counter + 1;
+            burst_counter.set(burst_id);
+
+            let mut next_bursts = (*bursts).clone();
+            next_bursts.push(Burst {
+                id: burst_id,
+                x_pct,
+                y_pct,
+            });
+            bursts.set(next_bursts);
+
+            let bursts_remove = bursts.clone();
+            Timeout::new(420, move || {
+                let filtered: Vec<Burst> = (*bursts_remove)
+                    .clone()
+                    .into_iter()
+                    .filter(|b| b.id != burst_id)
+                    .collect();
+                bursts_remove.set(filtered);
+            })
+            .forget();
+
+            let level = (*current_level).clamp(1, 3);
+            let offset = 1 + (level % 2);
+            let next_target = (*target_index + offset) % TARGETS.len();
+            target_index.set(next_target);
         })
     };
 
@@ -371,8 +426,7 @@ fn app() -> Html {
             challenge_running.set(false);
             challenge_time_left.set(0);
             combo.set(0);
-            game_message
-                .set("Free play: wake the house and send signals into the sky.".to_string());
+            game_message.set("Free play: wake the house and tap the target to send signals.".to_string());
             *challenge_interval.borrow_mut() = None;
         })
     };
@@ -396,9 +450,7 @@ fn app() -> Html {
             challenge_running.set(false);
             challenge_time_left.set(0);
             combo.set(0);
-            game_message.set(
-                "Story mode: follow the creative spark from Colin’s drawings.".to_string(),
-            );
+            game_message.set("Story mode: follow the creative spark from Colin’s drawings.".to_string());
             *challenge_interval.borrow_mut() = None;
         })
     };
@@ -432,9 +484,11 @@ fn app() -> Html {
         let signal_count_ref = signal_count_ref.clone();
         let last_tap_ms_ref = last_tap_ms_ref.clone();
         let activate_audio = activate_audio.clone();
+        let target_index = target_index.clone();
 
         Callback::from(move |_e: MouseEvent| {
             ensure_audio_started.emit(());
+            target_index.set((Math::floor(Math::random() * TARGETS.len() as f64) as usize) % TARGETS.len());
 
             begin_level(
                 *current_level,
@@ -466,9 +520,11 @@ fn app() -> Html {
         let signal_count_ref = signal_count_ref.clone();
         let last_tap_ms_ref = last_tap_ms_ref.clone();
         let activate_audio = activate_audio.clone();
+        let target_index = target_index.clone();
 
         Callback::from(move |_| {
             ensure_audio_started.emit(());
+            target_index.set((Math::floor(Math::random() * TARGETS.len() as f64) as usize) % TARGETS.len());
 
             begin_level(
                 *current_level,
@@ -500,6 +556,7 @@ fn app() -> Html {
         let game_message = game_message.clone();
         let signal_count_ref = signal_count_ref.clone();
         let last_tap_ms_ref = last_tap_ms_ref.clone();
+        let target_index = target_index.clone();
 
         Callback::from(move |_| {
             signals.set(0);
@@ -509,9 +566,9 @@ fn app() -> Html {
             combo.set(0);
             max_combo.set(0);
             current_level.set(1);
+            target_index.set(0);
             mode.set(Mode::FreePlay);
-            game_message
-                .set("Free play: wake the house and send signals into the sky.".to_string());
+            game_message.set("Free play: wake the house and tap the target to send signals.".to_string());
             *signal_count_ref.borrow_mut() = 0;
             *last_tap_ms_ref.borrow_mut() = 0.0;
             *challenge_interval.borrow_mut() = None;
@@ -549,11 +606,13 @@ fn app() -> Html {
         _ => "mission-banner",
     };
 
+    let (target_x, target_y) = TARGETS[*target_index];
+
     html! {
         <div class="container">
-            <h1>{"🌌 Signal House Lab v5"}</h1>
+            <h1>{"🌌 Signal House Lab v6"}</h1>
             <p class="subtitle">
-                {"A full game version of The Signal House — with levels, combos, story mode, saved crew names, and cinematic signals powered by Colin’s imagination."}
+                {"Now with real gameplay: tap the glowing target, build combos, power up the Signal House, and help the crew send signals into the sky."}
             </p>
 
             <div class="skyline">
@@ -578,6 +637,29 @@ fn app() -> Html {
                     </div>
                 </div>
 
+                <div
+                    class="target-zone"
+                    style={format!("left: {}%; top: {}%;", target_x, target_y)}
+                    onclick={hit_target.clone()}
+                >
+                    <div class="target-core"></div>
+                </div>
+
+                {
+                    for bursts.iter().map(|b| {
+                        html! {
+                            <div
+                                class="signal-burst"
+                                style={format!(
+                                    "left:{}%; top:{}%; animation: burst-rise 0.42s ease-out forwards;",
+                                    b.x_pct,
+                                    b.y_pct
+                                )}
+                            />
+                        }
+                    })
+                }
+
                 <div class="particles">
                     <div class="particle p1"></div>
                     <div class="particle p2"></div>
@@ -595,10 +677,6 @@ fn app() -> Html {
                     <button class="secondary" onclick={start_story}>{"Story Mode"}</button>
                     <button class="ghost" onclick={retry_level}>{"Retry Current Level"}</button>
                     <button class="danger" onclick={reset_score}>{"Reset Progress"}</button>
-                </div>
-
-                <div class="controls" style="margin-top: 12px;">
-                    <button onclick={send_signal}>{"Send Signal"}</button>
                 </div>
 
                 <div class={status_class}>{(*game_message).clone()}</div>
