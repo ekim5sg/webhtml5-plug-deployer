@@ -1,0 +1,39 @@
+body {
+  margin: 0;
+  background: #0b1020;
+  color: white;
+  font-family: Arial;
+  text-align: center;
+}
+
+.container {
+  padding: 20px;
+}
+
+button {
+  padding: 14px;
+  margin: 8px;
+  font-size: 16px;
+  border-radius: 10px;
+  border: none;
+  background: #ffd27a;
+  color: black;
+}
+
+input {
+  padding: 10px;
+  margin: 5px;
+  border-radius: 8px;
+  border: none;
+}
+
+.card {
+  background: #111735;
+  padding: 20px;
+  border-radius: 16px;
+  margin-top: 15px;
+}
+
+.big {
+  font-size: 28px;
+}
