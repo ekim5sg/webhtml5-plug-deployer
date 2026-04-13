@@ -134,6 +134,8 @@ fn begin_level(
     combo: UseStateHandle<i32>,
     current_level: UseStateHandle<usize>,
     game_message: UseStateHandle<String>,
+    level_intro_text: UseStateHandle<String>,
+    show_level_intro: UseStateHandle<bool>,
     challenge_interval: Rc<RefCell<Option<Interval>>>,
     signal_count_ref: Rc<RefCell<i32>>,
     last_tap_ms_ref: Rc<RefCell<f64>>,
@@ -157,6 +159,20 @@ fn begin_level(
         "Level {} started. Hit the glowing target and reach {} signals in {} seconds.",
         clamped_level, target, time_allowed
     ));
+
+    level_intro_text.set(format!(
+        "Level {} — Reach {} signals in {} seconds",
+        clamped_level, target, time_allowed
+    ));
+    show_level_intro.set(true);
+
+    {
+        let show_level_intro = show_level_intro.clone();
+        Timeout::new(1400, move || {
+            show_level_intro.set(false);
+        })
+        .forget();
+    }
 
     safe_play(&activate_audio);
 
@@ -235,6 +251,9 @@ fn app() -> Html {
         use_state(|| LocalStorage::get("signal_house_max_combo").unwrap_or(0_i32));
     let game_message =
         use_state(|| "Free play: wake the house and tap the target to send signals.".to_string());
+
+    let level_intro_text = use_state(String::new);
+    let show_level_intro = use_state(|| false);
 
     let crew_names = use_state(|| {
         LocalStorage::get("signal_house_crew_names").unwrap_or_else(|_| {
@@ -418,6 +437,7 @@ fn app() -> Html {
         let challenge_interval = challenge_interval.clone();
         let combo = combo.clone();
         let game_message = game_message.clone();
+        let show_level_intro = show_level_intro.clone();
 
         Callback::from(move |_| {
             ensure_audio_started.emit(());
@@ -426,6 +446,7 @@ fn app() -> Html {
             challenge_running.set(false);
             challenge_time_left.set(0);
             combo.set(0);
+            show_level_intro.set(false);
             game_message.set("Free play: wake the house and tap the target to send signals.".to_string());
             *challenge_interval.borrow_mut() = None;
         })
@@ -441,6 +462,7 @@ fn app() -> Html {
         let challenge_interval = challenge_interval.clone();
         let combo = combo.clone();
         let game_message = game_message.clone();
+        let show_level_intro = show_level_intro.clone();
 
         Callback::from(move |_| {
             ensure_audio_started.emit(());
@@ -450,6 +472,7 @@ fn app() -> Html {
             challenge_running.set(false);
             challenge_time_left.set(0);
             combo.set(0);
+            show_level_intro.set(false);
             game_message.set("Story mode: follow the creative spark from Colin’s drawings.".to_string());
             *challenge_interval.borrow_mut() = None;
         })
@@ -485,6 +508,8 @@ fn app() -> Html {
         let last_tap_ms_ref = last_tap_ms_ref.clone();
         let activate_audio = activate_audio.clone();
         let target_index = target_index.clone();
+        let level_intro_text = level_intro_text.clone();
+        let show_level_intro = show_level_intro.clone();
 
         Callback::from(move |_e: MouseEvent| {
             ensure_audio_started.emit(());
@@ -499,6 +524,8 @@ fn app() -> Html {
                 combo.clone(),
                 current_level.clone(),
                 game_message.clone(),
+                level_intro_text.clone(),
+                show_level_intro.clone(),
                 challenge_interval.clone(),
                 signal_count_ref.clone(),
                 last_tap_ms_ref.clone(),
@@ -521,6 +548,8 @@ fn app() -> Html {
         let last_tap_ms_ref = last_tap_ms_ref.clone();
         let activate_audio = activate_audio.clone();
         let target_index = target_index.clone();
+        let level_intro_text = level_intro_text.clone();
+        let show_level_intro = show_level_intro.clone();
 
         Callback::from(move |_| {
             ensure_audio_started.emit(());
@@ -535,6 +564,8 @@ fn app() -> Html {
                 combo.clone(),
                 current_level.clone(),
                 game_message.clone(),
+                level_intro_text.clone(),
+                show_level_intro.clone(),
                 challenge_interval.clone(),
                 signal_count_ref.clone(),
                 last_tap_ms_ref.clone(),
@@ -557,6 +588,7 @@ fn app() -> Html {
         let signal_count_ref = signal_count_ref.clone();
         let last_tap_ms_ref = last_tap_ms_ref.clone();
         let target_index = target_index.clone();
+        let show_level_intro = show_level_intro.clone();
 
         Callback::from(move |_| {
             signals.set(0);
@@ -567,6 +599,7 @@ fn app() -> Html {
             max_combo.set(0);
             current_level.set(1);
             target_index.set(0);
+            show_level_intro.set(false);
             mode.set(Mode::FreePlay);
             game_message.set("Free play: wake the house and tap the target to send signals.".to_string());
             *signal_count_ref.borrow_mut() = 0;
@@ -610,9 +643,9 @@ fn app() -> Html {
 
     html! {
         <div class="container">
-            <h1>{"🌌 Signal House Lab v6"}</h1>
+            <h1>{"🌌 Signal House Lab v6.1"}</h1>
             <p class="subtitle">
-                {"Now with real gameplay: tap the glowing target, build combos, power up the Signal House, and help the crew send signals into the sky."}
+                {"Polished gameplay MVP: tap the glowing target, build combos, power up the Signal House, and help the crew send signals into the sky."}
             </p>
 
             <div class="skyline">
@@ -623,6 +656,31 @@ fn app() -> Html {
                     <div class="beam b2"></div>
                     <div class="beam b3"></div>
                 </div>
+
+                {
+                    if *show_level_intro {
+                        html! {
+                            <div style="
+                                position:absolute;
+                                top:10px;
+                                left:50%;
+                                transform:translateX(-50%);
+                                z-index:5;
+                                background:rgba(11,16,32,0.88);
+                                border:1px solid rgba(255,210,122,0.35);
+                                color:#ffd27a;
+                                padding:12px 18px;
+                                border-radius:14px;
+                                font-weight:700;
+                                box-shadow:0 10px 24px rgba(0,0,0,0.28);
+                            ">
+                                {(*level_intro_text).clone()}
+                            </div>
+                        }
+                    } else {
+                        html! {}
+                    }
+                }
 
                 <div class={classes!(
                     "house",
@@ -639,7 +697,7 @@ fn app() -> Html {
 
                 <div
                     class="target-zone"
-                    style={format!("left: {}%; top: {}%;", target_x, target_y)}
+                    style={format!("left: {}%; top: {}%; transition:left 0.22s ease, top 0.22s ease;", target_x, target_y)}
                     onclick={hit_target.clone()}
                 >
                     <div class="target-core"></div>
@@ -680,6 +738,38 @@ fn app() -> Html {
                 </div>
 
                 <div class={status_class}>{(*game_message).clone()}</div>
+
+                {
+                    match &*mode {
+                        Mode::Victory => html! {
+                            <div style="
+                                margin-top:12px;
+                                padding:14px 16px;
+                                border-radius:14px;
+                                background:rgba(124,255,178,0.12);
+                                border:1px solid rgba(124,255,178,0.32);
+                                color:#7cffb2;
+                                font-weight:700;
+                            ">
+                                {"🚀 Mission Complete! The Signal House answered every challenge."}
+                            </div>
+                        },
+                        Mode::GameOver => html! {
+                            <div style="
+                                margin-top:12px;
+                                padding:14px 16px;
+                                border-radius:14px;
+                                background:rgba(255,122,122,0.12);
+                                border:1px solid rgba(255,122,122,0.28);
+                                color:#ffb3b3;
+                                font-weight:700;
+                            ">
+                                {"Try again — tap Retry Current Level and lock onto the signal."}
+                            </div>
+                        },
+                        _ => html! {},
+                    }
+                }
 
                 <div class="stats">
                     <div class="stat">
