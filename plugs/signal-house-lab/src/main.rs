@@ -852,7 +852,37 @@ fn app() -> Html {
                     {format!("Story step {} of {}", *story_step + 1, STORY_STEPS.len())}
                 </p>
 
-                <div class="controls">
+                <div style="
+                    margin: 14px auto 0;
+                    max-width: 760px;
+                    padding: 14px 16px;
+                    border-radius: 14px;
+                    background: rgba(255,255,255,0.04);
+                    border: 1px solid rgba(255,255,255,0.08);
+                    line-height: 1.65;
+                    text-align: left;
+                ">
+                    <p style="margin: 0 0 10px; color: #ffd27a; font-weight: 700;">
+                        {"Full eBook Story"}
+                    </p>
+
+                    <p style="margin: 0 0 10px;">
+                        {"The Signal House is a heartfelt, imagination-powered eBook inspired by Colin G’s original hand-drawn artwork. It tells the story of a mysterious house on a hill that awakens at sunrise and sends signals beyond the sky, celebrating creativity, curiosity, and the idea that even a child’s drawing can spark an entire world."}
+                    </p>
+
+                    <p style="margin: 0;">
+                        <a
+                            href="https://www.webhtml5.info/eBooks/the-signal-house"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style="color:#9ec5ff; font-weight:700; text-decoration:underline;"
+                        >
+                            {"Read the full eBook story"}
+                        </a>
+                    </p>
+                </div>
+
+                <div class="controls" style="margin-top: 14px;">
                     <button class="ghost" onclick={prev_story}>{"Previous"}</button>
                     <button class="secondary" onclick={next_story}>{"Next"}</button>
                 </div>
