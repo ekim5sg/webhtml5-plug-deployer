@@ -227,6 +227,7 @@ h1 {
   animation: targetPulse 1.15s ease-in-out infinite;
   cursor: pointer;
   touch-action: manipulation;
+  transition: left 0.22s ease, top 0.22s ease;
 }
 
 .target-core {
@@ -407,6 +408,7 @@ input[type="text"] {
   margin-top: 12px;
   color: var(--gold);
   font-weight: 700;
+  min-height: 24px;
 }
 
 .status-win {
@@ -417,10 +419,61 @@ input[type="text"] {
   color: var(--red);
 }
 
+.level-banner {
+  margin: 0 auto 10px;
+  display: inline-block;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: rgba(255, 210, 122, 0.16);
+  color: var(--gold);
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  box-shadow: 0 0 20px rgba(255, 210, 122, 0.18);
+}
+
+.result-panel {
+  margin-top: 14px;
+  padding: 18px;
+  border-radius: 18px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.result-panel h3 {
+  margin: 0 0 8px;
+  font-size: 1.4rem;
+}
+
+.result-panel.win h3 {
+  color: var(--green);
+}
+
+.result-panel.lose h3 {
+  color: var(--red);
+}
+
+.combo-callout {
+  margin-top: 10px;
+  color: var(--green);
+  font-weight: 700;
+  min-height: 24px;
+}
+
 .footer-note {
   margin-top: 16px;
   color: var(--muted);
   font-size: 0.95rem;
+}
+
+@keyframes burst-rise {
+  0% {
+    transform: translate(-50%, -50%) scale(0.8);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -180px) scale(1.4);
+    opacity: 0;
+  }
 }
 
 @media (max-width: 860px) {
@@ -451,15 +504,5 @@ input[type="text"] {
 
   .target-core {
     inset: 16px;
-  }
-}
-@keyframes burst-rise {
-  0% {
-    transform: translate(-50%, -50%) scale(0.8);
-    opacity: 1;
-  }
-  100% {
-    transform: translate(-50%, -180px) scale(1.4);
-    opacity: 0;
   }
 }
