@@ -275,11 +275,13 @@ fn app() -> Html {
             let running_handle = challenge_running.clone();
             let interval_ref = challenge_interval.clone();
 
-            let interval = Interval::new(1000, move || {
-                let current = *time_left_handle;
+            let mut remaining = 10_i32;
 
-                if current > 1 {
-                    time_left_handle.set(current - 1);
+            let interval = Interval::new(1000, move || {
+                remaining -= 1;
+
+                if remaining > 0 {
+                    time_left_handle.set(remaining);
                 } else {
                     time_left_handle.set(0);
                     running_handle.set(false);
