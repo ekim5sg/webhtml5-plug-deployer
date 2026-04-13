@@ -1,6 +1,8 @@
 use gloo::timers::callback::{Interval, Timeout};
 use gloo_storage::{LocalStorage, Storage};
 use js_sys::{Date, Math};
+use std::cell::RefCell;
+use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use web_sys::{CanvasRenderingContext2d, HtmlAudioElement, HtmlCanvasElement, HtmlInputElement};
 use yew::prelude::*;
@@ -117,9 +119,9 @@ fn begin_level(
     combo: UseStateHandle<i32>,
     current_level: UseStateHandle<usize>,
     game_message: UseStateHandle<String>,
-    challenge_interval: UseMutRefHandle<Option<Interval>>,
-    signal_count_ref: UseMutRefHandle<i32>,
-    last_tap_ms_ref: UseMutRefHandle<f64>,
+    challenge_interval: Rc<RefCell<Option<Interval>>>,
+    signal_count_ref: Rc<RefCell<i32>>,
+    last_tap_ms_ref: Rc<RefCell<f64>>,
     activate_audio: UseStateHandle<HtmlAudioElement>,
 ) {
     *challenge_interval.borrow_mut() = None;
@@ -214,7 +216,8 @@ fn app() -> Html {
 
     let current_level = use_state(|| 1_usize);
     let combo = use_state(|| 0_i32);
-    let max_combo = use_state(|| LocalStorage::get("signal_house_max_combo").unwrap_or(0_i32));
+    let max_combo =
+        use_state(|| LocalStorage::get("signal_house_max_combo").unwrap_or(0_i32));
     let game_message =
         use_state(|| "Free play: wake the house and send signals into the sky.".to_string());
 
@@ -313,7 +316,11 @@ fn app() -> Html {
 
             let now = Date::now();
             let last = *last_tap_ms_ref.borrow();
-            let next_combo = if now - last <= 1200.0 { *combo + 1 } else { 1 };
+            let next_combo = if now - last <= 1200.0 {
+                *combo + 1
+            } else {
+                1
+            };
             *last_tap_ms_ref.borrow_mut() = now;
 
             combo.set(next_combo);
@@ -364,7 +371,8 @@ fn app() -> Html {
             challenge_running.set(false);
             challenge_time_left.set(0);
             combo.set(0);
-            game_message.set("Free play: wake the house and send signals into the sky.".to_string());
+            game_message
+                .set("Free play: wake the house and send signals into the sky.".to_string());
             *challenge_interval.borrow_mut() = None;
         })
     };
@@ -388,7 +396,9 @@ fn app() -> Html {
             challenge_running.set(false);
             challenge_time_left.set(0);
             combo.set(0);
-            game_message.set("Story mode: follow the creative spark from Colin’s drawings.".to_string());
+            game_message.set(
+                "Story mode: follow the creative spark from Colin’s drawings.".to_string(),
+            );
             *challenge_interval.borrow_mut() = None;
         })
     };
@@ -500,7 +510,8 @@ fn app() -> Html {
             max_combo.set(0);
             current_level.set(1);
             mode.set(Mode::FreePlay);
-            game_message.set("Free play: wake the house and send signals into the sky.".to_string());
+            game_message
+                .set("Free play: wake the house and send signals into the sky.".to_string());
             *signal_count_ref.borrow_mut() = 0;
             *last_tap_ms_ref.borrow_mut() = 0.0;
             *challenge_interval.borrow_mut() = None;
