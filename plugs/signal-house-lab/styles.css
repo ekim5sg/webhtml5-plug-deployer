@@ -1,13 +1,53 @@
 body {
   margin: 0;
-  background: #0b1020;
+  background: radial-gradient(circle at top, #1a237e, #0b1020);
   color: white;
   font-family: Arial;
-  text-align: center;
+  overflow-x: hidden;
 }
 
 .container {
+  max-width: 900px;
+  margin: auto;
   padding: 20px;
+  text-align: center;
+}
+
+.house {
+  width: 120px;
+  height: 120px;
+  margin: 20px auto;
+  border-radius: 20px;
+  background: linear-gradient(45deg, #ffd27a, #ff9f1c);
+  box-shadow: 0 0 20px rgba(255,210,122,0.4);
+  transition: all 0.2s;
+}
+
+.house.active {
+  transform: scale(1.1);
+  box-shadow: 0 0 40px rgba(255,210,122,0.8);
+}
+
+.beam {
+  width: 4px;
+  height: 100px;
+  margin: auto;
+  background: #ffd27a;
+  opacity: 0;
+  animation: beam 1s infinite;
+}
+
+@keyframes beam {
+  0% { opacity: 0; transform: translateY(0); }
+  50% { opacity: 1; transform: translateY(-10px); }
+  100% { opacity: 0; transform: translateY(-20px); }
+}
+
+.card {
+  background: #111735;
+  padding: 20px;
+  border-radius: 16px;
+  margin-top: 15px;
 }
 
 button {
@@ -17,21 +57,6 @@ button {
   border-radius: 10px;
   border: none;
   background: #ffd27a;
-  color: black;
-}
-
-input {
-  padding: 10px;
-  margin: 5px;
-  border-radius: 8px;
-  border: none;
-}
-
-.card {
-  background: #111735;
-  padding: 20px;
-  border-radius: 16px;
-  margin-top: 15px;
 }
 
 .big {
