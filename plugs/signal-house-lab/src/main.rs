@@ -108,6 +108,97 @@ fn init_stars() {
     .forget();
 }
 
+fn begin_level(
+    level: usize,
+    mode: UseStateHandle<Mode>,
+    signals: UseStateHandle<i32>,
+    challenge_time_left: UseStateHandle<i32>,
+    challenge_running: UseStateHandle<bool>,
+    combo: UseStateHandle<i32>,
+    current_level: UseStateHandle<usize>,
+    game_message: UseStateHandle<String>,
+    challenge_interval: UseMutRefHandle<Option<Interval>>,
+    signal_count_ref: UseMutRefHandle<i32>,
+    last_tap_ms_ref: UseMutRefHandle<f64>,
+    activate_audio: UseStateHandle<HtmlAudioElement>,
+) {
+    *challenge_interval.borrow_mut() = None;
+
+    let clamped_level = level.clamp(1, 3);
+    let target = LEVEL_TARGETS[clamped_level - 1];
+    let time_allowed = LEVEL_TIMES[clamped_level - 1];
+
+    mode.set(Mode::Challenge);
+    current_level.set(clamped_level);
+    signals.set(0);
+    *signal_count_ref.borrow_mut() = 0;
+    combo.set(0);
+    *last_tap_ms_ref.borrow_mut() = 0.0;
+    challenge_time_left.set(time_allowed);
+    challenge_running.set(true);
+    game_message.set(format!(
+        "Level {} started. Reach {} signals in {} seconds.",
+        clamped_level, target, time_allowed
+    ));
+
+    safe_play(&activate_audio);
+
+    let time_left_handle = challenge_time_left.clone();
+    let running_handle = challenge_running.clone();
+    let interval_ref = challenge_interval.clone();
+    let level_handle = current_level.clone();
+    let mode_handle = mode.clone();
+    let message_handle = game_message.clone();
+    let activate_audio_handle = activate_audio.clone();
+    let signal_count_ref_handle = signal_count_ref.clone();
+
+    let mut remaining = time_allowed;
+    let target_for_level = target;
+
+    let interval = Interval::new(1000, move || {
+        remaining -= 1;
+
+        if remaining > 0 {
+            time_left_handle.set(remaining);
+        } else {
+            time_left_handle.set(0);
+            running_handle.set(false);
+            *interval_ref.borrow_mut() = None;
+
+            let final_score = *signal_count_ref_handle.borrow();
+            let current = *level_handle;
+
+            if final_score >= target_for_level {
+                if current < 3 {
+                    let next_level = current + 1;
+                    level_handle.set(next_level);
+                    mode_handle.set(Mode::FreePlay);
+                    safe_play(&activate_audio_handle);
+                    message_handle.set(format!(
+                        "Level {} complete! You reached {} signals. Get ready for Level {}.",
+                        current, final_score, next_level
+                    ));
+                } else {
+                    mode_handle.set(Mode::Victory);
+                    safe_play(&activate_audio_handle);
+                    message_handle.set(format!(
+                        "Victory! The Signal House completed all missions with {} signals.",
+                        final_score
+                    ));
+                }
+            } else {
+                mode_handle.set(Mode::GameOver);
+                message_handle.set(format!(
+                    "Mission failed. You needed {} signals but reached {}.",
+                    target_for_level, final_score
+                ));
+            }
+        }
+    });
+
+    *challenge_interval.borrow_mut() = Some(interval);
+}
+
 #[function_component(App)]
 fn app() -> Html {
     let mode = use_state(|| Mode::FreePlay);
@@ -323,7 +414,6 @@ fn app() -> Html {
         let signals = signals.clone();
         let challenge_time_left = challenge_time_left.clone();
         let challenge_running = challenge_running.clone();
-        let activate_audio = activate_audio.clone();
         let ensure_audio_started = ensure_audio_started.clone();
         let challenge_interval = challenge_interval.clone();
         let current_level = current_level.clone();
@@ -331,83 +421,25 @@ fn app() -> Html {
         let game_message = game_message.clone();
         let signal_count_ref = signal_count_ref.clone();
         let last_tap_ms_ref = last_tap_ms_ref.clone();
+        let activate_audio = activate_audio.clone();
 
         Callback::from(move |_e: MouseEvent| {
             ensure_audio_started.emit(());
-            safe_play(&activate_audio);
 
-            *challenge_interval.borrow_mut() = None;
-
-            let level = (*current_level).clamp(1, 3);
-            let target = LEVEL_TARGETS[level - 1];
-            let time_allowed = LEVEL_TIMES[level - 1];
-
-            mode.set(Mode::Challenge);
-            signals.set(0);
-            *signal_count_ref.borrow_mut() = 0;
-            combo.set(0);
-            *last_tap_ms_ref.borrow_mut() = 0.0;
-            challenge_time_left.set(time_allowed);
-            challenge_running.set(true);
-            game_message.set(format!(
-                "Level {} started. Reach {} signals in {} seconds.",
-                level, target, time_allowed
-            ));
-
-            let time_left_handle = challenge_time_left.clone();
-            let running_handle = challenge_running.clone();
-            let interval_ref = challenge_interval.clone();
-            let level_handle = current_level.clone();
-            let mode_handle = mode.clone();
-            let message_handle = game_message.clone();
-            let activate_audio = activate_audio.clone();
-            let signal_count_ref = signal_count_ref.clone();
-
-            let mut remaining = time_allowed;
-            let target_for_level = target;
-
-            let interval = Interval::new(1000, move || {
-                remaining -= 1;
-
-                if remaining > 0 {
-                    time_left_handle.set(remaining);
-                } else {
-                    time_left_handle.set(0);
-                    running_handle.set(false);
-                    *interval_ref.borrow_mut() = None;
-
-                    let final_score = *signal_count_ref.borrow();
-                    let level = *level_handle;
-
-                    if final_score >= target_for_level {
-                        if level < 3 {
-                            let next_level = level + 1;
-                            level_handle.set(next_level);
-                            mode_handle.set(Mode::FreePlay);
-                            safe_play(&activate_audio);
-                            message_handle.set(format!(
-                                "Level {} complete! You reached {} signals. Get ready for Level {}.",
-                                level, final_score, next_level
-                            ));
-                        } else {
-                            mode_handle.set(Mode::Victory);
-                            safe_play(&activate_audio);
-                            message_handle.set(format!(
-                                "Victory! The Signal House completed all missions with {} signals.",
-                                final_score
-                            ));
-                        }
-                    } else {
-                        mode_handle.set(Mode::GameOver);
-                        message_handle.set(format!(
-                            "Mission failed. You needed {} signals but reached {}.",
-                            target_for_level, final_score
-                        ));
-                    }
-                }
-            });
-
-            *challenge_interval.borrow_mut() = Some(interval);
+            begin_level(
+                *current_level,
+                mode.clone(),
+                signals.clone(),
+                challenge_time_left.clone(),
+                challenge_running.clone(),
+                combo.clone(),
+                current_level.clone(),
+                game_message.clone(),
+                challenge_interval.clone(),
+                signal_count_ref.clone(),
+                last_tap_ms_ref.clone(),
+                activate_audio.clone(),
+            );
         })
     };
 
@@ -416,7 +448,6 @@ fn app() -> Html {
         let signals = signals.clone();
         let challenge_time_left = challenge_time_left.clone();
         let challenge_running = challenge_running.clone();
-        let activate_audio = activate_audio.clone();
         let ensure_audio_started = ensure_audio_started.clone();
         let challenge_interval = challenge_interval.clone();
         let current_level = current_level.clone();
@@ -424,83 +455,25 @@ fn app() -> Html {
         let game_message = game_message.clone();
         let signal_count_ref = signal_count_ref.clone();
         let last_tap_ms_ref = last_tap_ms_ref.clone();
+        let activate_audio = activate_audio.clone();
 
         Callback::from(move |_| {
             ensure_audio_started.emit(());
-            safe_play(&activate_audio);
 
-            *challenge_interval.borrow_mut() = None;
-
-            let level = (*current_level).clamp(1, 3);
-            let target = LEVEL_TARGETS[level - 1];
-            let time_allowed = LEVEL_TIMES[level - 1];
-
-            mode.set(Mode::Challenge);
-            signals.set(0);
-            *signal_count_ref.borrow_mut() = 0;
-            combo.set(0);
-            *last_tap_ms_ref.borrow_mut() = 0.0;
-            challenge_time_left.set(time_allowed);
-            challenge_running.set(true);
-            game_message.set(format!(
-                "Level {} restarted. Reach {} signals in {} seconds.",
-                level, target, time_allowed
-            ));
-
-            let time_left_handle = challenge_time_left.clone();
-            let running_handle = challenge_running.clone();
-            let interval_ref = challenge_interval.clone();
-            let level_handle = current_level.clone();
-            let mode_handle = mode.clone();
-            let message_handle = game_message.clone();
-            let activate_audio = activate_audio.clone();
-            let signal_count_ref = signal_count_ref.clone();
-
-            let mut remaining = time_allowed;
-            let target_for_level = target;
-
-            let interval = Interval::new(1000, move || {
-                remaining -= 1;
-
-                if remaining > 0 {
-                    time_left_handle.set(remaining);
-                } else {
-                    time_left_handle.set(0);
-                    running_handle.set(false);
-                    *interval_ref.borrow_mut() = None;
-
-                    let final_score = *signal_count_ref.borrow();
-                    let level = *level_handle;
-
-                    if final_score >= target_for_level {
-                        if level < 3 {
-                            let next_level = level + 1;
-                            level_handle.set(next_level);
-                            mode_handle.set(Mode::FreePlay);
-                            safe_play(&activate_audio);
-                            message_handle.set(format!(
-                                "Level {} complete! You reached {} signals. Get ready for Level {}.",
-                                level, final_score, next_level
-                            ));
-                        } else {
-                            mode_handle.set(Mode::Victory);
-                            safe_play(&activate_audio);
-                            message_handle.set(format!(
-                                "Victory! The Signal House completed all missions with {} signals.",
-                                final_score
-                            ));
-                        }
-                    } else {
-                        mode_handle.set(Mode::GameOver);
-                        message_handle.set(format!(
-                            "Mission failed. You needed {} signals but reached {}.",
-                            target_for_level, final_score
-                        ));
-                    }
-                }
-            });
-
-            *challenge_interval.borrow_mut() = Some(interval);
+            begin_level(
+                *current_level,
+                mode.clone(),
+                signals.clone(),
+                challenge_time_left.clone(),
+                challenge_running.clone(),
+                combo.clone(),
+                current_level.clone(),
+                game_message.clone(),
+                challenge_interval.clone(),
+                signal_count_ref.clone(),
+                last_tap_ms_ref.clone(),
+                activate_audio.clone(),
+            );
         })
     };
 
