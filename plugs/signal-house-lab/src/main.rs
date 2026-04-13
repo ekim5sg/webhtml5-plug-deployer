@@ -1,6 +1,7 @@
 use gloo::timers::callback::{Interval, Timeout};
 use gloo_storage::{LocalStorage, Storage};
 use js_sys::Math;
+use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
 use web_sys::{CanvasRenderingContext2d, HtmlAudioElement, HtmlCanvasElement, HtmlInputElement};
@@ -136,6 +137,9 @@ fn app() -> Html {
         a
     });
 
+    // Holds the active challenge timer so we can cancel/replace it cleanly.
+    let challenge_interval = use_mut_ref(|| Option::<Interval>::None);
+
     {
         use_effect(|| {
             init_stars();
@@ -201,6 +205,7 @@ fn app() -> Html {
         let challenge_time_left = challenge_time_left.clone();
         let activate_audio = activate_audio.clone();
         let ensure_audio_started = ensure_audio_started.clone();
+        let challenge_interval = challenge_interval.clone();
 
         Callback::from(move |_| {
             ensure_audio_started.emit(());
@@ -208,20 +213,31 @@ fn app() -> Html {
             mode.set(Mode::FreePlay);
             challenge_running.set(false);
             challenge_time_left.set(0);
+
+            // Stop any active timer.
+            *challenge_interval.borrow_mut() = None;
         })
     };
 
     let start_story = {
         let mode = mode.clone();
         let story_step = story_step.clone();
+        let challenge_running = challenge_running.clone();
+        let challenge_time_left = challenge_time_left.clone();
         let activate_audio = activate_audio.clone();
         let ensure_audio_started = ensure_audio_started.clone();
+        let challenge_interval = challenge_interval.clone();
 
         Callback::from(move |_| {
             ensure_audio_started.emit(());
             safe_play(&activate_audio);
             mode.set(Mode::Story);
             story_step.set(0);
+            challenge_running.set(false);
+            challenge_time_left.set(0);
+
+            // Stop any active timer.
+            *challenge_interval.borrow_mut() = None;
         })
     };
 
@@ -248,33 +264,37 @@ fn app() -> Html {
         let challenge_running = challenge_running.clone();
         let activate_audio = activate_audio.clone();
         let ensure_audio_started = ensure_audio_started.clone();
+        let challenge_interval = challenge_interval.clone();
 
         Callback::from(move |_| {
             ensure_audio_started.emit(());
             safe_play(&activate_audio);
+
+            // Cancel any previous interval before starting a new one.
+            *challenge_interval.borrow_mut() = None;
 
             mode.set(Mode::Challenge);
             signals.set(0);
             challenge_time_left.set(10);
             challenge_running.set(true);
 
-            let challenge_time_left = challenge_time_left.clone();
-            let challenge_running = challenge_running.clone();
+            let time_left_handle = challenge_time_left.clone();
+            let running_handle = challenge_running.clone();
+            let interval_ref = challenge_interval.clone();
 
-            Interval::new(1000, move || {
-                if !*challenge_running {
-                    return;
-                }
+            let interval = Interval::new(1000, move || {
+                let current = *time_left_handle;
 
-                let current = *challenge_time_left;
                 if current > 1 {
-                    challenge_time_left.set(current - 1);
+                    time_left_handle.set(current - 1);
                 } else {
-                    challenge_time_left.set(0);
-                    challenge_running.set(false);
+                    time_left_handle.set(0);
+                    running_handle.set(false);
+                    *interval_ref.borrow_mut() = None;
                 }
-            })
-            .forget();
+            });
+
+            *challenge_interval.borrow_mut() = Some(interval);
         })
     };
 
@@ -283,12 +303,14 @@ fn app() -> Html {
         let best_score = best_score.clone();
         let challenge_time_left = challenge_time_left.clone();
         let challenge_running = challenge_running.clone();
+        let challenge_interval = challenge_interval.clone();
 
         Callback::from(move |_| {
             signals.set(0);
             best_score.set(0);
             challenge_time_left.set(0);
             challenge_running.set(false);
+            *challenge_interval.borrow_mut() = None;
             let _ = LocalStorage::set("signal_house_best_score", 0_i32);
         })
     };
@@ -308,9 +330,13 @@ fn app() -> Html {
 
     let current_story_text = STORY_STEPS[*story_step];
     let mission_banner = match (&*mode, *challenge_running, *challenge_time_left) {
-        (Mode::Challenge, true, t) => format!("Challenge live: send as many signals as you can in {t} seconds."),
+        (Mode::Challenge, true, t) => {
+            format!("Challenge live: send as many signals as you can in {t} seconds.")
+        }
         (Mode::Challenge, false, 0) => "Challenge complete. Great job, crew.".to_string(),
-        (Mode::Story, _, _) => "Story mode: follow the creative spark from Colin’s drawings.".to_string(),
+        (Mode::Story, _, _) => {
+            "Story mode: follow the creative spark from Colin’s drawings.".to_string()
+        }
         _ => "Free play: wake the house and send signals into the sky.".to_string(),
     };
 
