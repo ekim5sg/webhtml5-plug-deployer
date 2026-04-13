@@ -1,9 +1,7 @@
 use gloo::timers::callback::{Interval, Timeout};
 use gloo_storage::{LocalStorage, Storage};
 use js_sys::Math;
-use std::rc::Rc;
 use wasm_bindgen::JsCast;
-use wasm_bindgen::JsValue;
 use web_sys::{CanvasRenderingContext2d, HtmlAudioElement, HtmlCanvasElement, HtmlInputElement};
 use yew::prelude::*;
 
@@ -37,7 +35,7 @@ fn draw_starfield(canvas: &HtmlCanvasElement, ctx: &CanvasRenderingContext2d) {
     let width = canvas.width() as f64;
     let height = canvas.height() as f64;
 
-    ctx.set_fill_style(&JsValue::from_str("#0b1020"));
+    ctx.set_fill_style_str("#0b1020");
     ctx.fill_rect(0.0, 0.0, width, height);
 
     for _ in 0..70 {
@@ -46,7 +44,7 @@ fn draw_starfield(canvas: &HtmlCanvasElement, ctx: &CanvasRenderingContext2d) {
         let size = 1.0 + (Math::random() * 2.2);
         let alpha = 0.35 + (Math::random() * 0.65);
         let color = format!("rgba(255,255,255,{alpha})");
-        ctx.set_fill_style(&JsValue::from_str(&color));
+        ctx.set_fill_style_str(&color);
         ctx.fill_rect(x, y, size, size);
     }
 }
@@ -109,7 +107,8 @@ fn init_stars() {
 fn app() -> Html {
     let mode = use_state(|| Mode::FreePlay);
     let signals = use_state(|| 0_i32);
-    let best_score = use_state(|| LocalStorage::get("signal_house_best_score").unwrap_or(0_i32));
+    let best_score =
+        use_state(|| LocalStorage::get("signal_house_best_score").unwrap_or(0_i32));
     let challenge_time_left = use_state(|| 0_i32);
     let challenge_running = use_state(|| false);
     let active_flash = use_state(|| false);
@@ -137,7 +136,6 @@ fn app() -> Html {
         a
     });
 
-    // Holds the active challenge timer so we can cancel/replace it cleanly.
     let challenge_interval = use_mut_ref(|| Option::<Interval>::None);
 
     {
@@ -213,8 +211,6 @@ fn app() -> Html {
             mode.set(Mode::FreePlay);
             challenge_running.set(false);
             challenge_time_left.set(0);
-
-            // Stop any active timer.
             *challenge_interval.borrow_mut() = None;
         })
     };
@@ -235,8 +231,6 @@ fn app() -> Html {
             story_step.set(0);
             challenge_running.set(false);
             challenge_time_left.set(0);
-
-            // Stop any active timer.
             *challenge_interval.borrow_mut() = None;
         })
     };
@@ -270,7 +264,6 @@ fn app() -> Html {
             ensure_audio_started.emit(());
             safe_play(&activate_audio);
 
-            // Cancel any previous interval before starting a new one.
             *challenge_interval.borrow_mut() = None;
 
             mode.set(Mode::Challenge);
