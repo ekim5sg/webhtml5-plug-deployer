@@ -1,3 +1,4 @@
+use web_sys::HtmlAudioElement;
 use yew::prelude::*;
 
 fn status_message(score: i32) -> &'static str {
@@ -15,6 +16,23 @@ fn status_message(score: i32) -> &'static str {
 #[function_component(App)]
 fn app() -> Html {
     let score = use_state(|| 0);
+    let victory_played = use_state(|| false);
+
+    {
+        let score = score.clone();
+        let victory_played = victory_played.clone();
+
+        use_effect_with(((*score), (*victory_played)), move |(score, already_played)| {
+            if *score >= 9 && !*already_played {
+                if let Ok(audio) = HtmlAudioElement::new_with_src("assets/audio/lesson-victory.wav") {
+                    let _ = audio.play();
+                    victory_played.set(true);
+                }
+            }
+
+            || ()
+        });
+    }
 
     let on_increase = {
         let score = score.clone();
@@ -23,7 +41,12 @@ fn app() -> Html {
 
     let on_reset = {
         let score = score.clone();
-        Callback::from(move |_| score.set(0))
+        let victory_played = victory_played.clone();
+
+        Callback::from(move |_| {
+            score.set(0);
+            victory_played.set(false);
+        })
     };
 
     html! {
@@ -43,7 +66,7 @@ fn app() -> Html {
                     <div class="status">{ status_message(*score) }</div>
 
                     <p class="helper">
-                        { "This is the heart of the lesson: state changes, Rust logic runs, and the browser updates immediately." }
+                        { "When the score reaches Launch Ready, the lesson plays a victory WAV once." }
                     </p>
 
                     <div class="button-row">
@@ -54,7 +77,7 @@ fn app() -> Html {
                     <div class="badges">
                         <span class="badge">{ "Simple state" }</span>
                         <span class="badge">{ "if / else logic" }</span>
-                        <span class="badge">{ "Browser feedback" }</span>
+                        <span class="badge">{ "Victory WAV" }</span>
                     </div>
                 </section>
             </section>
