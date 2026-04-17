@@ -3,6 +3,7 @@ use gloo::timers::callback::Interval;
 use js_sys::Math;
 use web_sys::{window, KeyboardEvent};
 use yew::prelude::*;
+use wasm_bindgen::JsCast;
 
 const PLANE_X: f64 = 18.0;
 const TICK_MS: u32 = 50;
