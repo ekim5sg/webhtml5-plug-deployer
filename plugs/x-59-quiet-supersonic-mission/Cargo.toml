@@ -1,0 +1,17 @@
+[package]
+name = "x59_quiet_supersonic_mission"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+yew = { version = "0.21", features = ["csr"] }
+gloo = "0.11"
+js-sys = "0.3"
+wasm-bindgen = "0.2"
+
+[dependencies.web-sys]
+version = "0.3"
+features = [
+  "Window",
+  "KeyboardEvent",
+]
