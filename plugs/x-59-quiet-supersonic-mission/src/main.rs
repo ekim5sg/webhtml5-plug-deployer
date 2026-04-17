@@ -691,8 +691,8 @@ fn app() -> Html {
 
     html! {
         <div class="app-shell">
-            <audio ref={engine_audio_ref} src="/assets/audio/jet-engine.mp3" preload="auto" />
-            <audio ref={victory_audio_ref} src="/assets/audio/victory.wav" preload="auto" />
+            <audio ref={engine_audio_ref} src="./assets/audio/jet-engine.mp3" preload="auto" />
+            <audio ref={victory_audio_ref} src="./assets/audio/victory.wav" preload="auto" />
 
             <section class="hero">
                 <div class="eyebrow">{"MikeGyver Studio • Rust iPhone Compiler Build"}</div>
