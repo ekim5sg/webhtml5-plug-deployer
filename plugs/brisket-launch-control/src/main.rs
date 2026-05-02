@@ -34,7 +34,10 @@ fn play_theme() {
         };
 
         audio.set_id("bbq-theme-audio");
-        audio.set_src("/brisket-launch-control/assets/brisket-launch-control/audio/memorial-bbq-theme.mp3");
+
+        // ✅ FIXED PATH
+        audio.set_src("/brisket-launch-control/assets/audio/memorial-bbq-theme.mp3");
+
         audio.set_loop(true);
         audio.set_autoplay(false);
         audio.set_preload("auto");
@@ -48,7 +51,11 @@ fn play_theme() {
     };
 
     audio.set_current_time(0.0);
-    let _ = audio.play();
+
+    // Optional debug (safe to keep)
+    if let Err(err) = audio.play() {
+        web_sys::console::log_1(&format!("Audio play failed: {:?}", err).into());
+    }
 }
 
 #[function_component(App)]
@@ -72,7 +79,6 @@ fn app() -> Html {
     }
 
     // Friday before Memorial Day 2026: May 22, 2026, 5 PM Texas time.
-    // May is daylight time in Texas, so this is Central time UTC-05:00.
     let launch = Date::new(&"2026-05-22T17:00:00-05:00".into()).get_time();
     let remaining = (launch - *now).max(0.0) as u64 / 1000;
 
@@ -85,14 +91,8 @@ fn app() -> Html {
     let kid_count = *kids as f64;
 
     let raw_needed = match *mode {
-        FoodMode::Brisket => {
-            // Brisket math: 1 lb raw per adult, 0.5 lb per child, then +20%.
-            (adult_count * 1.0 + kid_count * 0.5) * 1.20
-        }
-        FoodMode::Tofu => {
-            // Vegetarian payload: 0.5 lb tofu adult, 0.25 child, then +20%.
-            (adult_count * 0.5 + kid_count * 0.25) * 1.20
-        }
+        FoodMode::Brisket => (adult_count * 1.0 + kid_count * 0.5) * 1.20,
+        FoodMode::Tofu => (adult_count * 0.5 + kid_count * 0.25) * 1.20,
     };
 
     let cooked_estimate = match *mode {
