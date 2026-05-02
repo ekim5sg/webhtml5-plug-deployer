@@ -1,0 +1,19 @@
+[package]
+name = "brisket-launch-control"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+yew = { version = "0.21", features = ["csr"] }
+gloo = { version = "0.11", features = ["timers"] }
+js-sys = "0.3"
+wasm-bindgen = "0.2"
+
+web-sys = { version = "0.3", features = [
+    "Document",
+    "Element",
+    "HtmlAudioElement",
+    "HtmlElement",
+    "HtmlInputElement",
+    "Window"
+] }
