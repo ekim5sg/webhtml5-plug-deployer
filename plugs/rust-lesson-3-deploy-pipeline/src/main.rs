@@ -557,6 +557,9 @@ fn app() -> Html {
                     <a href="#part2">{ "Trunk" }</a>
                     <a href="#part3">{ "filehash = false" }</a>
                     <a href="#source-code">{ "Source Code" }</a>
+                    <a href="/rust-lesson-3-deploy-pipeline/rust-lesson-3-deploy-pipeline.zip">
+                        { "⬇ Download Lesson ZIP" }
+                    </a>
                     <a href="#outro">{ "Outro" }</a>
                 </div>
 
@@ -624,6 +627,15 @@ filehash = false"# }</pre>
                 <p>
                     { "These are the four files used in the Rust iPhone Compiler pattern. Students can review the structure, compare the files to the live app, and understand how the lesson was built." }
                 </p>
+
+                <div class="callout">
+                    <strong>{ "Download the complete lesson project:" }</strong>
+                    <p>
+                        <a href="/rust-lesson-3-deploy-pipeline/rust-lesson-3-deploy-pipeline.zip">
+                            { "/rust-lesson-3-deploy-pipeline/rust-lesson-3-deploy-pipeline.zip" }
+                        </a>
+                    </p>
+                </div>
 
                 <div class="source-grid">
                     { for SOURCE_FILES.iter().map(render_source_file) }
