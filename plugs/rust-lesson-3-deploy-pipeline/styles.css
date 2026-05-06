@@ -138,6 +138,17 @@ audio {
   width: 100%;
 }
 
+.transcript {
+  margin-top: 18px;
+}
+
+.transcript p {
+  margin: 0 0 12px;
+  color: var(--muted);
+  line-height: 1.75;
+  font-size: 1.02rem;
+}
+
 .code-panel {
   margin-top: 16px;
   padding: 16px;
