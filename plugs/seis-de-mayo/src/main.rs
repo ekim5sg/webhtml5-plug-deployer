@@ -1,5 +1,7 @@
 use yew::prelude::*;
 
+const SONG_URL: &str = "./assets/audio/puebla-victory-loop.mp3";
+
 const QUOTES: [&str; 8] = [
     "Your taco energy level is approaching dangerous levels.",
     "WARNING: Guacamole reserves critically low.",
@@ -33,6 +35,19 @@ fn app() -> Html {
 
     html! {
         <main class="card">
+            <audio
+                class="music-player"
+                src={SONG_URL}
+                autoplay=true
+                loop=true
+                controls=true
+                preload="auto"
+            />
+
+            <div class="music-note">
+                { "🎵 Puebla victory loop loaded. If your browser blocks autoplay, tap play to begin the fiesta." }
+            </div>
+
             <h1 class="title">{ "🌮 Seis de Mayo" }</h1>
 
             <p class="subtitle">
