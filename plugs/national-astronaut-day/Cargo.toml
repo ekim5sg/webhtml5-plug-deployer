@@ -1,0 +1,10 @@
+[package]
+name = "national-astronaut-day"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+yew = { version = "0.21", features = ["csr"] }
+gloo = "0.11"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = ["HtmlElement", "Window", "Document"] }
