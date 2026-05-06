@@ -1,5 +1,5 @@
-use js_sys::Math;
-use web_sys::HtmlAudioElement;
+use js_sys::{Array, Math};
+use web_sys::{Blob, BlobPropertyBag, HtmlAudioElement, Url};
 use yew::prelude::*;
 
 #[derive(Clone, PartialEq)]
@@ -72,11 +72,18 @@ fn open_badge_svg(role: &Role) {
         role.name
     );
 
-    let encoded = js_sys::encode_uri_component(&svg);
-    let url = format!("data:image/svg+xml;charset=utf-8,{}", encoded);
+    let parts = Array::new();
+    parts.push(&svg.into());
 
-    if let Some(window) = web_sys::window() {
-        let _ = window.open_with_url(&url);
+    let mut options = BlobPropertyBag::new();
+    options.type_("image/svg+xml");
+
+    if let Ok(blob) = Blob::new_with_str_sequence_and_options(&parts, &options) {
+        if let Ok(url) = Url::create_object_url_with_blob(&blob) {
+            if let Some(window) = web_sys::window() {
+                let _ = window.open_with_url(&url);
+            }
+        }
     }
 }
 
