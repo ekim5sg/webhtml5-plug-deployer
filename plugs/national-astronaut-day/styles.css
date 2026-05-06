@@ -15,8 +15,13 @@ body {
   overflow-x: hidden;
 }
 
-button {
+button,
+a {
   font: inherit;
+}
+
+a {
+  text-decoration: none;
 }
 
 .app {
@@ -141,6 +146,12 @@ h1 {
   border: 1px solid rgba(255, 255, 255, 0.22);
 }
 
+.music-status {
+  margin-top: 14px;
+  color: #bfeaff;
+  font-size: 0.95rem;
+}
+
 .panel-grid {
   display: grid;
   grid-template-columns: 1fr;
@@ -181,6 +192,7 @@ h1 {
   color: #f8fbff;
   border: 1px solid rgba(255, 255, 255, 0.15);
   text-align: left;
+  box-shadow: none;
 }
 
 .role-button.active {
@@ -255,6 +267,7 @@ h1 {
 
 .row strong {
   color: #ffffff;
+  text-align: right;
 }
 
 .challenge {
@@ -282,4 +295,28 @@ h1 {
   color: #9db4d6;
   padding: 18px 0 4px;
   font-size: 0.9rem;
+}
+
+@media (max-width: 560px) {
+  .app {
+    padding: 16px;
+  }
+
+  .role-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .mission-screen {
+    min-height: 260px;
+  }
+
+  .earth {
+    width: 145px;
+    height: 145px;
+  }
+
+  .orbit {
+    width: 220px;
+    height: 220px;
+  }
 }
