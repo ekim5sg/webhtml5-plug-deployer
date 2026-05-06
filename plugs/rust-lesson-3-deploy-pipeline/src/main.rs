@@ -7,6 +7,12 @@ struct Chapter {
     lines: &'static [&'static str],
 }
 
+struct SourceFile {
+    title: &'static str,
+    language: &'static str,
+    code: &'static str,
+}
+
 const CHAPTERS: [Chapter; 5] = [
     Chapter {
         id: "intro",
@@ -209,6 +215,329 @@ const CHAPTERS: [Chapter; 5] = [
     },
 ];
 
+const INDEX_HTML_CODE: &str = r##"<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="theme-color" content="#0b1020" />
+
+  <title>Rust Lesson 3 - Deploy Pipeline</title>
+
+  <link data-trunk rel="css" href="styles.css" />
+  <link data-trunk rel="rust" />
+</head>
+<body>
+  <div id="app"></div>
+</body>
+</html>"##;
+
+const CARGO_TOML_CODE: &str = r#"[package]
+name = "rust-lesson-3-deploy-pipeline"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+yew = { version = "0.21", features = ["csr"] }"#;
+
+const STYLES_CSS_CODE: &str = r##":root {
+  --bg: #0b1020;
+  --panel: rgba(255,255,255,0.08);
+  --panel-strong: rgba(255,255,255,0.13);
+  --border: rgba(255,255,255,0.18);
+  --text: #f8fafc;
+  --muted: #cbd5e1;
+  --accent: #38bdf8;
+  --accent2: #facc15;
+  --green: #22c55e;
+  --danger: #fb7185;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background:
+    radial-gradient(circle at top left, rgba(56,189,248,0.20), transparent 34%),
+    radial-gradient(circle at top right, rgba(250,204,21,0.16), transparent 34%),
+    linear-gradient(180deg, #10172a 0%, var(--bg) 70%);
+  color: var(--text);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+a {
+  color: var(--accent);
+}
+
+.app-shell {
+  width: min(1100px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 28px 0 48px;
+}
+
+.hero {
+  padding: 34px;
+  border: 1px solid var(--border);
+  border-radius: 28px;
+  background: rgba(255,255,255,0.07);
+  box-shadow: 0 24px 80px rgba(0,0,0,0.42);
+}
+
+.badge {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 13px;
+  border-radius: 999px;
+  background: rgba(56,189,248,0.14);
+  border: 1px solid rgba(56,189,248,0.25);
+  color: #e0f2fe;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+h1 {
+  margin: 18px 0 10px;
+  font-size: clamp(2.1rem, 7vw, 4.8rem);
+  line-height: 0.95;
+  letter-spacing: -0.06em;
+}
+
+.hero p {
+  max-width: 850px;
+  color: var(--muted);
+  font-size: 1.12rem;
+  line-height: 1.7;
+}
+
+.nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.nav a,
+.button {
+  text-decoration: none;
+  color: var(--text);
+  background: rgba(255,255,255,0.10);
+  border: 1px solid var(--border);
+  padding: 10px 14px;
+  border-radius: 999px;
+  font-weight: 700;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 18px;
+  margin-top: 22px;
+}
+
+.chapter {
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  background: var(--panel);
+  padding: 24px;
+}
+
+.chapter h2 {
+  margin: 0 0 10px;
+  font-size: clamp(1.35rem, 4vw, 2rem);
+}
+
+.chapter p,
+.chapter li {
+  color: var(--muted);
+  line-height: 1.7;
+  font-size: 1rem;
+}
+
+.audio-box {
+  margin: 16px 0;
+  padding: 15px;
+  border-radius: 18px;
+  background: rgba(0,0,0,0.25);
+  border: 1px solid rgba(255,255,255,0.12);
+}
+
+.audio-box strong {
+  display: block;
+  margin-bottom: 10px;
+  color: #fff;
+}
+
+audio {
+  width: 100%;
+}
+
+.transcript {
+  margin-top: 18px;
+}
+
+.transcript p {
+  margin: 0 0 12px;
+  color: var(--muted);
+  line-height: 1.75;
+  font-size: 1.02rem;
+}
+
+.source-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 18px;
+}
+
+.source-card {
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: rgba(0,0,0,0.22);
+  overflow: hidden;
+}
+
+.source-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 14px 16px;
+  background: rgba(255,255,255,0.08);
+  border-bottom: 1px solid rgba(255,255,255,0.13);
+}
+
+.source-header strong {
+  color: #fff;
+}
+
+.source-header span {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.code-panel {
+  padding: 16px;
+  background: rgba(0,0,0,0.40);
+  overflow-x: auto;
+}
+
+pre {
+  margin: 0;
+  color: #e2e8f0;
+  font-size: 0.92rem;
+  line-height: 1.55;
+  white-space: pre;
+}
+
+.pipeline {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.step {
+  padding: 16px;
+  border-radius: 18px;
+  background: var(--panel-strong);
+  border: 1px solid var(--border);
+  text-align: center;
+}
+
+.step-number {
+  width: 34px;
+  height: 34px;
+  display: inline-grid;
+  place-items: center;
+  margin-bottom: 8px;
+  border-radius: 999px;
+  background: var(--accent2);
+  color: #111827;
+  font-weight: 900;
+}
+
+.callout {
+  margin-top: 20px;
+  padding: 18px;
+  border-radius: 20px;
+  border: 1px solid rgba(34,197,94,0.35);
+  background: rgba(34,197,94,0.10);
+}
+
+.warning {
+  border-color: rgba(251,113,133,0.35);
+  background: rgba(251,113,133,0.10);
+}
+
+.footer {
+  margin-top: 30px;
+  text-align: center;
+  color: var(--muted);
+  opacity: 0.85;
+}
+
+@media (max-width: 760px) {
+  .hero,
+  .chapter {
+    padding: 22px;
+  }
+
+  .pipeline {
+    grid-template-columns: 1fr;
+  }
+
+  .nav a {
+    width: 100%;
+    text-align: center;
+  }
+
+  .source-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}"##;
+
+const MAIN_RS_CODE: &str = r#"use yew::prelude::*;
+
+// This file powers the Lesson 3 tutorial app.
+//
+// It renders:
+// - the lesson narration text
+// - inline MP3 audio players
+// - the deployment pipeline explanation
+// - full source-code panels for index.html, styles.css, Cargo.toml, and src/main.rs
+//
+// In the live lesson app, this source-code panel is generated by src/main.rs itself.
+// That means the file is both the lesson engine and part of the lesson content."#;
+
+const SOURCE_FILES: [SourceFile; 4] = [
+    SourceFile {
+        title: "index.html",
+        language: "HTML",
+        code: INDEX_HTML_CODE,
+    },
+    SourceFile {
+        title: "styles.css",
+        language: "CSS",
+        code: STYLES_CSS_CODE,
+    },
+    SourceFile {
+        title: "Cargo.toml",
+        language: "TOML",
+        code: CARGO_TOML_CODE,
+    },
+    SourceFile {
+        title: "src/main.rs",
+        language: "Rust",
+        code: MAIN_RS_CODE,
+    },
+];
+
 #[function_component(App)]
 fn app() -> Html {
     html! {
@@ -227,6 +556,7 @@ fn app() -> Html {
                     <a href="#part1">{ "Four Files" }</a>
                     <a href="#part2">{ "Trunk" }</a>
                     <a href="#part3">{ "filehash = false" }</a>
+                    <a href="#source-code">{ "Source Code" }</a>
                     <a href="#outro">{ "Outro" }</a>
                 </div>
 
@@ -288,6 +618,18 @@ filehash = false"# }</pre>
                 </div>
             </section>
 
+            <section class="chapter" id="source-code">
+                <h2>{ "Full Lesson 3 Source Code" }</h2>
+
+                <p>
+                    { "These are the four files used in the Rust iPhone Compiler pattern. Students can review the structure, compare the files to the live app, and understand how the lesson was built." }
+                </p>
+
+                <div class="source-grid">
+                    { for SOURCE_FILES.iter().map(render_source_file) }
+                </div>
+            </section>
+
             <section class="chapter">
                 <h2>{ "Expected Deployment Output" }</h2>
 
@@ -325,6 +667,21 @@ fn render_chapter(chapter: &Chapter) -> Html {
 
             <div class="transcript">
                 { for chapter.lines.iter().map(|line| html! { <p>{ *line }</p> }) }
+            </div>
+        </article>
+    }
+}
+
+fn render_source_file(file: &SourceFile) -> Html {
+    html! {
+        <article class="source-card">
+            <div class="source-header">
+                <strong>{ file.title }</strong>
+                <span>{ file.language }</span>
+            </div>
+
+            <div class="code-panel">
+                <pre>{ file.code }</pre>
             </div>
         </article>
     }
