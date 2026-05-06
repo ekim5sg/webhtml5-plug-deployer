@@ -11,7 +11,7 @@ const CHAPTERS: [Chapter; 5] = [
     Chapter {
         id: "intro",
         title: "Intro - From Rust Code to Live Website",
-        audio: "/assets/audio/lesson3-intro.mp3",
+        audio: "./assets/audio/lesson3-intro.mp3",
         lines: &[
             "From the MikeGyver Studio...",
             "where imagination becomes software...",
@@ -48,7 +48,7 @@ const CHAPTERS: [Chapter; 5] = [
     Chapter {
         id: "part1",
         title: "Part 1 - The Four File Pattern",
-        audio: "/assets/audio/lesson3-part1.mp3",
+        audio: "./assets/audio/lesson3-part1.mp3",
         lines: &[
             "One of the biggest challenges for beginners learning Rust WebAssembly development...",
             "is complexity.",
@@ -93,7 +93,7 @@ const CHAPTERS: [Chapter; 5] = [
     Chapter {
         id: "part2",
         title: "Part 2 - What Trunk Actually Does",
-        audio: "/assets/audio/lesson3-part2.mp3",
+        audio: "./assets/audio/lesson3-part2.mp3",
         lines: &[
             "Now that we understand the four file pattern...",
             "the next question becomes...",
@@ -133,7 +133,7 @@ const CHAPTERS: [Chapter; 5] = [
     Chapter {
         id: "part3",
         title: "Part 3 - The filehash Equals False Strategy",
-        audio: "/assets/audio/lesson3-part3.mp3",
+        audio: "./assets/audio/lesson3-part3.mp3",
         lines: &[
             "When Trunk builds a WebAssembly application...",
             "it normally generates hashed filenames.",
@@ -178,7 +178,7 @@ const CHAPTERS: [Chapter; 5] = [
     Chapter {
         id: "outro",
         title: "Outro - Ship the Lesson",
-        audio: "/assets/audio/lesson3-outro.mp3",
+        audio: "./assets/audio/lesson3-outro.mp3",
         lines: &[
             "Today...",
             "we learned something larger than Rust.",
