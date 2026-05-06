@@ -35,16 +35,15 @@ fn random_question_index(len: usize) -> usize {
     (Math::random() * len as f64).floor() as usize
 }
 
-fn random_question_index_excluding(current: usize, len: usize) -> usize {
-    if len <= 1 {
-        return 0;
+fn random_question_index_excluding_used(used: &[usize], len: usize) -> usize {
+    let available: Vec<usize> = (0..len).filter(|i| !used.contains(i)).collect();
+
+    if available.is_empty() {
+        return random_question_index(len);
     }
 
-    let mut next = random_question_index(len);
-    while next == current {
-        next = random_question_index(len);
-    }
-    next
+    let pick = (Math::random() * available.len() as f64).floor() as usize;
+    available[pick]
 }
 
 #[function_component(App)]
@@ -58,6 +57,7 @@ fn app() -> Html {
     let selected_answer = use_state(|| None::<usize>);
     let feedback = use_state(|| String::new());
     let question_index = use_state(|| random_question_index(6));
+    let used_questions = use_state(|| Vec::<usize>::new());
 
     let music_ref = use_node_ref();
     let applause_ref = use_node_ref();
@@ -191,12 +191,14 @@ fn app() -> Html {
         let selected_answer = selected_answer.clone();
         let feedback = feedback.clone();
         let question_index = question_index.clone();
+        let used_questions = used_questions.clone();
 
         Callback::from(move |_| {
             mission_step.set(0);
             mission_complete.set(false);
             selected_answer.set(None);
             feedback.set(String::new());
+            used_questions.set(Vec::new());
             question_index.set(random_question_index(6));
             started.set(false);
         })
@@ -208,6 +210,7 @@ fn app() -> Html {
         let selected_answer = selected_answer.clone();
         let feedback = feedback.clone();
         let question_index = question_index.clone();
+        let used_questions = used_questions.clone();
         let applause_ref = applause_ref.clone();
         let current_question = current_question.clone();
 
@@ -221,6 +224,10 @@ fn app() -> Html {
                     feedback.set("Select an answer before completing the challenge.".to_string());
                 }
                 Some(answer) if answer == current_question.correct => {
+                    let mut updated_used = (*used_questions).clone();
+                    updated_used.push(*question_index);
+                    used_questions.set(updated_used.clone());
+
                     if *mission_step >= 3 {
                         mission_complete.set(true);
                         feedback.set("Mission complete! Houston confirms success. 🎉".to_string());
@@ -229,7 +236,9 @@ fn app() -> Html {
                         mission_step.set(*mission_step + 1);
                         selected_answer.set(None);
                         feedback.set("Correct. Advancing to the next mission stage.".to_string());
-                        question_index.set(random_question_index_excluding(*question_index, 6));
+
+                        let next_question = random_question_index_excluding_used(&updated_used, 6);
+                        question_index.set(next_question);
                     }
                 }
                 Some(_) => {
@@ -261,6 +270,14 @@ fn app() -> Html {
                 src="./assets/audio/mission-control-applause.mp3"
                 preload="auto"
             />
+
+            if *mission_complete {
+                <div class="fireworks">
+                    <div class="firework one"></div>
+                    <div class="firework two"></div>
+                    <div class="firework three"></div>
+                </div>
+            }
 
             <div class="stars"></div>
 
