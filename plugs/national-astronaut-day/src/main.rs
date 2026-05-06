@@ -25,6 +25,12 @@ fn play_audio(audio_ref: &NodeRef, volume: f64) -> bool {
     false
 }
 
+fn stop_audio(audio_ref: &NodeRef) {
+    if let Some(audio) = audio_ref.cast::<HtmlAudioElement>() {
+        let _ = audio.pause();
+    }
+}
+
 fn random_question_index(len: usize) -> usize {
     (Math::random() * len as f64).floor() as usize
 }
@@ -47,6 +53,7 @@ fn app() -> Html {
     let selected_role = use_state(|| 0usize);
     let mission_step = use_state(|| 0usize);
     let music_started = use_state(|| false);
+    let music_enabled = use_state(|| true);
     let mission_complete = use_state(|| false);
     let selected_answer = use_state(|| None::<usize>);
     let feedback = use_state(|| String::new());
@@ -58,9 +65,10 @@ fn app() -> Html {
     {
         let music_ref = music_ref.clone();
         let music_started = music_started.clone();
+        let music_enabled = music_enabled.clone();
 
         use_effect_with((), move |_| {
-            if play_audio(&music_ref, 0.55) {
+            if *music_enabled && play_audio(&music_ref, 0.55) {
                 music_started.set(true);
             }
             || ()
@@ -115,7 +123,12 @@ fn app() -> Html {
         },
         Question {
             prompt: "What does EVA stand for in astronaut missions?",
-            choices: ["Earth Vehicle Arrival", "Extra-Vehicular Activity", "Emergency Velocity Alert", "External Vision Alignment"],
+            choices: [
+                "Earth Vehicle Arrival",
+                "Extra-Vehicular Activity",
+                "Emergency Velocity Alert",
+                "External Vision Alignment",
+            ],
             correct: 1,
         },
         Question {
@@ -138,13 +151,21 @@ fn app() -> Html {
         ((*mission_step + 1) * 25).to_string()
     };
 
-    let start_music = {
+    let toggle_music = {
         let music_ref = music_ref.clone();
         let music_started = music_started.clone();
+        let music_enabled = music_enabled.clone();
 
         Callback::from(move |_| {
-            if play_audio(&music_ref, 0.55) {
-                music_started.set(true);
+            if *music_enabled {
+                stop_audio(&music_ref);
+                music_enabled.set(false);
+                music_started.set(false);
+            } else {
+                if play_audio(&music_ref, 0.55) {
+                    music_started.set(true);
+                }
+                music_enabled.set(true);
             }
         })
     };
@@ -153,9 +174,10 @@ fn app() -> Html {
         let started = started.clone();
         let music_ref = music_ref.clone();
         let music_started = music_started.clone();
+        let music_enabled = music_enabled.clone();
 
         Callback::from(move |_| {
-            if play_audio(&music_ref, 0.55) {
+            if *music_enabled && play_audio(&music_ref, 0.55) {
                 music_started.set(true);
             }
             started.set(true);
@@ -217,6 +239,14 @@ fn app() -> Html {
         })
     };
 
+    let music_status = if *music_enabled && *music_started {
+        "🎵 Starlight Runaway is playing."
+    } else if *music_enabled {
+        "🎵 Music will autoplay when allowed, or tap Start Music."
+    } else {
+        "🔇 Music muted."
+    };
+
     html! {
         <main class="app">
             <audio
@@ -250,8 +280,14 @@ fn app() -> Html {
                                     {"Begin Mission"}
                                 </button>
 
-                                <button class="secondary" onclick={start_music.clone()}>
-                                    {"Start Music"}
+                                <button class="secondary" onclick={toggle_music.clone()}>
+                                    {
+                                        if *music_enabled {
+                                            "Mute Music"
+                                        } else {
+                                            "Start Music"
+                                        }
+                                    }
                                 </button>
 
                                 <a class="secondary" href="national-astronaut-day.zip">
@@ -259,15 +295,7 @@ fn app() -> Html {
                                 </a>
                             </div>
 
-                            <p class="music-status">
-                                {
-                                    if *music_started {
-                                        "🎵 Starlight Runaway is playing."
-                                    } else {
-                                        "🎵 Music will autoplay when allowed, or tap Start Music."
-                                    }
-                                }
-                            </p>
+                            <p class="music-status">{music_status}</p>
                         </div>
                     </div>
                 } else {
@@ -312,10 +340,18 @@ fn app() -> Html {
                             </div>
 
                             <div class="actions">
-                                <button class="secondary" onclick={start_music.clone()}>
-                                    {"Start Music"}
+                                <button class="secondary" onclick={toggle_music.clone()}>
+                                    {
+                                        if *music_enabled {
+                                            "Mute Music"
+                                        } else {
+                                            "Start Music"
+                                        }
+                                    }
                                 </button>
                             </div>
+
+                            <p class="music-status">{music_status}</p>
                         </section>
 
                         <section class="card">
@@ -434,9 +470,7 @@ fn app() -> Html {
                             <p>
                                 {"National Astronaut Day is a reminder that exploration begins with imagination. This app now turns that inspiration into a small mission challenge."}
                             </p>
-                            <p>
-                                {"Today, the mission is yours."}
-                            </p>
+                            <p>{"Today, the mission is yours."}</p>
                         </section>
                     </div>
                 }
