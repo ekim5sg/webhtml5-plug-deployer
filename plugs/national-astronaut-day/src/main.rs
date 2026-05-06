@@ -1,3 +1,4 @@
+use js_sys::Math;
 use web_sys::HtmlAudioElement;
 use yew::prelude::*;
 
@@ -8,16 +9,36 @@ struct Role {
     focus: &'static str,
 }
 
-fn play_song(audio_ref: &NodeRef) -> bool {
-    if let Some(audio) = audio_ref.cast::<HtmlAudioElement>() {
-        audio.set_loop(true);
-        audio.set_volume(0.55);
+#[derive(Clone, PartialEq)]
+struct Question {
+    prompt: &'static str,
+    choices: [&'static str; 4],
+    correct: usize,
+}
 
+fn play_audio(audio_ref: &NodeRef, volume: f64) -> bool {
+    if let Some(audio) = audio_ref.cast::<HtmlAudioElement>() {
+        audio.set_volume(volume);
         let _ = audio.play();
         return true;
     }
-
     false
+}
+
+fn random_question_index(len: usize) -> usize {
+    (Math::random() * len as f64).floor() as usize
+}
+
+fn random_question_index_excluding(current: usize, len: usize) -> usize {
+    if len <= 1 {
+        return 0;
+    }
+
+    let mut next = random_question_index(len);
+    while next == current {
+        next = random_question_index(len);
+    }
+    next
 }
 
 #[function_component(App)]
@@ -26,17 +47,22 @@ fn app() -> Html {
     let selected_role = use_state(|| 0usize);
     let mission_step = use_state(|| 0usize);
     let music_started = use_state(|| false);
-    let audio_ref = use_node_ref();
+    let mission_complete = use_state(|| false);
+    let selected_answer = use_state(|| None::<usize>);
+    let feedback = use_state(|| String::new());
+    let question_index = use_state(|| random_question_index(6));
+
+    let music_ref = use_node_ref();
+    let applause_ref = use_node_ref();
 
     {
-        let audio_ref = audio_ref.clone();
+        let music_ref = music_ref.clone();
         let music_started = music_started.clone();
 
         use_effect_with((), move |_| {
-            if play_song(&audio_ref) {
+            if play_audio(&music_ref, 0.55) {
                 music_started.set(true);
             }
-
             || ()
         });
     }
@@ -65,22 +91,59 @@ fn app() -> Html {
     ];
 
     let steps = vec![
-        "Complete the launch countdown and confirm all systems are green.",
-        "Enter low Earth orbit and stabilize the spacecraft attitude.",
-        "Run the lunar approach burn with steady fuel control.",
-        "Recover the deep-space signal and transmit mission success.",
+        "Launch Readiness Check",
+        "Low Earth Orbit Stabilization",
+        "Lunar Approach Burn",
+        "Deep-Space Signal Recovery",
+    ];
+
+    let questions = vec![
+        Question {
+            prompt: "Who was the first American astronaut to travel into space?",
+            choices: ["Neil Armstrong", "Alan Shepard", "John Glenn", "Buzz Aldrin"],
+            correct: 1,
+        },
+        Question {
+            prompt: "Which mission first landed humans on the Moon?",
+            choices: ["Apollo 8", "Apollo 11", "Gemini 4", "Mercury-Redstone 3"],
+            correct: 1,
+        },
+        Question {
+            prompt: "What spacecraft carried astronauts to the Moon during Apollo missions?",
+            choices: ["Orion", "Dragon", "Saturn V", "Command and Service Module"],
+            correct: 3,
+        },
+        Question {
+            prompt: "What does EVA stand for in astronaut missions?",
+            choices: ["Earth Vehicle Arrival", "Extra-Vehicular Activity", "Emergency Velocity Alert", "External Vision Alignment"],
+            correct: 1,
+        },
+        Question {
+            prompt: "What is the name of NASA’s modern spacecraft designed for deep-space crew missions?",
+            choices: ["Orion", "Voyager", "Discovery", "Columbia"],
+            correct: 0,
+        },
+        Question {
+            prompt: "What city is famous for NASA’s Mission Control?",
+            choices: ["Houston", "Cape Canaveral", "Los Angeles", "Seattle"],
+            correct: 0,
+        },
     ];
 
     let role = roles[*selected_role].clone();
-    let step_text = steps[*mission_step];
-    let progress = ((*mission_step + 1) * 25).to_string();
+    let current_question = questions[*question_index].clone();
+    let progress = if *mission_complete {
+        "100".to_string()
+    } else {
+        ((*mission_step + 1) * 25).to_string()
+    };
 
     let start_music = {
-        let audio_ref = audio_ref.clone();
+        let music_ref = music_ref.clone();
         let music_started = music_started.clone();
 
         Callback::from(move |_| {
-            if play_song(&audio_ref) {
+            if play_audio(&music_ref, 0.55) {
                 music_started.set(true);
             }
         })
@@ -88,14 +151,13 @@ fn app() -> Html {
 
     let start_mission = {
         let started = started.clone();
-        let audio_ref = audio_ref.clone();
+        let music_ref = music_ref.clone();
         let music_started = music_started.clone();
 
         Callback::from(move |_| {
-            if play_song(&audio_ref) {
+            if play_audio(&music_ref, 0.55) {
                 music_started.set(true);
             }
-
             started.set(true);
         })
     };
@@ -103,29 +165,71 @@ fn app() -> Html {
     let reset_mission = {
         let started = started.clone();
         let mission_step = mission_step.clone();
+        let mission_complete = mission_complete.clone();
+        let selected_answer = selected_answer.clone();
+        let feedback = feedback.clone();
+        let question_index = question_index.clone();
 
         Callback::from(move |_| {
             mission_step.set(0);
+            mission_complete.set(false);
+            selected_answer.set(None);
+            feedback.set(String::new());
+            question_index.set(random_question_index(6));
             started.set(false);
         })
     };
 
-    let next_step = {
+    let complete_challenge = {
         let mission_step = mission_step.clone();
+        let mission_complete = mission_complete.clone();
+        let selected_answer = selected_answer.clone();
+        let feedback = feedback.clone();
+        let question_index = question_index.clone();
+        let applause_ref = applause_ref.clone();
+        let current_question = current_question.clone();
 
         Callback::from(move |_| {
-            let next = if *mission_step >= 3 { 0 } else { *mission_step + 1 };
-            mission_step.set(next);
+            if *mission_complete {
+                return;
+            }
+
+            match *selected_answer {
+                None => {
+                    feedback.set("Select an answer before completing the challenge.".to_string());
+                }
+                Some(answer) if answer == current_question.correct => {
+                    if *mission_step >= 3 {
+                        mission_complete.set(true);
+                        feedback.set("Mission complete! Houston confirms success. 🎉".to_string());
+                        let _ = play_audio(&applause_ref, 0.85);
+                    } else {
+                        mission_step.set(*mission_step + 1);
+                        selected_answer.set(None);
+                        feedback.set("Correct. Advancing to the next mission stage.".to_string());
+                        question_index.set(random_question_index_excluding(*question_index, 6));
+                    }
+                }
+                Some(_) => {
+                    feedback.set("Not quite. Try another answer to continue the mission.".to_string());
+                }
+            }
         })
     };
 
     html! {
         <main class="app">
             <audio
-                ref={audio_ref.clone()}
+                ref={music_ref.clone()}
                 src="./assets/audio/starlight-runaway.mp3"
                 preload="auto"
                 loop=true
+            />
+
+            <audio
+                ref={applause_ref.clone()}
+                src="./assets/audio/mission-control-applause.mp3"
+                preload="auto"
             />
 
             <div class="stars"></div>
@@ -212,20 +316,10 @@ fn app() -> Html {
                                     {"Start Music"}
                                 </button>
                             </div>
-
-                            <p class="music-status">
-                                {
-                                    if *music_started {
-                                        "🎵 Starlight Runaway is playing."
-                                    } else {
-                                        "🎵 Tap Start Music if your browser blocked autoplay."
-                                    }
-                                }
-                            </p>
                         </section>
 
                         <section class="card">
-                            <h2>{"Astronaut Challenge"}</h2>
+                            <h2>{steps[*mission_step]}</h2>
 
                             <div class="mission-screen">
                                 <div class="orbit">
@@ -233,8 +327,6 @@ fn app() -> Html {
                                 </div>
                                 <div class="earth"></div>
                             </div>
-
-                            <p class="challenge">{step_text}</p>
 
                             <div class="progress">
                                 <div class="bar" style={format!("--w: {}%;", progress)}></div>
@@ -247,17 +339,58 @@ fn app() -> Html {
                                 </div>
                                 <div class="row">
                                     <span>{"Crew Status"}</span>
-                                    <strong>{"Inspired"}</strong>
-                                </div>
-                                <div class="row">
-                                    <span>{"Spacecraft"}</span>
-                                    <strong>{"MG-Studio Explorer"}</strong>
+                                    <strong>
+                                        {
+                                            if *mission_complete {
+                                                "Mission Complete"
+                                            } else {
+                                                "Awaiting Correct Answer"
+                                            }
+                                        }
+                                    </strong>
                                 </div>
                             </div>
 
+                            <div class="question-box">
+                                <h3>{current_question.prompt}</h3>
+
+                                <div class="choice-grid">
+                                    {
+                                        current_question.choices.iter().enumerate().map(|(choice_index, choice)| {
+                                            let selected_answer = selected_answer.clone();
+                                            let active = *selected_answer == Some(choice_index);
+
+                                            html! {
+                                                <button
+                                                    class={classes!("choice-button", active.then_some("active"))}
+                                                    disabled={*mission_complete}
+                                                    onclick={Callback::from(move |_| selected_answer.set(Some(choice_index)))}
+                                                >
+                                                    {choice}
+                                                </button>
+                                            }
+                                        }).collect::<Html>()
+                                    }
+                                </div>
+
+                                if !feedback.is_empty() {
+                                    <p class="feedback">{(*feedback).clone()}</p>
+                                }
+                            </div>
+
                             <div class="actions">
-                                <button class="primary" onclick={next_step}>
-                                    {"Complete Challenge"}
+                                <button
+                                    class={classes!("primary", (*mission_complete).then_some("disabled"))}
+                                    disabled={*mission_complete}
+                                    onclick={complete_challenge}
+                                >
+                                    {
+                                        if *mission_complete {
+                                            "Mission Completed"
+                                        } else {
+                                            "Complete Challenge"
+                                        }
+                                    }
                                 </button>
 
                                 <button class="secondary" onclick={reset_mission}>
@@ -271,7 +404,13 @@ fn app() -> Html {
                             <p>
                                 {"Congratulations, "}
                                 <strong>{role.call_sign}</strong>
-                                {". You are mission ready."}
+                                {
+                                    if *mission_complete {
+                                        ". You completed the mission."
+                                    } else {
+                                        ". Complete all mission gates to earn final clearance."
+                                    }
+                                }
                             </p>
 
                             <div class="telemetry">
@@ -293,7 +432,7 @@ fn app() -> Html {
                         <section class="card">
                             <h3>{"Why This Day Matters"}</h3>
                             <p>
-                                {"National Astronaut Day is a reminder that exploration begins with imagination. This little app gives kids, families, and lifelong space fans a chance to step into the mission mindset for a few minutes."}
+                                {"National Astronaut Day is a reminder that exploration begins with imagination. This app now turns that inspiration into a small mission challenge."}
                             </p>
                             <p>
                                 {"Today, the mission is yours."}
