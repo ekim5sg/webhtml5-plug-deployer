@@ -54,6 +54,15 @@ jobs:
 
       - run: cargo install --locked trunk
 
+      - name: Configure Trunk filehash
+        working-directory: ${{ github.event.inputs.app_dir }}
+        shell: bash
+        run: |
+          cat > Trunk.toml <<'EOF'
+          [build]
+          filehash = false
+          EOF
+
       - name: Trunk build
         working-directory: ${{ github.event.inputs.app_dir }}
         shell: bash
