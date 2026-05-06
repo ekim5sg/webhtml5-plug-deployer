@@ -46,6 +46,40 @@ fn random_question_index_excluding_used(used: &[usize], len: usize) -> usize {
     available[pick]
 }
 
+fn open_badge_svg(role: &Role) {
+    let svg = format!(
+        r##"<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200">
+<defs>
+  <radialGradient id="bg" cx="50%" cy="35%" r="70%">
+    <stop offset="0%" stop-color="#1d4ed8"/>
+    <stop offset="55%" stop-color="#07152f"/>
+    <stop offset="100%" stop-color="#020617"/>
+  </radialGradient>
+</defs>
+<rect width="1200" height="1200" fill="url(#bg)"/>
+<circle cx="600" cy="430" r="260" fill="none" stroke="#8fe8ff" stroke-width="10" opacity="0.8"/>
+<circle cx="600" cy="430" r="190" fill="none" stroke="#ffd166" stroke-width="6" opacity="0.7"/>
+<text x="600" y="150" text-anchor="middle" fill="#ffd166" font-size="54" font-family="Arial" font-weight="800">MIKEGYVER STUDIO</text>
+<text x="600" y="345" text-anchor="middle" fill="#ffffff" font-size="82" font-family="Arial" font-weight="900">ASTRONAUT</text>
+<text x="600" y="430" text-anchor="middle" fill="#8fe8ff" font-size="74" font-family="Arial" font-weight="900">CANDIDATE</text>
+<text x="600" y="540" text-anchor="middle" fill="#ffffff" font-size="46" font-family="Arial">Call Sign: {}</text>
+<text x="600" y="610" text-anchor="middle" fill="#dbeafe" font-size="42" font-family="Arial">Role: {}</text>
+<text x="600" y="760" text-anchor="middle" fill="#ffd166" font-size="42" font-family="Arial" font-weight="700">MISSION COMPLETE</text>
+<text x="600" y="840" text-anchor="middle" fill="#ffffff" font-size="36" font-family="Arial">Mission Day: National Astronaut Day</text>
+<text x="600" y="970" text-anchor="middle" fill="#9db4d6" font-size="32" font-family="Arial">Today, the mission was yours.</text>
+</svg>"##,
+        role.call_sign,
+        role.name
+    );
+
+    let encoded = js_sys::encode_uri_component(&svg);
+    let url = format!("data:image/svg+xml;charset=utf-8,{}", encoded);
+
+    if let Some(window) = web_sys::window() {
+        let _ = window.open_with_url(&url);
+    }
+}
+
 #[function_component(App)]
 fn app() -> Html {
     let started = use_state(|| false);
@@ -145,6 +179,7 @@ fn app() -> Html {
 
     let role = roles[*selected_role].clone();
     let current_question = questions[*question_index].clone();
+
     let progress = if *mission_complete {
         "100".to_string()
     } else {
@@ -245,6 +280,14 @@ fn app() -> Html {
                     feedback.set("Not quite. Try another answer to continue the mission.".to_string());
                 }
             }
+        })
+    };
+
+    let display_badge = {
+        let role = role.clone();
+
+        Callback::from(move |_| {
+            open_badge_svg(&role);
         })
     };
 
@@ -479,6 +522,16 @@ fn app() -> Html {
                                     <span>{"Mission Day"}</span>
                                     <strong>{"National Astronaut Day"}</strong>
                                 </div>
+                            </div>
+
+                            <div class="actions">
+                                <button
+                                    class={classes!("primary", (!*mission_complete).then_some("disabled"))}
+                                    disabled={!*mission_complete}
+                                    onclick={display_badge}
+                                >
+                                    {"Display Astronaut Candidate Badge"}
+                                </button>
                             </div>
                         </section>
 
