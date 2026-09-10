@@ -1,0 +1,11 @@
+[package]
+name = "technician-practice-test"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+yew = { version = "0.21", features = ["csr"] }
+
+[profile.release]
+lto = true
+opt-level = "s"
