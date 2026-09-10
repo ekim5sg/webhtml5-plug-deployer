@@ -1,7 +1,7 @@
 use gloo_timers::future::TimeoutFuture;
 use js_sys::{Array, ArrayBuffer, Uint8Array};
-use shine_rs::{encode_pcm_to_mp3, Mp3EncoderConfig, StereoMode};
-use std::rc::Rc;
+use rusty_mp3::{Error as Mp3Error, Mp3Encoder, Mp3EncoderConfig};
+use std::{cell::RefCell, rc::Rc};
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::{spawn_local, JsFuture};
 use web_sys::{
@@ -33,6 +33,14 @@ struct ResultFile {
 fn clock(seconds: f64) -> String {
     let whole = seconds.max(0.0).round() as u64;
     format!("{}:{:02}", whole / 60, whole % 60)
+}
+
+fn append_log(buffer: &Rc<RefCell<String>>, log: &UseStateHandle<String>, message: &str) {
+    let iso = js_sys::Date::new_0().to_iso_string().as_string().unwrap_or_default();
+    let stamp = iso.get(11..19).unwrap_or("--:--:--");
+    let mut contents = buffer.borrow_mut();
+    contents.push_str(&format!("[{} UTC] {}\n", stamp, message));
+    log.set(contents.clone());
 }
 
 fn nearest_supported_rate(rate: u32) -> u32 {
@@ -87,19 +95,29 @@ fn make_mp3(audio: &AudioData, fade_start: f64) -> Result<Vec<u8>, String> {
 
         for channel in &channels {
             let sample = channel.get(frame).copied().unwrap_or(0.0) * gain;
-            interleaved.push((sample.clamp(-1.0, 1.0) * i16::MAX as f32).round() as i16);
+            interleaved.push(if sample.is_finite() { sample.clamp(-1.0, 1.0) } else { 0.0 });
         }
     }
 
-    let mode = if channel_count == 1 { StereoMode::Mono } else { StereoMode::Stereo };
-    let config = Mp3EncoderConfig::new()
-        .sample_rate(output_rate)
-        .bitrate(OUTPUT_BITRATE)
-        .channels(channel_count as u8)
-        .stereo_mode(mode);
+    let config = Mp3EncoderConfig {
+        bitrate_kbps: OUTPUT_BITRATE,
+        vbr_quality: None,
+    };
+    let mut encoder = Mp3Encoder::new(config);
+    encoder.push_pcm_f32(&interleaved, channel_count as u16, output_rate)
+        .map_err(|error| format!("MP3 encoding failed: {error}"))?;
+    encoder.finish();
 
-    encode_pcm_to_mp3(config, &interleaved)
-        .map_err(|error| format!("MP3 encoding failed: {error}"))
+    let mut mp3 = Vec::new();
+    loop {
+        match encoder.next_packet() {
+            Ok(packet) => mp3.extend_from_slice(&packet),
+            Err(Mp3Error::Eof) => break,
+            Err(Mp3Error::Again) => return Err("MP3 encoder requested additional samples after finishing.".into()),
+            Err(error) => return Err(format!("MP3 encoding failed: {error}")),
+        }
+    }
+    Ok(mp3)
 }
 
 fn bytes_to_url(bytes: &[u8], mime: &str) -> Result<String, JsValue> {
@@ -167,6 +185,8 @@ fn app() -> Html {
     let is_error = use_state(|| false);
     let processing = use_state(|| false);
     let result = use_state(|| None::<ResultFile>);
+    let log = use_state(|| "Fade Forge processing log\n".to_string());
+    let log_buffer = use_mut_ref(|| "Fade Forge processing log\n".to_string());
     let file_input = use_node_ref();
     let preview_audio = use_node_ref();
 
@@ -176,6 +196,8 @@ fn app() -> Html {
         let status = status.clone();
         let is_error = is_error.clone();
         let result = result.clone();
+        let log = log.clone();
+        let log_buffer = log_buffer.clone();
 
         Callback::from(move |event: Event| {
             let input: HtmlInputElement = event.target_unchecked_into();
@@ -185,8 +207,19 @@ fn app() -> Html {
             let status = status.clone();
             let is_error = is_error.clone();
             let result = result.clone();
+            let log = log.clone();
+            let log_buffer = log_buffer.clone();
 
             status.set("Decoding audio locally…".into());
+            append_log(
+                &log_buffer,
+                &log,
+                &format!(
+                    "Selected file: {} ({:.2} MB)\n             Reading and decoding audio in the browser…",
+                    file.name(),
+                    file.size() / 1_048_576.0
+                ),
+            );
             is_error.set(false);
             result.set(None);
 
@@ -196,10 +229,12 @@ fn app() -> Html {
                         let suggested = (decoded.duration - FADE_SECONDS).min(45.0).max(0.0);
                         fade_start.set(suggested);
                         status.set(format!("Ready: {:.1} seconds decoded at {} Hz.", decoded.duration, decoded.sample_rate));
+                        append_log(&log_buffer, &log, &format!("Decode complete: {}, {} Hz, {} channel(s), {:.2} seconds.", decoded.name, decoded.sample_rate, decoded.channels.len(), decoded.duration));
                         audio.set(Some(Rc::new(decoded)));
                     }
                     Err(message) => {
                         is_error.set(true);
+                        append_log(&log_buffer, &log, &format!("ERROR: {message}"));
                         status.set(message);
                         audio.set(None);
                     }
@@ -272,6 +307,8 @@ fn app() -> Html {
         let is_error = is_error.clone();
         let processing = processing.clone();
         let result = result.clone();
+        let log = log.clone();
+        let log_buffer = log_buffer.clone();
 
         Callback::from(move |_| {
             let Some(source) = (*audio).clone() else { return; };
@@ -280,16 +317,30 @@ fn app() -> Html {
             let is_error = is_error.clone();
             let processing = processing.clone();
             let result = result.clone();
+            let log = log.clone();
+            let log_buffer = log_buffer.clone();
 
             if start + FADE_SECONDS > source.duration + 0.001 {
                 is_error.set(true);
                 status.set("Move the fade earlier so the complete 12-second fade fits.".into());
+                append_log(&log_buffer, &log, "ERROR: The selected fade does not have 12 seconds of source audio remaining.");
                 return;
             }
 
             processing.set(true);
             is_error.set(false);
             status.set("Forging the shortened MP3 on this device…".into());
+            append_log(
+                &log_buffer,
+                &log,
+                &format!(
+                    "Processing started: fade {:.2}s to {:.2}s; output 192 kbps MP3.\n             Encoder sample rate: {} Hz; source sample rate: {} Hz.",
+                    start,
+                    start + FADE_SECONDS,
+                    nearest_supported_rate(source.sample_rate),
+                    source.sample_rate
+                ),
+            );
 
             spawn_local(async move {
                 TimeoutFuture::new(30).await;
@@ -304,14 +355,17 @@ fn app() -> Html {
                                 duration: end,
                             }));
                             status.set("Fade forged successfully. Preview or download the result.".into());
+                            append_log(&log_buffer, &log, &format!("SUCCESS: MP3 ready; {:.2} MB; duration {}.", bytes.len() as f64 / 1_048_576.0, clock(end)));
                         }
                         Err(_) => {
                             is_error.set(true);
                             status.set("The browser could not create the finished download.".into());
+                            append_log(&log_buffer, &log, "ERROR: Browser could not create an object URL for the finished MP3.");
                         }
                     },
                     Err(message) => {
                         is_error.set(true);
+                        append_log(&log_buffer, &log, &format!("ERROR: {message}"));
                         status.set(message);
                     }
                 }
@@ -322,6 +376,8 @@ fn app() -> Html {
 
     let download = {
         let result = result.clone();
+        let log = log.clone();
+        let log_buffer = log_buffer.clone();
         Callback::from(move |_| {
             let Some(file) = (*result).clone() else { return; };
             let Some(window) = web_sys::window() else { return; };
@@ -331,6 +387,7 @@ fn app() -> Html {
             anchor.set_href(&file.url);
             anchor.set_download(&file.name);
             anchor.click();
+            append_log(&log_buffer, &log, &format!("Download requested: {}", file.name));
         })
     };
 
@@ -339,11 +396,16 @@ fn app() -> Html {
         let result = result.clone();
         let status = status.clone();
         let is_error = is_error.clone();
+        let log = log.clone();
+        let log_buffer = log_buffer.clone();
         Callback::from(move |_| {
             audio.set(None);
             result.set(None);
             is_error.set(false);
             status.set("Select an MP3 or WAV file to begin.".into());
+            let reset_message = "Fade Forge processing log\n[reset] Ready for another file.\n".to_string();
+            *log_buffer.borrow_mut() = reset_message.clone();
+            log.set(reset_message);
         })
     };
 
@@ -423,6 +485,11 @@ fn app() -> Html {
                     </section>
                 }
             } else { Html::default() }}
+
+            <section class="panel log-panel">
+                <div class="log-head"><h2>{"Processing log"}</h2><span>{"LOCAL • READ ONLY"}</span></div>
+                <textarea class="log-output" readonly=true value={(*log).clone()} aria-label="Fade Forge processing log" />
+            </section>
         </main>
     }
 }
