@@ -192,6 +192,57 @@ h1 {
     background: rgba(12, 11, 21, 0.9);
 }
 
+.admin-panel {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 22px;
+    margin-top: 22px;
+    padding: 22px;
+    border: 1px dashed #a45ac5;
+    border-radius: 24px;
+    background: rgba(42, 15, 52, 0.82);
+}
+
+.admin-panel h3 {
+    margin: 5px 0;
+}
+
+.admin-panel p {
+    margin: 0;
+    color: #c8b8d2;
+}
+
+.admin-label {
+    color: #f3a2ff;
+    font-size: 0.7rem;
+    font-weight: 900;
+    letter-spacing: 0.16em;
+}
+
+.admin-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.admin-buttons button {
+    min-height: 44px;
+    padding: 0 15px;
+    border: 1px solid #9855b4;
+    border-radius: 13px;
+    color: #fff;
+    background: #552366;
+    cursor: pointer;
+    font-weight: 800;
+}
+
+.admin-buttons .cancel {
+    border-color: #554b60;
+    background: #211b28;
+}
+
 .music-panel h3 {
     margin: 0 0 5px;
 }
@@ -308,6 +359,15 @@ h1 {
 
     .countdowns {
         grid-template-columns: 1fr;
+    }
+
+    .admin-panel {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .admin-buttons {
+        justify-content: flex-start;
     }
 
     .countdown-card {
