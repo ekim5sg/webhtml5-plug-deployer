@@ -1,5 +1,4 @@
 use gloo_timers::callback::Interval;
-use wasm_bindgen::JsCast;
 use web_sys::HtmlAudioElement;
 use yew::prelude::*;
 
@@ -282,7 +281,7 @@ fn celebration_rain(props: &RainProps) -> Html {
                         let symbol = symbols[index % symbols.len()];
                         let left = (index * 37 + 11) % 100;
                         let duration = 5.0 + ((index * 17) % 50) as f64 / 10.0;
-                        let delay = -((index * 29) % 80) as f64 / 10.0;
+                        let delay = -(((index * 29) % 80) as f64) / 10.0;
                         let size = 1.4 + ((index * 13) % 25) as f64 / 10.0;
 
                         let style = format!(
