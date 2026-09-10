@@ -23,6 +23,7 @@ web-sys = { version = "0.3", features = [
     "HtmlAudioElement",
     "HtmlElement",
     "HtmlInputElement",
+    "InputEvent",
     "Url",
     "Window"
 ] }
