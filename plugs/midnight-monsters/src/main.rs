@@ -337,7 +337,7 @@ fn app() -> Html {
 
         Callback::from(move |track: &'static str| {
             if let Some(audio) = audio_ref.cast::<HtmlAudioElement>() {
-                audio.pause();
+                let _ = audio.pause();
                 audio.set_src(track);
                 audio.set_loop(true);
                 audio.set_volume(0.55);
@@ -367,7 +367,7 @@ fn app() -> Html {
 
         Callback::from(move |_| {
             if let Some(audio) = audio_ref.cast::<HtmlAudioElement>() {
-                audio.pause();
+                let _ = audio.pause();
                 audio.set_current_time(0.0);
             }
 
