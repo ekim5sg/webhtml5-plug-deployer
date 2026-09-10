@@ -1,12 +1,12 @@
 use gloo_timers::future::TimeoutFuture;
-use js_sys::{Array, ArrayBuffer, Float32Array, Uint8Array};
+use js_sys::{Array, ArrayBuffer, Uint8Array};
 use shine_rs::{encode_pcm_to_mp3, Mp3EncoderConfig, StereoMode};
 use std::rc::Rc;
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::{spawn_local, JsFuture};
 use web_sys::{
     AudioBuffer, AudioContext, Blob, BlobPropertyBag, Event, HtmlAnchorElement,
-    HtmlAudioElement, HtmlInputElement, Url,
+    HtmlAudioElement, HtmlInputElement, InputEvent, Url,
 };
 use yew::prelude::*;
 
@@ -137,9 +137,9 @@ async fn decode_file(file: web_sys::File) -> Result<AudioData, String> {
     let mut channels = Vec::with_capacity(channel_count as usize);
 
     for index in 0..channel_count {
-        let data: Float32Array = decoded.get_channel_data(index)
+        let data: Vec<f32> = decoded.get_channel_data(index)
             .map_err(|_| "Could not read decoded audio samples.".to_string())?;
-        channels.push(data.to_vec());
+        channels.push(data);
     }
 
     let _ = context.close();
@@ -220,7 +220,7 @@ fn app() -> Html {
     let on_slider = {
         let fade_start = fade_start.clone();
         let result = result.clone();
-        Callback::from(move |event: Event| {
+        Callback::from(move |event: InputEvent| {
             let input: HtmlInputElement = event.target_unchecked_into();
             if let Ok(value) = input.value().parse::<f64>() {
                 fade_start.set(value);
@@ -232,7 +232,7 @@ fn app() -> Html {
     let on_minutes = {
         let fade_start = fade_start.clone();
         let result = result.clone();
-        Callback::from(move |event: Event| {
+        Callback::from(move |event: InputEvent| {
             let input: HtmlInputElement = event.target_unchecked_into();
             if let Ok(minutes) = input.value().parse::<f64>() {
                 fade_start.set((minutes.max(0.0) * 60.0) + (*fade_start % 60.0));
@@ -244,7 +244,7 @@ fn app() -> Html {
     let on_seconds = {
         let fade_start = fade_start.clone();
         let result = result.clone();
-        Callback::from(move |event: Event| {
+        Callback::from(move |event: InputEvent| {
             let input: HtmlInputElement = event.target_unchecked_into();
             if let Ok(seconds) = input.value().parse::<f64>() {
                 fade_start.set((*fade_start / 60.0).floor() * 60.0 + seconds.clamp(0.0, 59.9));
