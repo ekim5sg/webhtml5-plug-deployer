@@ -92,7 +92,7 @@ fn app() -> Html {
 
     html! {
       <main class="app">
-        <header class="top"><div><p class="eyebrow">MIKEGYVER STUDIO • RUST EXAM LAB</p><h1>{"Technician Practice Test"}</h1><p class="subtitle">{"35 real questions • Current 2026–2030 Element 2 pool"}</p></div><span class="badge">{"RUST • YEW • WASM"}</span></header>
+        <header class="top"><div><p class="eyebrow">{"MIKEGYVER STUDIO • RUST EXAM LAB"}</p><h1>{"Technician Practice Test"}</h1><p class="subtitle">{"35 real questions • Current 2026–2030 Element 2 pool"}</p></div><span class="badge">{"RUST • YEW • WASM"}</span></header>
         <div class="statusbar"><div class="progress-track"><div class="progress-fill" style={format!("width:{percent}%")}></div></div><span class="count">{format!("{answered_count}/35 answered")}</span></div>
         <section class="layout">
           <article class="panel">
