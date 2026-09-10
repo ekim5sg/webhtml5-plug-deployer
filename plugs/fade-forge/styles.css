@@ -243,6 +243,23 @@ audio { width: 100%; margin-top: 20px; }
 .download-button { flex: 1; padding: 0 18px; color: #052016; background: #6ee7b7; }
 .reset-button { padding: 0 18px; color: #c9d6df; background: #1c2b35; }
 
+.log-panel { border-color: #303b48; }
+.log-head { display: flex; justify-content: space-between; align-items: center; gap: 15px; }
+.log-head h2 { margin: 0; font-size: 1.1rem; }
+.log-head span { color: #708596; font-size: .65rem; font-weight: 900; letter-spacing: .12em; }
+.log-output {
+    width: 100%;
+    min-height: 190px;
+    margin-top: 15px;
+    padding: 15px;
+    resize: vertical;
+    border: 1px solid #263948;
+    border-radius: 14px;
+    color: #9de7d9;
+    background: #03090e;
+    font: .78rem/1.55 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+}
+
 @media (max-width: 650px) {
     .hero { display: block; }
     .badge { display: inline-block; margin-top: 17px; }
