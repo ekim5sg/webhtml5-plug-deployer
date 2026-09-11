@@ -3,16 +3,20 @@ use yew::prelude::*;
 
 #[wasm_bindgen(inline_js = r#"
 const KEY = 'great-idea-swap-machine-v1';
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.2.0';
 const CATEGORIES = ['🚀 Almost Scientific','🤖 Questionably Useful Technology','🍕 Food That Shouldn’t Exist','🏠 Ridiculous Household Inventions','🎬 Impossible Podcast or Movie Ideas','🧸 Colin-and-Luan Approved Barter Businesses'];
 const AWARDS = ['Most Brilliantly Ridiculous','Strangely Marketable','Most Likely to Concern NASA','Best Idea Improved by Someone Else','Idea We Accidentally Need'];
 const $ = id => document.getElementById(id);
 const esc = value => String(value ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 const uid = () => crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 const api = new URLSearchParams(location.search).get('api')?.replace(/\/$/, '') || '';
+const room = (new URLSearchParams(location.search).get('room') || 'family-room').trim().toLowerCase().replace(/[^a-z0-9-]/g,'-').slice(0,48) || 'family-room';
 let state;
 let held = null;
 let revealOpen = false;
+let healthTimer = null;
+let serviceState = api ? 'checking' : 'local';
+let lastHealthy = null;
 const blank = () => ({ ideas: [], votes: {}, activity: [], created: new Date().toISOString() });
 const seeds = () => [
   ['Machine Spirit','🚀 Almost Scientific','A telescope that gets embarrassed when it discovers a new planet.'],
@@ -39,10 +43,44 @@ function audit(event,player='Machine',details='',ideaId=null){
 }
 function name(){ return $('player-name').value.trim(); }
 function say(text, error=false){ $('message').textContent=text; $('message').classList.toggle('error',error); }
+function service(status,detail=''){
+  serviceState=status;
+  const el=$('service-status'); if(!el)return;
+  const labels={checking:'CHECKING BACKEND',active:'DURABLE OBJECT ACTIVE',offline:'BACKEND OFFLINE',degraded:'BACKEND DEGRADED',local:'LOCAL MODE'};
+  el.className=`service-status ${status}`;
+  el.querySelector('.service-label').textContent=labels[status]||status.toUpperCase();
+  el.querySelector('.service-detail').textContent=detail||(status==='local'?'No cloud service required.':`Room: ${room}`);
+}
+async function checkHealth(showMessage=false){
+  if(!api){service('local');return true;}
+  service(serviceState==='active'?'active':'checking',`Room: ${room} • contacting service…`);
+  try{
+    const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),7000);
+    const response=await fetch(`${api}/api/health?room=${encodeURIComponent(room)}`,{cache:'no-store',signal:controller.signal});clearTimeout(timeout);
+    if(!response.ok)throw new Error(`HTTP ${response.status}`);
+    const data=await response.json();lastHealthy=new Date();
+    const writable=data.writable!==false;
+    service(writable?'active':'degraded',`Room: ${room} • ${data.ideas??0} ideas • checked ${lastHealthy.toLocaleTimeString()}`);
+    if(showMessage)say(writable?'Backend connection is healthy.':'Backend is reachable but currently read-only.',!writable);
+    return writable;
+  }catch(error){
+    const prior=lastHealthy?` • last connected ${lastHealthy.toLocaleTimeString()}`:'';
+    service('offline',`Room: ${room}${prior}`);
+    if(showMessage)say(`Backend health check failed: ${error.message||error}. Your displayed session remains intact.`,true);
+    return false;
+  }
+}
+function scheduleHealth(){
+  clearInterval(healthTimer);healthTimer=null;
+  if(api&&!document.hidden)healthTimer=setInterval(()=>checkHealth(false),30000);
+}
 async function remote(action,payload={}){
-  const response=await fetch(`${api}/api/action`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action,payload})});
-  if(!response.ok) throw new Error(`Multiplayer service returned HTTP ${response.status}.`);
-  const data=await response.json(); if(data.state) state=normalize(data.state); return data;
+  try{
+    const response=await fetch(`${api}/api/action`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({room,action,payload})});
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error(data.error||`Multiplayer service returned HTTP ${response.status}.`);
+    if(data.state){state=normalize(data.state);localSave();}lastHealthy=new Date();service('active',`Room: ${room} • connected ${lastHealthy.toLocaleTimeString()}`);return data;
+  }catch(error){service('offline',`Room: ${room}${lastHealthy?` • last connected ${lastHealthy.toLocaleTimeString()}`:''}`);throw error;}
 }
 async function act(action,payload,localFn){
   try { const result=api ? await remote(action,payload) : localFn(); render(); return result; }
@@ -123,7 +161,7 @@ async function importSession(file){
   finally{$('import-file').value='';}
 }
 function render(){
-  const player=name(); $('mode').textContent=api?'PUBLIC MULTIPLAYER':'PASS-THE-PHONE';
+  const player=name(); $('mode').textContent=api?`PUBLIC • ${room.toUpperCase()}`:'PASS-THE-PHONE';
   const assigned=state.ideas.find(i=>i.claimed===player); held=assigned?.id||null;
   const mine=state.ideas.filter(i=>i.owner.toLowerCase()===player.toLowerCase()).length;
   $('stat-ideas').textContent=state.ideas.length;$('stat-twists').textContent=state.ideas.reduce((n,i)=>n+Math.max(0,i.chain.length-1),0);$('stat-mine').textContent=mine;$('stat-waiting').textContent=state.ideas.filter(i=>!i.claimed).length;
@@ -142,8 +180,10 @@ function render(){
 }
 export async function initIdeaSwapMachine(){
   $('category').innerHTML=options();$('player-name').value=sessionStorage.getItem('idea-swap-name')||'';
-  if(api){try{const response=await fetch(`${api}/api/state`);if(!response.ok)throw new Error(`HTTP ${response.status}`);const data=await response.json();state=normalize(data.state||data);say('Public Multiplayer connected. Ideas can travel between devices.');}catch(e){state=blank();say(`Public Multiplayer could not connect: ${e.message}. Remove ?api= from the URL to use Pass-the-Phone Mode.`,true);}}
+  if(api){service('checking',`Room: ${room}`);try{const response=await fetch(`${api}/api/state?room=${encodeURIComponent(room)}`,{cache:'no-store'});if(!response.ok)throw new Error(`HTTP ${response.status}`);const data=await response.json();state=normalize(data.state||data);localSave();lastHealthy=new Date();service('active',`Room: ${room} • connected ${lastHealthy.toLocaleTimeString()}`);say('Public Multiplayer connected. Ideas can travel between devices.');}catch(e){state=localLoad();service('offline',`Room: ${room} • no cloud connection`);say(`Public Multiplayer could not connect: ${e.message}. The last local snapshot is displayed without cloud writes.`,true);}}
   else{state=localLoad();if(!state.ideas.length){state.ideas=seeds();audit('starter_ideas_loaded','Machine Spirit','Six starter ideas installed.');localSave();}say('Pass-the-Phone Mode is ready. Six starter ideas are already rattling inside.');}
+  $('check-service').onclick=()=>checkHealth(true);
+  document.addEventListener('visibilitychange',()=>{scheduleHealth();if(!document.hidden)checkHealth(false);});scheduleHealth();
   $('save-name').onclick=()=>{if(ensureIdentity()){say(`Player “${name()}” is at the controls.`);render();}};
   $('submit-idea').onclick=submitIdea;$('pull-lever').onclick=pullIdea;$('pass-twist').onclick=passTwist;$('release-held').onclick=releaseHeld;
   $('reveal-button').onclick=()=>{revealOpen=!revealOpen;if(revealOpen&&!api){audit('reveal_opened',name()||'Machine','End-of-day journey vault opened.');localSave();}render();};$('reset-machine').onclick=reset;
@@ -163,6 +203,7 @@ fn app() -> Html {
       <main class="app">
         <header class="hero"><div><p class="eyebrow">{"MIKEGYVER STUDIO • WONDERFULLY STRANGE THINKING LAB"}</p><h1>{"The Great Idea Swap Machine"}</h1><p class="subtitle">{"Leave an idea. Take an idea. Make it wonderfully weirder."}</p></div><span id="mode" class="badge">{"STARTING…"}</span></header>
         <p id="message" class="message">{"Warming up the gears…"}</p>
+        <section id="service-status" class="service-status checking"><span class="service-light"></span><div><strong class="service-label">{"CHECKING BACKEND"}</strong><small class="service-detail">{"Starting telemetry…"}</small></div><button id="check-service" class="service-check">{"Check now"}</button></section>
         <section class="panel"><h2>{"Who is pulling the lever?"}</h2><p class="panel-intro">{"Use the same name for your turn. The machine will never hand you your own original idea."}</p><div class="identity"><input id="player-name" maxlength="40" placeholder="Player name or nickname"/><button id="save-name" class="button secondary">{"Take the Controls"}</button></div></section>
         <section class="machine-grid">
           <div class="panel"><h2>{"1. Feed the machine"}</h2><p class="panel-intro">{"Contribute one gloriously strange starting point."}</p><label class="field">{"Category"}<select id="category"></select></label><label class="field">{"Original idea"}<textarea id="idea-input" maxlength="280" placeholder="A coffee mug that warns you before someone schedules a Monday meeting…"></textarea></label><div class="submit-row"><span id="idea-count" class="counter">{"0/280"}</span><button id="submit-idea" class="button primary">{"Deposit Idea 💡"}</button></div></div>
