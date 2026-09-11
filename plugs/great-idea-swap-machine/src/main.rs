@@ -3,14 +3,16 @@ use yew::prelude::*;
 
 #[wasm_bindgen(inline_js = r#"
 const KEY = 'great-idea-swap-machine-v1';
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.2.1';
 const CATEGORIES = ['🚀 Almost Scientific','🤖 Questionably Useful Technology','🍕 Food That Shouldn’t Exist','🏠 Ridiculous Household Inventions','🎬 Impossible Podcast or Movie Ideas','🧸 Colin-and-Luan Approved Barter Businesses'];
 const AWARDS = ['Most Brilliantly Ridiculous','Strangely Marketable','Most Likely to Concern NASA','Best Idea Improved by Someone Else','Idea We Accidentally Need'];
 const $ = id => document.getElementById(id);
 const esc = value => String(value ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 const uid = () => crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-const api = new URLSearchParams(location.search).get('api')?.replace(/\/$/, '') || '';
-const room = (new URLSearchParams(location.search).get('room') || 'family-room').trim().toLowerCase().replace(/[^a-z0-9-]/g,'-').slice(0,48) || 'family-room';
+const params = new URLSearchParams(location.search);
+const DEFAULT_API = 'https://great-idea-swap-backend.mikegyver.workers.dev';
+const api = params.get('local') === '1' ? '' : (params.get('api') || DEFAULT_API).replace(/\/$/, '');
+const room = (params.get('room') || 'family-room').trim().toLowerCase().replace(/[^a-z0-9-]/g,'-').slice(0,48) || 'family-room';
 let state;
 let held = null;
 let revealOpen = false;
