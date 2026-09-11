@@ -3,7 +3,7 @@ use yew::prelude::*;
 
 #[wasm_bindgen(inline_js = r#"
 const KEY = 'great-idea-swap-machine-v1';
-const APP_VERSION = '1.2.1';
+const APP_VERSION = '1.2.2';
 const CATEGORIES = ['🚀 Almost Scientific','🤖 Questionably Useful Technology','🍕 Food That Shouldn’t Exist','🏠 Ridiculous Household Inventions','🎬 Impossible Podcast or Movie Ideas','🧸 Colin-and-Luan Approved Barter Businesses'];
 const AWARDS = ['Most Brilliantly Ridiculous','Strangely Marketable','Most Likely to Concern NASA','Best Idea Improved by Someone Else','Idea We Accidentally Need'];
 const $ = id => document.getElementById(id);
@@ -45,6 +45,12 @@ function audit(event,player='Machine',details='',ideaId=null){
 }
 function name(){ return $('player-name').value.trim(); }
 function say(text, error=false){ $('message').textContent=text; $('message').classList.toggle('error',error); }
+function validateLength(inputId,counterId,buttonId,max=280){
+  const length=$(inputId).value.length,remaining=max-length,over=remaining<0;
+  $(counterId).textContent=over?`${length}/${max} — remove ${-remaining}`:`${length}/${max}`;
+  $(counterId).classList.toggle('over',over);$(buttonId).disabled=over;
+  return !over;
+}
 function service(status,detail=''){
   serviceState=status;
   const el=$('service-status'); if(!el)return;
@@ -92,8 +98,8 @@ function options(){ return CATEGORIES.map(c=>`<option>${esc(c)}</option>`).join(
 function ensureIdentity(){ const n=name(); if(!n){ say('Enter your player name before approaching the machine.',true); return ''; }if(['__proto__','prototype','constructor'].includes(n.toLowerCase())){say('That reserved machine name cannot be used.',true);return '';} sessionStorage.setItem('idea-swap-name',n); return n; }
 function submitIdea(){
   const owner=ensureIdentity(), text=$('idea-input').value.trim(), category=$('category').value;
-  if(!owner)return; if(text.length<10){say('Give the machine at least 10 characters of wonderfully strange material.',true);return;}
-  act('submit',{owner,text,category},()=>{const idea={id:uid(),owner,category,chain:[{author:owner,text}],claimed:null,created:Date.now()};state.ideas.push(idea);audit('idea_submitted',owner,category,idea.id);localSave();return{};}).then(()=>{$('idea-input').value='';say('Idea accepted. The machine promises not to return it to you.');});
+  if(!owner)return;if(!validateLength('idea-input','idea-count','submit-idea')){say('That idea exceeds the 280-character machine limit. Shorten it before depositing; nothing has been clipped.',true);return;} if(text.length<10){say('Give the machine at least 10 characters of wonderfully strange material.',true);return;}
+  act('submit',{owner,text,category},()=>{const idea={id:uid(),owner,category,chain:[{author:owner,text}],claimed:null,created:Date.now()};state.ideas.push(idea);audit('idea_submitted',owner,category,idea.id);localSave();return{};}).then(()=>{$('idea-input').value='';validateLength('idea-input','idea-count','submit-idea');say('Idea accepted. The machine promises not to return it to you.');});
 }
 function pullIdea(){
   const player=ensureIdentity(); if(!player)return;
@@ -106,8 +112,8 @@ function pullIdea(){
 }
 function passTwist(){
   const player=ensureIdentity(), text=$('twist-input').value.trim(); if(!player)return;
-  if(!held){say('Pull the lever before attempting to twist reality.',true);return;} if(text.length<8){say('The twist needs at least 8 characters.',true);return;}
-  act('twist',{player,id:held,text},()=>{const idea=state.ideas.find(i=>i.id===held);if(!idea||idea.claimed!==player)throw new Error('That idea is no longer assigned to this player.');idea.chain.push({author:player,text});idea.claimed=null;audit('twist_added',player,text,idea.id);localSave();return{};}).then(()=>{held=null;$('twist-input').value='';say('Twist attached. The idea is back inside the machine, noticeably weirder.');render();});
+  if(!held){say('Pull the lever before attempting to twist reality.',true);return;}if(!validateLength('twist-input','twist-count','pass-twist')){say('That twist exceeds the 280-character machine limit. Shorten it before passing; nothing has been clipped.',true);return;} if(text.length<8){say('The twist needs at least 8 characters.',true);return;}
+  act('twist',{player,id:held,text},()=>{const idea=state.ideas.find(i=>i.id===held);if(!idea||idea.claimed!==player)throw new Error('That idea is no longer assigned to this player.');idea.chain.push({author:player,text});idea.claimed=null;audit('twist_added',player,text,idea.id);localSave();return{};}).then(()=>{held=null;$('twist-input').value='';validateLength('twist-input','twist-count','pass-twist');say('Twist attached. The idea is back inside the machine, noticeably weirder.');render();});
 }
 function releaseHeld(){
   if(!held)return; const player=name();
@@ -191,7 +197,8 @@ export async function initIdeaSwapMachine(){
   $('reveal-button').onclick=()=>{revealOpen=!revealOpen;if(revealOpen&&!api){audit('reveal_opened',name()||'Machine','End-of-day journey vault opened.');localSave();}render();};$('reset-machine').onclick=reset;
   $('export-session').onclick=exportSession;$('export-activity').onclick=exportActivity;$('import-session').onclick=()=>$('import-file').click();
   $('import-file').onchange=e=>importSession(e.target.files?.[0]);
-  $('idea-input').oninput=e=>$('idea-count').textContent=`${e.target.value.length}/280`;
+  $('idea-input').oninput=()=>validateLength('idea-input','idea-count','submit-idea');
+  $('twist-input').oninput=()=>validateLength('twist-input','twist-count','pass-twist');
   $('votes').onchange=e=>{if(e.target.dataset.award&&e.target.value)vote(e.target.dataset.award,e.target.value);};
   render();
 }
@@ -208,10 +215,10 @@ fn app() -> Html {
         <section id="service-status" class="service-status checking"><span class="service-light"></span><div><strong class="service-label">{"CHECKING BACKEND"}</strong><small class="service-detail">{"Starting telemetry…"}</small></div><button id="check-service" class="service-check">{"Check now"}</button></section>
         <section class="panel"><h2>{"Who is pulling the lever?"}</h2><p class="panel-intro">{"Use the same name for your turn. The machine will never hand you your own original idea."}</p><div class="identity"><input id="player-name" maxlength="40" placeholder="Player name or nickname"/><button id="save-name" class="button secondary">{"Take the Controls"}</button></div></section>
         <section class="machine-grid">
-          <div class="panel"><h2>{"1. Feed the machine"}</h2><p class="panel-intro">{"Contribute one gloriously strange starting point."}</p><label class="field">{"Category"}<select id="category"></select></label><label class="field">{"Original idea"}<textarea id="idea-input" maxlength="280" placeholder="A coffee mug that warns you before someone schedules a Monday meeting…"></textarea></label><div class="submit-row"><span id="idea-count" class="counter">{"0/280"}</span><button id="submit-idea" class="button primary">{"Deposit Idea 💡"}</button></div></div>
+          <div class="panel"><h2>{"1. Feed the machine"}</h2><p class="panel-intro">{"Contribute one gloriously strange starting point."}</p><label class="field">{"Category"}<select id="category"></select></label><label class="field">{"Original idea"}<textarea id="idea-input" placeholder="A coffee mug that warns you before someone schedules a Monday meeting…"></textarea></label><div class="submit-row"><span id="idea-count" class="counter">{"0/280"}</span><button id="submit-idea" class="button primary">{"Deposit Idea 💡"}</button></div></div>
           <div class="panel"><h2>{"2. Tempt the machine"}</h2><p class="panel-intro">{"Pull the lever and accept whatever questionable brilliance appears."}</p><div class="lever-box"><div><div class="lever"></div><button id="pull-lever" class="button primary lever-button">{"PULL THE LEVER 🔄"}</button></div></div></div>
         </section>
-        <section id="held" class="held"><span id="held-category" class="category"></span><p id="held-original" class="idea-text"></p><p id="held-chain" class="chain-mini"></p><label class="field">{"3. Add one unexpected twist"}<textarea id="twist-input" maxlength="280" placeholder="It communicates only through dramatic movie-trailer narration…"></textarea></label><div class="twist-actions"><button id="pass-twist" class="button primary">{"Attach Twist + Pass It On"}</button><button id="release-held" class="button secondary">{"Put It Back"}</button></div></section>
+        <section id="held" class="held"><span id="held-category" class="category"></span><p id="held-original" class="idea-text"></p><p id="held-chain" class="chain-mini"></p><label class="field">{"3. Add one unexpected twist"}<textarea id="twist-input" placeholder="It communicates only through dramatic movie-trailer narration…"></textarea></label><div class="twist-actions"><span id="twist-count" class="counter">{"0/280"}</span><button id="pass-twist" class="button primary">{"Attach Twist + Pass It On"}</button><button id="release-held" class="button secondary">{"Put It Back"}</button></div></section>
         <section class="panel"><h2>{"Machine telemetry"}</h2><p class="panel-intro">{"A responsible dashboard for deeply irresponsible innovation."}</p><div class="stats"><div class="stat"><span>{"IDEAS"}</span><strong id="stat-ideas">{"0"}</strong></div><div class="stat"><span>{"TWISTS"}</span><strong id="stat-twists">{"0"}</strong></div><div class="stat"><span>{"YOUR IDEAS"}</span><strong id="stat-mine">{"0"}</strong></div><div class="stat"><span>{"WAITING"}</span><strong id="stat-waiting">{"0"}</strong></div></div></section>
         <section class="panel"><div class="reveal-head"><div><h2>{"End-of-Day Reveal Vault"}</h2><p class="panel-intro">{"Open every journey, reveal the contributors, and vote for glorious nonsense."}</p></div><button id="reveal-button" class="button secondary">{"Reveal Every Journey + Vote"}</button></div><div id="reveal-body" hidden=true><div id="journeys" class="journeys"></div><h2>{"🏆 Cast your votes"}</h2><div id="votes" class="vote-grid"></div></div></section>
         <section class="panel"><div class="log-title"><div><h2>{"Machine Activity Ledger"}</h2><p class="panel-intro">{"A timestamped record of deposits, pulls, twists, returns, votes, reveals, exports, and imports."}</p></div><span id="activity-total" class="badge">{"0 entries"}</span></div><ol id="activity-feed" class="activity-feed"></ol><div class="toolbar"><button id="export-session" class="button primary">{"Export Complete Session JSON"}</button><button id="export-activity" class="button secondary">{"Export Activity Log JSON"}</button><button id="import-session" class="button secondary">{"Import Session JSON"}</button><input id="import-file" class="file-hidden" type="file" accept=".json,application/json"/><button id="reset-machine" class="button danger">{"Reset Local Machine"}</button></div><p class="mode-note">{"Imports are validated before replacing the current session. Export a backup first when the machine contains irreplaceable nonsense. Pass-the-Phone stores everything on this device; add ?api=https://YOUR-WORKER for the optional multiplayer service."}</p></section>
