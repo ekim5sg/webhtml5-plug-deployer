@@ -27,6 +27,8 @@ textarea { min-height: 122px; padding: 13px; resize: vertical; line-height: 1.45
 .field { display: grid; gap: 8px; margin-top: 14px; color: #d7c4e6; font-size: .8rem; font-weight: 800; }
 .submit-row { display: flex; justify-content: space-between; align-items: center; gap: 13px; margin-top: 13px; }
 .counter { color: #8e77a2; font-size: .74rem; }
+.counter.over { color: #ff718b; font-weight: 900; }
+.button:disabled { cursor: not-allowed; filter: grayscale(.45); opacity: .48; }
 .lever-box { display: grid; place-items: center; min-height: 250px; border: 1px solid #654285; border-radius: 18px; background: radial-gradient(circle, rgba(192,132,252,.16), transparent 65%), #10071d; text-align: center; }
 .lever { position: relative; width: 90px; height: 150px; margin-bottom: 13px; }
 .lever::before { content: ""; position: absolute; left: 39px; top: 18px; width: 13px; height: 105px; border-radius: 8px; background: linear-gradient(90deg,#8a8a9a,#eee,#666); transform: rotate(8deg); transform-origin: bottom; }
