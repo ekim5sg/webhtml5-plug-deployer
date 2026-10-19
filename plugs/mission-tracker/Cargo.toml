@@ -1,0 +1,18 @@
+[package]
+name = "mission-tracker"
+version = "1.0.0"
+edition = "2021"
+autobins = false
+
+[[bin]]
+name = "mission-tracker"
+path = "main.rs"
+
+[dependencies]
+yew = { version = "0.21", features = ["csr"] }
+web-sys = { version = "0.3", features = ["HtmlInputElement", "SubmitEvent"] }
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
