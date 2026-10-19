@@ -6,7 +6,7 @@ autobins = false
 
 [[bin]]
 name = "mission-tracker"
-path = "main.rs"
+path = "src/main.rs"
 
 [dependencies]
 yew = { version = "0.21", features = ["csr"] }
